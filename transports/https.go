@@ -1,7 +1,7 @@
 package transports
 
 import (
-	"bencrypt"
+	"github.com/awgh/bencrypt"
 	"bytes"
 	"crypto/tls"
 	"database/sql"
@@ -12,7 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"ratnet"
+	"github.com/awgh/ratnet"
 	"sync"
 )
 

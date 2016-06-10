@@ -1,7 +1,7 @@
 package ratnet
 
 import (
-	"bencrypt"
+	"github.com/awgh/bencrypt"
 	"database/sql"
 	"testing"
 

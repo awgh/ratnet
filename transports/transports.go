@@ -5,7 +5,7 @@ import (
 	"errors"
 	"log"
 	"net/url"
-	"ratnet"
+	"github.com/awgh/ratnet"
 	"sync"
 )
 

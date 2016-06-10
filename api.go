@@ -9,12 +9,12 @@ import (
 	"errors"
 	"io"
 	"log"
-	"ratnet/modules"
+	"github.com/awgh/ratnet/modules"
 	"strconv"
 	"strings"
 	"time"
 
-	. "bencrypt"
+	. "github.com/awgh/bencrypt"
 
 	_ "github.com/cznic/ql/driver"
 )

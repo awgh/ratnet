@@ -4,7 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"ratnet/transports"
+	"github.com/awgh/ratnet/transports"
 )
 
 // usage: ./ratnet -dbfile=ratnet2.ql -p=20003

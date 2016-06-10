@@ -7,7 +7,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"ratnet"
-	"ratnet/transports"
+	"github.com/awgh/ratnet/transports"
 	"testing"
 	"time"
 
