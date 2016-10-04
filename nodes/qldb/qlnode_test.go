@@ -1,319 +1,82 @@
-package main
+package qldb
 
 import (
 	"bytes"
-	"database/sql"
-	"encoding/base64"
-	"encoding/json"
-	"errors"
+	"log"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/awgh/bencrypt/ecc"
 	"github.com/awgh/ratnet/api"
-	"github.com/awgh/ratnet/nodes/qldb"
-	"github.com/awgh/ratnet/nodes/ram"
-	"github.com/awgh/ratnet/transports/https"
-	"github.com/awgh/ratnet/transports/udp"
 
 	_ "github.com/cznic/ql/driver"
 )
 
 var (
-	dbinit = false
-	db     func() *sql.DB
-
-	server1 api.Node
-	server2 api.Node
-	server3 api.Node
-
-	public1 api.Transport
-	public2 api.Transport
-	public3 api.Transport
-
-	admin1 api.Transport
-	admin2 api.Transport
-	admin3 api.Transport
+	node *Node
 )
 
-var udpMode bool
-var ramMode bool
-
-func init() {
-	udpMode = false
-	ramMode = false
-}
-
-func initServer1() (api.Transport, api.Transport) {
-	if server1 == nil {
-
-		if ramMode {
-			// RamNode Mode
-			server1 = ram.New(new(ecc.KeyPair), new(ecc.KeyPair))
-		} else {
-			// QLDB Mode
-			s := qldb.New(new(ecc.KeyPair), new(ecc.KeyPair))
-			os.Mkdir("tmp", os.FileMode(int(0755)))
-			s.BootstrapDB("tmp/ratnet_test1.ql")
-			s.FlushOutbox(0)
-			server1 = s
-		}
-
-		if udpMode {
-			public1 = udp.New(server1)
-			admin1 = udp.New(server1)
-		} else {
-			public1 = https.New("tmp/cert1.pem", "tmp/key1.pem", server1, true)
-			admin1 = https.New("tmp/cert1.pem", "tmp/key1.pem", server1, true)
-		}
-
-		go serve(public1, admin1, server1, "localhost:30001", "localhost:30101")
-		time.Sleep(2 * time.Second)
+func Test_init(t *testing.T) {
+	node = New(new(ecc.KeyPair), new(ecc.KeyPair))
+	os.Mkdir("tmp", os.FileMode(int(0755)))
+	node.BootstrapDB("tmp/ratnet_test.ql")
+	node.FlushOutbox(0)
+	if err := node.routingKey.FromB64(pubprivkeyb64Ecc); err != nil {
+		log.Fatal(err)
 	}
-	return public1, admin1
-}
-func initServer2() (api.Transport, api.Transport) {
-	if server2 == nil {
-		if ramMode {
-			// RamNode Mode:
-			server2 = ram.New(new(ecc.KeyPair), new(ecc.KeyPair))
-		} else {
-			// QLDB Mode
-			s := qldb.New(new(ecc.KeyPair), new(ecc.KeyPair))
-			os.Mkdir("tmp", os.FileMode(int(0755)))
-			s.BootstrapDB("tmp/ratnet_test1.ql")
-			s.FlushOutbox(0)
-			server2 = s
-		}
-
-		if udpMode {
-			public2 = udp.New(server2)
-			admin2 = udp.New(server2)
-		} else {
-			public2 = https.New("tmp/cert2.pem", "tmp/key2.pem", server2, true)
-			admin2 = https.New("tmp/cert2.pem", "tmp/key2.pem", server2, true)
-		}
-		go serve(public2, admin2, server2, "localhost:30002", "localhost:30202")
-		time.Sleep(2 * time.Second)
-	}
-	return public2, admin2
-}
-func initServer3() (api.Transport, api.Transport) {
-	if server3 == nil {
-		if ramMode {
-			// RamNode Mode:
-			server3 = ram.New(new(ecc.KeyPair), new(ecc.KeyPair))
-		} else {
-			// QLDB Mode
-			s := qldb.New(new(ecc.KeyPair), new(ecc.KeyPair))
-			os.Mkdir("tmp", os.FileMode(int(0755)))
-			s.BootstrapDB("tmp/ratnet_test1.ql")
-			s.FlushOutbox(0)
-			server3 = s
-		}
-		if udpMode {
-			public3 = udp.New(server3)
-			admin3 = udp.New(server3)
-		} else {
-			public3 = https.New("tmp/cert3.pem", "tmp/key3.pem", server3, true)
-			admin3 = https.New("tmp/cert3.pem", "tmp/key3.pem", server3, true)
-		}
-		go serve(public3, admin3, server3, "localhost:30003", "localhost:30303")
-		time.Sleep(2 * time.Second)
-	}
-	return public3, admin3
-}
-
-func Test_server_ID_1(t *testing.T) {
-	admin1, public1 := initServer1()
-
-	var err error
-	var r1, r2 []byte
-	if r1, err = public1.RPC("localhost:30001", "ID"); err != nil {
-		t.Error(err.Error())
-	} else {
-		t.Log(r1)
-	}
-	// should work on both interfaces
-	if r2, err = admin1.RPC("localhost:30101", "ID"); err != nil {
-		t.Error(err.Error())
-	} else {
-		t.Log(r2)
-	}
-	if bytes.Compare(r1, r2) != 0 {
-		t.Error(errors.New("Public and Admin interfaces returned different results."))
+	if err := node.Start(); err != nil {
+		log.Fatal(err)
 	}
 }
 
-func Test_server_CID_1(t *testing.T) {
-	admin1, public1 := initServer1()
-
-	// should not work on public interface
-	result, err := public1.RPC("localhost:30001", "CID")
+func Test_apicall_ID_1(t *testing.T) {
+	result, err := node.ID()
 	if err != nil {
 		t.Error(err.Error())
 	}
-	if bytes.Compare(result[:2], []byte("OK")) == 0 {
-		t.Error(errors.New("CID was accessible on Public network interface"))
-	}
-
-	result, err = admin1.RPC("localhost:30101", "CID")
-	if err != nil {
-		t.Error(err.Error())
-	}
+	t.Log("API ID RESULT: ", result)
 }
 
-func Test_server_AddContact_1(t *testing.T) {
-	admin1, public1 := initServer1()
-	admin2, _ := initServer2()
-
-	p1, err := admin2.RPC("localhost:30202", "CID")
-	if err != nil {
+func Test_apicall_AddContact_1(t *testing.T) {
+	var p1 string
+	p1 = pubkeyb64Ecc
+	if err := node.AddContact("destname1", p1); err != nil {
 		t.Error(err.Error())
 	}
-
-	t.Log("Trying AddContact on Public interface")
-	// should not work on public interface
-	result, err := public1.RPC("localhost:30001", "AddContact", "destname1", string(p1))
-	if err != nil {
-		t.Error(err.Error())
-	}
-	if bytes.Compare(result[:2], []byte("OK")) == 0 {
-		t.Error(errors.New("AddContact was accessible on Public network interface."))
-	}
-	t.Log("API AddContact RESULT: " + string(result))
-
-	t.Log("Trying AddContact on Admin interface")
-	result, err = admin1.RPC("localhost:30101", "AddContact", "destname1", string(p1))
-	if err != nil {
-		t.Error(err.Error())
-	}
-	t.Log("API AddContact RESULT: " + string(result))
+	t.Log("API AddContact RESULT: OK")
 }
 
-func Test_server_AddChannel_1(t *testing.T) {
-	admin1, public1 := initServer1()
-	// todo: add RSA test?
-	chankey := pubprivkeyb64Ecc
-
-	t.Log("Trying AddChannel on Public interface")
-	// should not work on public interface
-	result, err := public1.RPC("localhost:30001", "AddChannel", "channel1", chankey)
+func Test_apicall_Send_1(t *testing.T) {
+	err := node.Send("destname1", []byte(pubkeyb64))
 	if err != nil {
 		t.Error(err.Error())
 	}
-	if bytes.Compare(result[:2], []byte("OK")) == 0 {
-		t.Error(errors.New("AddChannel was accessible on Public network interface."))
-	}
-
-	t.Log("Trying AddChannel on Admin interface")
-	result, err = admin1.RPC("localhost:30101", "AddChannel", "channel1", chankey)
-	if err != nil {
-		t.Error(err.Error())
-	}
-	t.Log("API AddChannel RESULT: " + string(result))
+	t.Log("API Send RESULT: OK")
 }
 
-func Test_server_Send_1(t *testing.T) {
-	admin1, public1 := initServer1()
-
-	// should not work on public interface
-	result, err := public1.RPC("localhost:30001", "Send", "destname1", base64.StdEncoding.EncodeToString([]byte(testMessage1)))
+func Test_apicall_Pickup_1(t *testing.T) {
+	rpk, err := node.ID()
 	if err != nil {
 		t.Error(err.Error())
 	}
-	if bytes.Compare(result[:2], []byte("OK")) == 0 {
-		t.Error(errors.New("Send was accessible on Public network interface."))
-	}
-
-	result, err = admin1.RPC("localhost:30101", "Send", "destname1", base64.StdEncoding.EncodeToString([]byte(testMessage1)))
+	_, err = node.Pickup(rpk, 0)
 	if err != nil {
 		t.Error(err.Error())
 	}
-	t.Log("API Send RESULT: " + string(result))
+	t.Log("API Pickup RESULT: OK")
 }
 
-func Test_server_SendChannel_1(t *testing.T) {
-	admin1, public1 := initServer1()
+func Test_apicall_Channels_1(t *testing.T) {
+	message := api.Msg{Name: "destname1", IsChan: false}
+	message.Content = bytes.NewBufferString(testMessage1)
+	node.In() <- message
 
-	// should not work on public interface
-	result, err := public1.RPC("localhost:30001", "SendChannel", "channel1", base64.StdEncoding.EncodeToString([]byte(testMessage2)))
-	if err != nil {
-		t.Error(err.Error())
-	}
-	if bytes.Compare(result[:2], []byte("OK")) == 0 {
-		t.Error(errors.New("SendChannel was accessible on Public network interface."))
-	}
-
-	result, err = admin1.RPC("localhost:30101", "SendChannel", "channel1", base64.StdEncoding.EncodeToString([]byte(testMessage2)))
-	if err != nil {
-		t.Error(err.Error())
-	}
-	t.Log("API SendChannel RESULT: " + string(result))
+	t.Log("API Channel TX: ")
+	t.Log(message)
 }
 
-func Test_server_PickupDropoff_1(t *testing.T) {
-	_, public1 := initServer1()
-	go func() {
-		msg := <-server2.Out()
-		t.Log("server2.Out Got: ")
-		t.Log(msg)
-	}()
-
-	pubsrv, err := public1.RPC("localhost:30002", "ID")
-	if err != nil {
-		t.Error(err.Error())
-	}
-	result, err := public1.RPC("localhost:30001", "Pickup", string(pubsrv), "31536000") // 31536000 seconds in a year
-	if err != nil {
-		t.Error(err.Error())
-	}
-
-	var bundle api.Bundle
-	if err := json.Unmarshal(result, &bundle); err != nil {
-		t.Error(err.Error())
-	}
-
-	result, err = public1.RPC("localhost:30002", "Dropoff", string(result))
-	if err != nil {
-		t.Error(err.Error())
-	}
-	time.Sleep(2 * time.Second)
-}
-
-func Test_server_PickupDropoff_2(t *testing.T) {
-	_, public1 := initServer1()
-	admin3, _ := initServer3()
-	chankey := pubprivkeyb64Ecc
-
-	go func() {
-		msg := <-server3.Out()
-		t.Log("server3.Out Got: ")
-		t.Log(msg)
-	}()
-
-	t.Log("Trying AddChannel on server3 Admin interface")
-	result, err := admin3.RPC("localhost:30303", "AddChannel", "channel1", chankey)
-	if err != nil {
-		t.Error(err.Error())
-	}
-	pubsrv, err := public1.RPC("localhost:30003", "ID")
-	if err != nil {
-		t.Error(err.Error())
-	}
-	result, err = admin1.RPC("localhost:30101", "SendChannel", "channel1", base64.StdEncoding.EncodeToString([]byte(testMessage1)))
-	if err != nil {
-		t.Error(err.Error())
-	}
-	result, err = public1.RPC("localhost:30001", "Pickup", string(pubsrv), "31536000", "channel1") // seconds in a year
-	if err != nil {
-		t.Error(err.Error())
-	}
-	result, err = public1.RPC("localhost:30003", "Dropoff", string(result))
-	if err != nil {
-		t.Error(err.Error())
-	}
+func Test_stop(t *testing.T) {
+	node.Stop()
 }
 
 //func Benchmark_TheAddIntsFunction(b *testing.B) {
@@ -326,21 +89,6 @@ var testMessage1 = `'In THAT direction,' the Cat said, waving its right paw roun
 'Oh, you can't help that,' said the Cat: 'we're all mad here. I'm mad. You're mad.'
 'How do you know I'm mad?' said Alice.
 'You must be,' said the Cat, 'or you wouldn't have come here.'`
-
-var testMessage2 = `The spiders have always been slandered
-in the idiotic pages
-of exasperating simplifiers
-who take the fly's point of view,
-who describe them as devouring,
-carnal, unfaithful, lascivious.
-For me, that reputation
-discredits just those who concocted it:
-the spider is an engineer,
-a divine maker of watches,
-for one fly more or less
-let the imbeciles detest them.
-I want to have a talk with the spider,
-I want her to weave me a star.`
 
 // RSA TEST KEYS
 
