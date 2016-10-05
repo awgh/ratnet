@@ -16,7 +16,7 @@ Ratnet provides input and output channels for your application to send and recei
 
 ## What's a Connection Policy?
 
-You caught me, I made that term up.  In ratnet, *Transports* are responsible for physically making and receiving connections and that's it.  *Nodes* are basically message queues with some key management and special knowledge about when to encrypt things (and the *Cryptosystem* is the method they would use to do that.  But none of those things actually starts a connection and moves the data around.  That is the responsibility of the *Connection Policy*.  Think of it as a script that controls a Node and any number of different Transports.  
+You caught me, I made that term up.  In ratnet, *Transports* are responsible for physically making and receiving connections and that's it.  *Nodes* are basically message queues with some key management and special knowledge about when to encrypt things (and the *Cryptosystem* is the method they would use to do that).  But none of those things actually starts a connection and moves the data around.  That is the responsibility of the *Connection Policy*.  Think of it as a script that controls a Node and any number of different Transports.  
 
 We provide two very simple connection policies:
 
