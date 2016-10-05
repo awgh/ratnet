@@ -14,14 +14,28 @@ It's also easy to implement your own replacement for any or all of these compone
 
 Ratnet provides input and output channels for your application to send and receive binary messages in clear text, making it very easy to interact with.
 
+# Examples
+
+## Making a Node
+
+Make a QL-Database-Backed Node, which saves states to disk:
 ```go
 	// QLDB Node Mode
 	node := qldb.New(new(ecc.KeyPair), new(ecc.KeyPair))
 	node.BootstrapDB(dbFile)
+```
 
+Or, make a RAM-Only Node, which won't write anything to the disk:
+```go
 	// RamNode Mode:
-	//node := ram.New(new(ecc.KeyPair), new(ecc.KeyPair))
+	node := ram.New(new(ecc.KeyPair), new(ecc.KeyPair))
+```
 
+The KeyPairs passed in as arguments are just used to determine which cryptosystem should be used for the Onion-Routing (first argument) and for the Content Encryption (second argument).  
+
+## Setup Policies and Transports
+
+```go
 	node.SetPolicy(
 		policy.NewServer(transportPublic, listenPublic, false),
 		policy.NewServer(transportAdmin, listenAdmin, true))
@@ -30,6 +44,38 @@ Ratnet provides input and output channels for your application to send and recei
 	log.Println("Control Server starting: ", listenAdmin)
 
 	node.Start()
+```	
+
+## Handle messages coming from the network
+
+```go	
+	go func() {
+		for {
+			msg := <-node.Out()
+			if err := HandleMsg(msg); err != nil {
+				log.Println(err.Error())
+			}
+		}
+	}()
+```
+
+## Send messages to the network
+
+Blocking Send:
+```go
+	message := api.Msg{Name: "destname1", IsChan: false}
+	message.Content = bytes.NewBufferString(testMessage1)
+	node.In() <- message
+	```
+	
+Non-Blocking Send:
+```go
+        select {
+		case node.Out() <- message:
+			//fmt.Println("sent message", msg)
+		default:
+			//fmt.Println("no message sent")
+		}	
 ```
 
 # Additional Documentation
