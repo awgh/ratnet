@@ -1,6 +1,6 @@
 {
   "name": "Ratnet",
   "tagline": "Prototype anonymity network for mesh routing and embedded scenarios.",
-  "body": "### Ratnet\r\nPlaceholder for overview doc (in progress)\r\n\r\n### Documentation\r\n[API Docs are here](https://godoc.org/github.com/awgh/ratnet)\r\n",
+  "body": "\r\n\r\n# Related Projects\r\n\r\n- [Bencrypt, crypto abstraction layer & utils](https://github.com/awgh/bencrypt)\r\n- [Ratnet, onion-routed messaging system with pluggable transports](https://github.com/awgh/ratnet)\r\n- [HushCom, simple IRC-like client & server](https://github.com/awgh/hushcom)\r\n\r\n# Documentation\r\n\r\n- Overview Slide Deck from Toorcamp 2016 [here](https://github.com/awgh/ratnet/blob/master/docs/RatNet-Toorcamp16-v1.pdf).\r\n- API Docs are available [here](https://godoc.org/github.com/awgh/ratnet/api).\r\n\r\n\r\n#Authors and Contributors\r\n\r\n- awgh@awgh.org (@awgh)\r\n\r\n- vyrus001@gmail.com (@vyrus001)\r\n",
   "note": "Don't delete this file! It's used internally to help with page regeneration."
 }
