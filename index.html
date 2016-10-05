@@ -20,20 +20,103 @@
 
     <section class="main-content">
       <h1>
+<a id="what-is-ratnet" class="anchor" href="#what-is-ratnet" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>What is Ratnet?</h1>
+
+<p>Ratnet is a library that allows applications to communicate using an <em>onion-routed</em> and <em>flood-routed</em> message bus.  All communications are encrypted end-to-end by the library itself.</p>
+
+<p>Ratnet is completely modular, meaning that the interactions of all significant components of the system are defined with interfaces, and are therefore interchangeable.  Network transports, cryptosystems, connection policies, and the ratnet nodes themselves can all be customized and swapped around dynamically.</p>
+
+<p>The Ratnet library provides two working implementations for each of these interfaces:</p>
+
+<ul>
+<li>Network Transports:  <a href="https://godoc.org/github.com/awgh/ratnet/transports/https">HTTPS</a> and <a href="https://godoc.org/github.com/awgh/ratnet/transports/udp">UDP</a> are provided</li>
+<li>Cryptosystems: <a href="https://godoc.org/github.com/awgh/bencrypt/ecc">ECC</a> and <a href="https://godoc.org/github.com/awgh/bencrypt/ecc">RSA</a> implementations are provided</li>
+<li>Connection Policies: <a href="https://godoc.org/github.com/awgh/ratnet/policy#Server">Server</a> and <a href="https://godoc.org/github.com/awgh/ratnet/policy#Poll">Polling</a> are provided</li>
+<li>Nodes: <a href="https://godoc.org/github.com/awgh/ratnet/nodes/qldb">QL Database Backed Node</a> and a <a href="https://godoc.org/github.com/awgh/ratnet/nodes/ram">RAM-only Node</a> are provided</li>
+</ul>
+
+<p>It's also easy to implement your own replacement for any or all of these components.  Multiple transport modules can be used at once, and different cryptosystems can be used for the Onion-routing and for the content encryption, if desired.</p>
+
+<p>Ratnet provides input and output channels for your application to send and receive binary messages in clear text, making it very easy to interact with.</p>
+
+<h1>
+<a id="examples" class="anchor" href="#examples" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Examples</h1>
+
+<h2>
+<a id="making-a-node" class="anchor" href="#making-a-node" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Making a Node</h2>
+
+<p>Make a QL-Database-Backed Node, which saves states to disk:</p>
+
+<div class="highlight highlight-source-go"><pre>    <span class="pl-c">// QLDB Node Mode</span>
+    <span class="pl-smi">node</span> <span class="pl-k">:=</span> qldb.<span class="pl-c1">New</span>(<span class="pl-c1">new</span>(ecc.<span class="pl-smi">KeyPair</span>), <span class="pl-c1">new</span>(ecc.<span class="pl-smi">KeyPair</span>))
+    node.<span class="pl-c1">BootstrapDB</span>(dbFile)</pre></div>
+
+<p>Or, make a RAM-Only Node, which won't write anything to the disk:</p>
+
+<div class="highlight highlight-source-go"><pre>    <span class="pl-c">// RamNode Mode:</span>
+    <span class="pl-smi">node</span> <span class="pl-k">:=</span> ram.<span class="pl-c1">New</span>(<span class="pl-c1">new</span>(ecc.<span class="pl-smi">KeyPair</span>), <span class="pl-c1">new</span>(ecc.<span class="pl-smi">KeyPair</span>))</pre></div>
+
+<p>The KeyPairs passed in as arguments are just used to determine which cryptosystem should be used for the Onion-Routing (first argument) and for the Content Encryption (second argument).  </p>
+
+<h2>
+<a id="setup-transports-and-policies" class="anchor" href="#setup-transports-and-policies" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Setup Transports and Policies</h2>
+
+<div class="highlight highlight-source-go"><pre>    <span class="pl-smi">transportPublic</span> <span class="pl-k">:=</span> https.<span class="pl-c1">New</span>(<span class="pl-s"><span class="pl-pds">"</span>cert.pem<span class="pl-pds">"</span></span>, <span class="pl-s"><span class="pl-pds">"</span>key.pem<span class="pl-pds">"</span></span>, node, <span class="pl-c1">true</span>)
+    <span class="pl-smi">transportAdmin</span> <span class="pl-k">:=</span> https.<span class="pl-c1">New</span>(<span class="pl-s"><span class="pl-pds">"</span>cert.pem<span class="pl-pds">"</span></span>, <span class="pl-s"><span class="pl-pds">"</span>key.pem<span class="pl-pds">"</span></span>, node, <span class="pl-c1">true</span>)
+    node.<span class="pl-c1">SetPolicy</span>(
+        policy.<span class="pl-c1">NewServer</span>(transportPublic, listenPublic, <span class="pl-c1">false</span>),
+        policy.<span class="pl-c1">NewServer</span>(transportAdmin, listenAdmin, <span class="pl-c1">true</span>))
+
+    log.<span class="pl-c1">Println</span>(<span class="pl-s"><span class="pl-pds">"</span>Public Server starting: <span class="pl-pds">"</span></span>, listenPublic)
+    log.<span class="pl-c1">Println</span>(<span class="pl-s"><span class="pl-pds">"</span>Control Server starting: <span class="pl-pds">"</span></span>, listenAdmin)
+
+    node.<span class="pl-c1">Start</span>()</pre></div>
+
+<h2>
+<a id="handle-messages-coming-from-the-network" class="anchor" href="#handle-messages-coming-from-the-network" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Handle messages coming from the network</h2>
+
+<div class="highlight highlight-source-go"><pre>    <span class="pl-k">go</span> <span class="pl-k">func</span>() {
+        <span class="pl-k">for</span> {
+            <span class="pl-smi">msg</span> <span class="pl-k">:=</span> <span class="pl-k">&lt;-</span>node.<span class="pl-c1">Out</span>()
+            <span class="pl-k">if</span> <span class="pl-smi">err</span> <span class="pl-k">:=</span> <span class="pl-c1">HandleMsg</span>(msg); err != <span class="pl-c1">nil</span> {
+                log.<span class="pl-c1">Println</span>(err.<span class="pl-c1">Error</span>())
+            }
+        }
+    }()</pre></div>
+
+<h2>
+<a id="send-messages-to-the-network" class="anchor" href="#send-messages-to-the-network" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Send messages to the network</h2>
+
+<p>Blocking Send:</p>
+
+<div class="highlight highlight-source-go"><pre>    <span class="pl-smi">message</span> <span class="pl-k">:=</span> api.<span class="pl-smi">Msg</span>{Name: <span class="pl-s"><span class="pl-pds">"</span>destname1<span class="pl-pds">"</span></span>, <span class="pl-v">IsChan</span>: <span class="pl-c1">false</span>}
+    message.<span class="pl-smi">Content</span> = bytes.<span class="pl-c1">NewBufferString</span>(testMessage1)
+    node.<span class="pl-c1">In</span>() <span class="pl-k">&lt;-</span> message</pre></div>
+
+<p>Non-Blocking Send:</p>
+
+<div class="highlight highlight-source-go"><pre>        <span class="pl-k">select</span> {
+        <span class="pl-k">case</span> node.<span class="pl-c1">Out</span>() <span class="pl-k">&lt;-</span> message:
+            <span class="pl-c">//fmt.Println("sent message", msg)</span>
+        <span class="pl-k">default</span>:
+            <span class="pl-c">//fmt.Println("no message sent")</span>
+        }   </pre></div>
+
+<h1>
+<a id="additional-documentation" class="anchor" href="#additional-documentation" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Additional Documentation</h1>
+
+<ul>
+<li>Overview Slide Deck from Toorcamp 2016 <a href="https://github.com/awgh/ratnet/blob/master/docs/RatNet-Toorcamp16-v1.pdf">here</a>.</li>
+<li>API Docs are available <a href="https://godoc.org/github.com/awgh/ratnet/api">here</a>.</li>
+</ul>
+
+<h1>
 <a id="related-projects" class="anchor" href="#related-projects" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Related Projects</h1>
 
 <ul>
 <li><a href="https://github.com/awgh/bencrypt">Bencrypt, crypto abstraction layer &amp; utils</a></li>
 <li><a href="https://github.com/awgh/ratnet">Ratnet, onion-routed messaging system with pluggable transports</a></li>
 <li><a href="https://github.com/awgh/hushcom">HushCom, simple IRC-like client &amp; server</a></li>
-</ul>
-
-<h1>
-<a id="documentation" class="anchor" href="#documentation" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Documentation</h1>
-
-<ul>
-<li>Overview Slide Deck from Toorcamp 2016 <a href="https://github.com/awgh/ratnet/blob/master/docs/RatNet-Toorcamp16-v1.pdf">here</a>.</li>
-<li>API Docs are available <a href="https://godoc.org/github.com/awgh/ratnet/api">here</a>.</li>
 </ul>
 
 <h1>
