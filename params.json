@@ -1,6 +1,6 @@
 {
   "name": "Ratnet",
   "tagline": "Prototype anonymity network for mesh routing and embedded scenarios.",
-  "body": "### Ratnet\r\nPlaceholder for overview doc (in progress)",
+  "body": "### Ratnet\r\nPlaceholder for overview doc (in progress)\r\n\r\n### Documentation\r\n[API Docs are here](https://godoc.org/github.com/awgh/ratnet)\r\n",
   "note": "Don't delete this file! It's used internally to help with page regeneration."
 }
