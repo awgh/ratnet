@@ -30,7 +30,7 @@ In real-world usage, you're very likely to want to implement your own version of
 
 ## Fully Working Demo App
 
-(Hushcom)[https://github.com/awgh/hushcom] is a fully working demo app that implements IRC-like chat functionality with a client and a server.
+[Hushcom](https://github.com/awgh/hushcom) is a fully working demo app that implements IRC-like chat functionality with a client and a server.
 
 The [hushcom client application](https://github.com/awgh/hushcom/blob/master/hushcom/main.go) is a good reference for how to set up a client using the Poll connection policy.
 
