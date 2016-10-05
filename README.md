@@ -14,7 +14,27 @@ It's also easy to implement your own replacement for any or all of these compone
 
 Ratnet provides input and output channels for your application to send and receive binary messages in clear text, making it very easy to interact with.
 
+## What's a Connection Policy?
+
+You caught me, I made that term up.  In ratnet, *Transports* are responsible for physically making and receiving connections and that's it.  *Nodes* are basically message queues with some key management and special knowledge about when to encrypt things (and the *Cryptosystem* is the method they would use to do that.  But none of those things actually starts a connection and moves the data around.  That is the responsibility of the *Connection Policy*.  Think of it as a script that controls a Node and any number of different Transports.  
+
+We provide two very simple connection policies:
+
+1. Server - This just opens up a port and listens on it.
+2. Polling - After a delay, this will connect to every Peer and exchange messages.
+
+In real-world usage, you're very likely to want to implement your own version of Polling (via the [Policy](https://github.com/awgh/ratnet/blob/master/api/policy.go) interface), so you can tune retry logic and so on.  We will be doing a lot more development and experimentation with new policies in the future.
+
+
 # Examples
+
+## Fully Working Demo App
+
+(Hushcom)[https://github.com/awgh/hushcom] is a fully working demo app that implements IRC-like chat functionality with a client and a server.
+
+The [hushcom client application](https://github.com/awgh/hushcom/blob/master/hushcom/main.go) is a good reference for how to set up a client using the Poll connection policy.
+
+The [hushcomd server application](https://github.com/awgh/hushcom/blob/master/hushcom/main.go) is a good reference for how to set up a server using the Server connection policy.
 
 ## Making a Node
 
