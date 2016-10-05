@@ -33,9 +33,11 @@ Or, make a RAM-Only Node, which won't write anything to the disk:
 
 The KeyPairs passed in as arguments are just used to determine which cryptosystem should be used for the Onion-Routing (first argument) and for the Content Encryption (second argument).  
 
-## Setup Policies and Transports
+## Setup Transports and Policies 
 
 ```go
+	transportPublic := https.New("cert.pem", "key.pem", node, true)
+	transportAdmin := https.New("cert.pem", "key.pem", node, true)
 	node.SetPolicy(
 		policy.NewServer(transportPublic, listenPublic, false),
 		policy.NewServer(transportAdmin, listenAdmin, true))
@@ -66,7 +68,7 @@ Blocking Send:
 	message := api.Msg{Name: "destname1", IsChan: false}
 	message.Content = bytes.NewBufferString(testMessage1)
 	node.In() <- message
-	```
+```
 	
 Non-Blocking Send:
 ```go
