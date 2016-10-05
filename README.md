@@ -8,7 +8,7 @@ The Ratnet library provides two working implementations for each of these interf
 - Network Transports:  [HTTPS](https://godoc.org/github.com/awgh/ratnet/transports/https) and [UDP](https://godoc.org/github.com/awgh/ratnet/transports/udp) are provided
 - Cryptosystems: [ECC](https://godoc.org/github.com/awgh/bencrypt/ecc) and [RSA](https://godoc.org/github.com/awgh/bencrypt/ecc) implementations are provided
 - Connection Policies: [Server](https://godoc.org/github.com/awgh/ratnet/policy#Server) and [Polling](https://godoc.org/github.com/awgh/ratnet/policy#Poll) are provided
-- Nodes: [QL Database Backed Node](https://godoc.org/github.com/awgh/ratnet/nodes/qldb) and a [RAM-only Node](https://godoc.org/github.com/awgh/ratnet/nodes/ram) are provided
+- Nodes: [QL Database-Backed Node](https://godoc.org/github.com/awgh/ratnet/nodes/qldb) and a [RAM-only Node](https://godoc.org/github.com/awgh/ratnet/nodes/ram) are provided
 
 It's also easy to implement your own replacement for any or all of these components.  Multiple transport modules can be used at once, and different cryptosystems can be used for the Onion-routing and for the content encryption, if desired.
 
@@ -23,7 +23,7 @@ We provide two very simple connection policies:
 1. [Server](https://godoc.org/github.com/awgh/ratnet/policy#Server) - This just opens up a port and listens on it.
 2. [Polling](https://godoc.org/github.com/awgh/ratnet/policy#Poll) - After a delay, this will connect to every Peer and exchange messages.
 
-In real-world usage, you're very likely to want to implement your own version of Polling (via the [Policy](https://github.com/awgh/ratnet/blob/master/api/policy.go) interface), so you can tune retry logic and so on.  We will be doing a lot more development and experimentation with new policies in the future.
+In real-world usage, you're very likely to want to implement your own version of Polling (via the [Policy](https://github.com/awgh/ratnet/blob/master/api/policy.go) interface).  We will be doing a lot more development and experimentation with new policies (and transports!) in the future.
 
 
 # Examples
