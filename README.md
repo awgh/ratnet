@@ -14,5 +14,6 @@
 
 #Authors and Contributors
 
-awgh@awgh.org (@awgh)
-vyrus001@gmail.com (@vyrus001)
+- awgh@awgh.org (@awgh)
+
+- vyrus001@gmail.com (@vyrus001)
