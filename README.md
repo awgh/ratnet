@@ -1,5 +1,5 @@
 # What is Ratnet?
-Ratnet is a library that allows applications to communicate using an *onion-routed* and *flood-routed* message bus.  All communications are encrypted end-to-end by the library itself.
+Ratnet is a library that allows applications to communicate using an [onion-routed](https://en.wikipedia.org/wiki/Onion_routing) and [flood-routed](https://en.wikipedia.org/wiki/Flooding_(computer_networking)) message bus.  All communications are encrypted end-to-end by the library itself.
 
 Ratnet is completely modular, meaning that the interactions of all significant components of the system are defined with interfaces, and are therefore interchangeable.  Network transports, cryptosystems, connection policies, and the ratnet nodes themselves can all be customized and swapped around dynamically.
 
@@ -20,8 +20,8 @@ You caught me, I made that term up.  In ratnet, *Transports* are responsible for
 
 We provide two very simple connection policies:
 
-1. Server - This just opens up a port and listens on it.
-2. Polling - After a delay, this will connect to every Peer and exchange messages.
+1. [Server](https://godoc.org/github.com/awgh/ratnet/policy#Server) - This just opens up a port and listens on it.
+2. [Polling](https://godoc.org/github.com/awgh/ratnet/policy#Poll) - After a delay, this will connect to every Peer and exchange messages.
 
 In real-world usage, you're very likely to want to implement your own version of Polling (via the [Policy](https://github.com/awgh/ratnet/blob/master/api/policy.go) interface), so you can tune retry logic and so on.  We will be doing a lot more development and experimentation with new policies in the future.
 
