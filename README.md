@@ -5,16 +5,16 @@ Ratnet is completely modular, meaning that the interactions of all significant c
 
 The Ratnet library provides two working implementations for each of these interfaces:
 
-- Network Transports:  HTTPS and UDP are provided
-- Cryptosystems: ECC and RSA are provided
-- Connection Policies: Server and Polling are provided
-- Nodes: QL Database Backed Node and a RAM-only Node are provided
+- Network Transports:  [HTTPS](https://godoc.org/github.com/awgh/ratnet/transports/https) and [UDP](https://godoc.org/github.com/awgh/ratnet/transports/udp) are provided
+- Cryptosystems: [ECC](https://godoc.org/github.com/awgh/bencrypt/ecc) and [RSA](https://godoc.org/github.com/awgh/bencrypt/ecc) implementations are provided
+- Connection Policies: [Server](https://godoc.org/github.com/awgh/ratnet/policy#Server) and [Polling](https://godoc.org/github.com/awgh/ratnet/policy#Poll) are provided
+- Nodes: [QL Database Backed Node](https://godoc.org/github.com/awgh/ratnet/nodes/qldb) and a [RAM-only Node](https://godoc.org/github.com/awgh/ratnet/nodes/ram) are provided
 
 It's also easy to implement your own replacement for any or all of these components.  Multiple transport modules can be used at once, and different cryptosystems can be used for the Onion-routing and for the content encryption, if desired.
 
 Ratnet provides input and output channels for your application to send and receive binary messages in clear text, making it very easy to interact with.
 
-```golang
+```go
 	// QLDB Node Mode
 	node := qldb.New(new(ecc.KeyPair), new(ecc.KeyPair))
 	node.BootstrapDB(dbFile)
