@@ -39,8 +39,31 @@
 
 <p>Ratnet provides input and output channels for your application to send and receive binary messages in clear text, making it very easy to interact with.</p>
 
+<h2>
+<a id="whats-a-connection-policy" class="anchor" href="#whats-a-connection-policy" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>What's a Connection Policy?</h2>
+
+<p>You caught me, I made that term up.  In ratnet, <em>Transports</em> are responsible for physically making and receiving connections and that's it.  <em>Nodes</em> are basically message queues with some key management and special knowledge about when to encrypt things (and the <em>Cryptosystem</em> is the method they would use to do that).  But none of those things actually starts a connection and moves the data around.  That is the responsibility of the <em>Connection Policy</em>.  Think of it as a script that controls a Node and any number of different Transports.  </p>
+
+<p>We provide two very simple connection policies:</p>
+
+<ol>
+<li>Server - This just opens up a port and listens on it.</li>
+<li>Polling - After a delay, this will connect to every Peer and exchange messages.</li>
+</ol>
+
+<p>In real-world usage, you're very likely to want to implement your own version of Polling (via the <a href="https://github.com/awgh/ratnet/blob/master/api/policy.go">Policy</a> interface), so you can tune retry logic and so on.  We will be doing a lot more development and experimentation with new policies in the future.</p>
+
 <h1>
 <a id="examples" class="anchor" href="#examples" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Examples</h1>
+
+<h2>
+<a id="fully-working-demo-app" class="anchor" href="#fully-working-demo-app" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Fully Working Demo App</h2>
+
+<p><a href="https://github.com/awgh/hushcom">Hushcom</a> is a fully working demo app that implements IRC-like chat functionality with a client and a server.</p>
+
+<p>The <a href="https://github.com/awgh/hushcom/blob/master/hushcom/main.go">hushcom client application</a> is a good reference for how to set up a client using the Poll connection policy.</p>
+
+<p>The <a href="https://github.com/awgh/hushcom/blob/master/hushcom/main.go">hushcomd server application</a> is a good reference for how to set up a server using the Server connection policy.</p>
 
 <h2>
 <a id="making-a-node" class="anchor" href="#making-a-node" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Making a Node</h2>
