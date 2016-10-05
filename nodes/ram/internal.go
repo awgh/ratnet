@@ -15,16 +15,6 @@ func (node *Node) GetChannelPrivKey(name string) (string, error) {
 	return c.Privkey.ToB64(), nil
 }
 
-func (node *Node) refreshChannels() { // todo: this could be selective or somehow less heavy
-	// refresh the channelKeys map
-	for name, key := range node.channelKeys {
-		cc := node.contentKey.Clone()
-		if err := cc.FromB64(key.ToB64()); err == nil { // FIXME
-			node.channelKeys[name] = cc
-		}
-	}
-}
-
 func (node *Node) seenRecently(hdr []byte) bool {
 	shdr := string(hdr)
 	_, aok := node.recentPage1[shdr]

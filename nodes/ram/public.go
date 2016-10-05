@@ -54,11 +54,11 @@ func (node *Node) Dropoff(bundle api.Bundle) error {
 			crypt = node.contentKey
 		} else { // channel message
 			channelName = string(msg[2 : 2+channelLen])
-			var ok bool
-			crypt, ok = node.channelKeys[channelName]
+			cc, ok := node.channels[channelName]
 			if !ok { // we are not listening to this channel
 				checkMessageForMe = false
 			}
+			crypt = cc.Privkey
 		}
 		msg = msg[2+channelLen:] //skip over the channel name
 		forward := true

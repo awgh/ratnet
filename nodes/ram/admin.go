@@ -96,7 +96,6 @@ func (node *Node) AddChannel(name string, privkey string) error {
 	c.Pubkey = pk.GetPubKey().ToB64()
 	c.Privkey = pk
 	node.channels[name] = c
-	node.refreshChannels()
 	return nil
 }
 
@@ -241,11 +240,11 @@ func (node *Node) SendChannel(channelName string, data []byte, pubkey ...bc.PubK
 	if len(pubkey) > 0 { // third argument is optional PubKey override
 		destkey = pubkey[0]
 	} else {
-		key, ok := node.channelKeys[channelName]
+		c, ok := node.channels[channelName]
 		if !ok {
 			return errors.New("No public key for Channel")
 		}
-		destkey = key.GetPubKey()
+		destkey = c.Privkey.GetPubKey()
 	}
 
 	// prepend a uint16 of channel name length, little-endian

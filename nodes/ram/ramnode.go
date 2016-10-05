@@ -13,21 +13,10 @@ type outboxMsg struct {
 	timeStamp int64
 }
 
-type peer struct {
-	uri     string
-	enabled bool
-}
-
-type profile struct {
-	privKey string
-	enabled bool
-}
-
 // Node : defines an instance of the API with a ql-DB backed Node
 type Node struct {
-	contentKey  bc.KeyPair
-	routingKey  bc.KeyPair
-	channelKeys map[string]bc.KeyPair
+	contentKey bc.KeyPair
+	routingKey bc.KeyPair
 
 	recentPageIdx int
 	recentPage1   map[string]byte
@@ -59,9 +48,6 @@ func New(contentKey, routingKey bc.KeyPair) *Node {
 	// init page maps
 	node.recentPage1 = make(map[string]byte)
 	node.recentPage2 = make(map[string]byte)
-
-	// init channel key map
-	node.channelKeys = make(map[string]bc.KeyPair)
 
 	// init assorted other
 	node.channels = make(map[string]*api.ChannelPriv)
