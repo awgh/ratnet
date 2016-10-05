@@ -40,6 +40,7 @@ func Import(node api.Node, jsonConfig []byte, crypto bc.KeyPair) error {
 		}
 	}
 	for i := 0; i < len(nj.Profiles); i++ {
+/*
 		cp := new(api.ProfilePriv)
 		cp.Privkey = crypto.Clone()
 		if err := cp.Privkey.FromB64(nj.Profiles[i].Privkey); err != nil {
@@ -48,9 +49,10 @@ func Import(node api.Node, jsonConfig []byte, crypto bc.KeyPair) error {
 		cp.Enabled = nj.Profiles[i].Enabled
 		cp.Name = nj.Profiles[i].Name
 
-		if err := node.AddProfile(cp); err != nil {
+		if err := node.AddProfile(); err != nil {
 			return err
 		}
+		*/
 	}
 	return nil
 }
