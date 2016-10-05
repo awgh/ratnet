@@ -1,9 +1,10 @@
 
 
 # Related Projects
-[Bencrypt, crypto abstraction layer & utils](https://github.com/awgh/bencrypt)
-[Ratnet, onion-routed messaging system with pluggable transports](https://github.com/awgh/ratnet)
-[HushCom, simple IRC-like client & server](https://github.com/awgh/hushcom)
+
+- [Bencrypt, crypto abstraction layer & utils](https://github.com/awgh/bencrypt)
+- [Ratnet, onion-routed messaging system with pluggable transports](https://github.com/awgh/ratnet)
+- [HushCom, simple IRC-like client & server](https://github.com/awgh/hushcom)
 
 # Documentation
 
