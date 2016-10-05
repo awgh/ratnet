@@ -8,7 +8,8 @@
 
 # Documentation
 
-API Docs are available here: https://godoc.org/github.com/awgh/ratnet/api
+- Overview Slide Deck from Toorcamp 2016 here: https://github.com/awgh/ratnet/blob/master/docs/RatNet-Toorcamp16-v1.pdf
+- API Docs are available here: https://godoc.org/github.com/awgh/ratnet/api
 
 
 #Authors and Contributors
