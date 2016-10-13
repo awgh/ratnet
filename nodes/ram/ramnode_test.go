@@ -1,86 +1,79 @@
-package ratnet
+package ram
 
 import (
-	"github.com/awgh/bencrypt"
-	"database/sql"
+	"bytes"
+	"log"
+	"os"
 	"testing"
 
-	_ "github.com/cznic/ql/driver"
+	"github.com/awgh/bencrypt/ecc"
+	"github.com/awgh/ratnet/api"
 )
 
 var (
-	dbinit = false
-	db     func() *sql.DB
+	node *Node
 )
 
-func Test_apicall_ID_1(t *testing.T) {
-	if !dbinit {
-		db = BootstrapDB("ratnet_test.ql")
-		dbinit = true
+func Test_init(t *testing.T) {
+	node = New(new(ecc.KeyPair), new(ecc.KeyPair))
+	os.Mkdir("tmp", os.FileMode(int(0755)))
+	node.FlushOutbox(0)
+	if err := node.routingKey.FromB64(pubprivkeyb64Ecc); err != nil {
+		log.Fatal(err)
 	}
-	var err error
-	if bencrypt.ECC_MODE {
-		err = routingCrypt.B64toPrivateKey(pubprivkeyb64_ecc)
-	} else {
-		err = routingCrypt.B64toPrivateKey(privkeyb64)
+	if err := node.Start(); err != nil {
+		log.Fatal(err)
 	}
-	if err != nil {
-		t.Error(err.Error())
-	}
+}
 
-	var a ApiCall
-	a.Action = "ID"
-	result, err := Api(&a, db, false)
+func Test_apicall_ID_1(t *testing.T) {
+	result, err := node.ID()
 	if err != nil {
 		t.Error(err.Error())
-	}
-	if len(result) < 3 {
-		t.Error("Incorrect Result - API CALL ID Failed")
 	}
 	t.Log("API ID RESULT: ", result)
 }
 
-func Test_apicall_AddDest_1(t *testing.T) {
-	if !dbinit {
-		db = BootstrapDB("ratnet_test.ql")
-		dbinit = true
-	}
+func Test_apicall_AddContact_1(t *testing.T) {
 	var p1 string
-	if bencrypt.ECC_MODE {
-		p1 = pubkeyb64_ecc
-	} else {
-		p1 = pubkeyb64
-	}
-
-	var a ApiCall
-	a.Action = "AddDest"
-	a.Args = []string{"destname1", p1} //todo: add more keys
-	result, err := Api(&a, db, true)
-	if err != nil {
+	p1 = pubkeyb64Ecc
+	if err := node.AddContact("destname1", p1); err != nil {
 		t.Error(err.Error())
 	}
-	t.Log("API AddDest RESULT: ", result)
+	t.Log("API AddContact RESULT: OK")
 }
 
 func Test_apicall_Send_1(t *testing.T) {
-	if !dbinit {
-		db = BootstrapDB("ratnet_test.ql")
-		dbinit = true
-	}
-	var a ApiCall
-	a.Action = "Send"
-	a.Args = []string{"destname1", pubkeyb64} //using key as message
-	result, err := Api(&a, db, true)
+	err := node.Send("destname1", []byte(pubkeyb64))
 	if err != nil {
 		t.Error(err.Error())
 	}
-	t.Log("API Send RESULT: ", result)
+	t.Log("API Send RESULT: OK")
+}
 
-	result, err = Api(&a, db, true)
+func Test_apicall_Pickup_1(t *testing.T) {
+	rpk, err := node.ID()
 	if err != nil {
 		t.Error(err.Error())
 	}
-	t.Log("API Send RESULT: ", result)
+	_, err = node.Pickup(rpk, 0)
+	if err != nil {
+		t.Error(err.Error())
+	}
+	t.Log("API Pickup RESULT: OK")
+}
+
+func Test_apicall_Channels_1(t *testing.T) {
+	message := api.Msg{Name: "destname1", IsChan: false}
+	message.Content = bytes.NewBufferString(testMessage1)
+	node.In() <- message
+
+	t.Log("API Channel TX: ")
+	t.Log(message)
+}
+
+func Test_stop(t *testing.T) {
+	node.Stop()
 }
 
 //func Benchmark_TheAddIntsFunction(b *testing.B) {
@@ -425,6 +418,6 @@ var privkey3b64 = "LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQpNSUlKS2dJQkFBS0NBZ
 	"Ci0tLS0tRU5EIFJTQSBQUklWQVRFIEtFWS0tLS0tCg=="
 
 // ECC TEST KEYS
-var pubprivkeyb64_ecc = "Tcksa18txiwMEocq7NXdeMwz6PPBD+nxCjb/WCtxq1+dln3M3IaOmg+YfTIbBpk+jIbZZZiT+4CoeFzaJGEWmg=="
-var pubkeyb64_ecc = "Tcksa18txiwMEocq7NXdeMwz6PPBD+nxCjb/WCtxq18="
-var privkeyb64_ecc = "nZZ9zNyGjpoPmH0yGwaZPoyG2WWYk/uAqHhc2iRhFpo="
+var pubprivkeyb64Ecc = "Tcksa18txiwMEocq7NXdeMwz6PPBD+nxCjb/WCtxq1+dln3M3IaOmg+YfTIbBpk+jIbZZZiT+4CoeFzaJGEWmg=="
+var pubkeyb64Ecc = "Tcksa18txiwMEocq7NXdeMwz6PPBD+nxCjb/WCtxq18="
+var privkeyb64Ecc = "nZZ9zNyGjpoPmH0yGwaZPoyG2WWYk/uAqHhc2iRhFpo="
