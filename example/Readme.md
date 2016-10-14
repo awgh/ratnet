@@ -38,11 +38,10 @@ Bob then adds Alice as a contact.
 addcontact Alice ZSU6j+N/nInUuQTVMFOLW6TZgreGPEfyq96ZwK/EskU=
 ```
 now Bob can send Alice messages using her content key.
+```
 --- Bob's screen ---
-```
 send Alice this is a test message
-```
+
 --- Alice's screen ---
-```
 [content] this is a test
 ```
