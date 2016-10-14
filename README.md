@@ -36,7 +36,7 @@ The [hushcom client application](https://github.com/awgh/hushcom/blob/master/hus
 
 The [hushcomd server application](https://github.com/awgh/hushcom/blob/master/hushcom/main.go) is a good reference for how to set up a server using the Server connection policy.
 
-There is also a standalone example application specificly designed to showcase the relationship bewteen common usecases and the Ratnet API [here](https://github.com/awgh/ratnet/example).
+There is also a standalone example application specificly designed to showcase the relationship bewteen common usecases and the Ratnet API [here](https://github.com/awgh/ratnet/tree/master/example).
 
 ## Making a Node
 
