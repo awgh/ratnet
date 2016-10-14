@@ -26,6 +26,8 @@ type Node struct {
 	firstRun  bool
 	isRunning bool
 
+	debugMode bool
+
 	// external data members
 	in  chan api.Msg
 	out chan api.Msg
@@ -98,4 +100,16 @@ func (node *Node) Out() chan api.Msg {
 // Err : Returns the In channel of this node
 func (node *Node) Err() chan api.Msg {
 	return node.err
+}
+
+// Debug
+
+// GetDebug : Returns the debug mode status of this node
+func (node *Node) GetDebug() bool {
+	return node.debugMode
+}
+
+// SetDebug : Sets the debug mode status of this node
+func (node *Node) SetDebug(mode bool) {
+	node.debugMode = mode
 }

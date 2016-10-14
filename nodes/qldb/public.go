@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"strconv"
 	"time"
@@ -21,6 +22,7 @@ func (node *Node) ID() (bc.PubKey, error) {
 
 // Dropoff : Deliver a batch of  messages to a remote node
 func (node *Node) Dropoff(bundle api.Bundle) error {
+	node.debugMsg("Dropoff called")
 	c := node.db()
 	if len(bundle.Data) < 1 { // todo: correct min length
 		return errors.New("Dropoff called with no data.")
@@ -93,9 +95,9 @@ func (node *Node) Dropoff(bundle api.Bundle) error {
 
 				select {
 				case node.Out() <- clearMsg:
-					//fmt.Println("sent message", msg)
+					node.debugMsg("Sent message " + fmt.Sprint(msg))
 				default:
-					//fmt.Println("no message sent")
+					node.debugMsg("No message sent")
 				}
 			}
 		}
@@ -114,7 +116,7 @@ func (node *Node) Dropoff(bundle api.Bundle) error {
 			}
 		}
 	}
-	//log.Println("Dropoff returned")
+	node.debugMsg("Dropoff returned")
 	return nil
 }
 
@@ -134,6 +136,7 @@ for _, profile := range profiles {
 
 // Pickup : Get messages from a remote node
 func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, channelNames ...string) (api.Bundle, error) {
+	node.debugMsg("Pickup called")
 	c := node.db()
 	var retval api.Bundle
 	wildcard := false
@@ -185,17 +188,6 @@ func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, channelNames ...string)
 		retval.Data = cipher
 		return retval, err
 	}
+	node.debugMsg("Pickup returned")
 	return retval, nil
 }
-
-/*  todo : removed this, channelNames should be []bytes here ultimately - human-readability is up to the app
-else {
-	for i := 0; i < len(channelNames); i++ {
-		for _, char := range channelNames[i] {
-			if strings.Index("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0987654321", string(char)) == -1 {
-				return nil, errors.New("Invalid characters in channel name!")
-			}
-		}
-	}
-}
-*/
