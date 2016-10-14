@@ -30,6 +30,8 @@ type Node struct {
 	firstRun  bool
 	isRunning bool
 
+	debugMode bool
+
 	// external data members
 	in  chan api.Msg
 	out chan api.Msg
@@ -100,50 +102,54 @@ func (node *Node) BootstrapDB(database string) func() *sql.DB {
 	defer c.Close()
 
 	transactExec(c, `
-		CREATE TABLE IF NOT EXISTS contacts ( 			
-            name    string          NOT NULL,                                    
-            cpubkey string          NOT NULL 
-        );		
+		CREATE TABLE IF NOT EXISTS contacts (
+			name	string	NOT NULL,
+			cpubkey	string	NOT NULL
+		);		
 	`)
 	//CREATE UNIQUE INDEX IF NOT EXISTS contactid ON contacts (id());
 
 	transactExec(c, `
 		CREATE TABLE IF NOT EXISTS channels ( 			
-            name    string          NOT NULL,                                    
-            privkey string          NOT NULL 
-        );
+			name	string	NOT NULL,
+			privkey	string	NOT NULL
+		);
 	`)
 
 	transactExec(c, `
 		CREATE TABLE IF NOT EXISTS config ( 
-            name    string          NOT NULL,            
-            value   string          NOT NULL 
-        );`)
+			name	string	NOT NULL,
+			value	string	NOT NULL
+		);
+	`)
 
 	/*  timestamp field must stay int64 and not time type,
 	due to a unknown bug only on android/arm in cznic/ql via sql driver
 	*/
 	transactExec(c, `
-		CREATE TABLE IF NOT EXISTS outbox (		    	    
-			channel		string			DEFAULT "",  
-		    msg         string          NOT NULL,
-		    timestamp   int64           NOT NULL
-		);`)
+		CREATE TABLE IF NOT EXISTS outbox (
+			channel		string	DEFAULT "",
+			msg			string	NOT NULL,
+			timestamp	int64	NOT NULL
+		);
+	`)
 
 	transactExec(c, `
-		CREATE TABLE IF NOT EXISTS peers (		    	    
-			name		string			NOT NULL,  
-		    uri         string          NOT NULL,
-		    enabled		bool			NOT NULL,
-		    pubkey		string			DEFAULT NULL
-		);`)
+		CREATE TABLE IF NOT EXISTS peers (
+			name	string	NOT NULL,  
+			uri		string	NOT NULL,
+			enabled	bool	NOT NULL,
+			pubkey	string	DEFAULT NULL
+		);
+	`)
 
 	transactExec(c, `
-		CREATE TABLE IF NOT EXISTS profiles (		    	    
-            name    string          NOT NULL,                                    
-            privkey string          NOT NULL,
-            enabled bool          NOT NULL
-		);`)
+		CREATE TABLE IF NOT EXISTS profiles (
+			name	string	NOT NULL,
+			privkey	string	NOT NULL,
+			enabled	bool	NOT NULL
+		);
+	`)
 
 	var n, s string
 
@@ -182,6 +188,7 @@ func (node *Node) BootstrapDB(database string) func() *sql.DB {
 }
 
 // Channels
+
 // In : Returns the In channel of this node
 func (node *Node) In() chan api.Msg {
 	return node.in
@@ -195,4 +202,16 @@ func (node *Node) Out() chan api.Msg {
 // Err : Returns the In channel of this node
 func (node *Node) Err() chan api.Msg {
 	return node.err
+}
+
+// Debug
+
+// GetDebug : Returns the debug mode status of this node
+func (node *Node) GetDebug() bool {
+	return node.debugMode
+}
+
+// SetDebug : Sets the debug mode status of this node
+func (node *Node) SetDebug(mode bool) {
+	node.debugMode = mode
 }

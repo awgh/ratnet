@@ -2,6 +2,7 @@ package qldb
 
 import (
 	"database/sql"
+	"log"
 	"os"
 	"os/signal"
 )
@@ -86,4 +87,10 @@ func (node *Node) signalMonitor() {
 			}
 		}
 	}()
+}
+
+func (node *Node) debugMsg(msg string) {
+	if node.debugMode {
+		log.Println("[DEBUG] => " + msg)
+	}
 }

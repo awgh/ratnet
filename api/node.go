@@ -97,7 +97,9 @@ type Node interface {
 	// Err : Returns the In channel of this node
 	Err() chan Msg
 
-	//
+	// Debug
+	GetDebug() bool
+	SetDebug(mode bool)
 }
 
 // Contact : object that describes a contact (named public key)
