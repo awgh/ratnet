@@ -21,12 +21,8 @@ type Node struct {
 	routingKey  bc.KeyPair
 	channelKeys map[string]bc.KeyPair
 
-	recentPageIdx int
-	recentPage1   map[string]byte
-	recentPage2   map[string]byte
-
 	policies  []api.Policy
-    router api.Router
+	router    api.Router
 	db        func() *sql.DB
 	firstRun  bool
 	isRunning bool
@@ -44,10 +40,6 @@ func New(contentKey, routingKey bc.KeyPair) *Node {
 	// create node
 	node := new(Node)
 
-	// init page maps
-	node.recentPage1 = make(map[string]byte)
-	node.recentPage2 = make(map[string]byte)
-
 	// init channel key map
 	node.channelKeys = make(map[string]bc.KeyPair)
 
@@ -61,7 +53,7 @@ func New(contentKey, routingKey bc.KeyPair) *Node {
 	node.err = make(chan api.Msg)
 
 	// setup default router
-	node.router = new(api.DefaultRouter)
+	node.router = api.NewDefaultRouter()
 
 	return node
 }

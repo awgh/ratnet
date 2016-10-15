@@ -1,13 +1,9 @@
 package ram
 
 import (
-	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"log"
-	"time"
 
 	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/ratnet/api"
@@ -40,75 +36,7 @@ func (node *Node) Dropoff(bundle api.Bundle) error {
 		if err != nil {
 			continue
 		}
-		checkMessageForMe := true
-
-		var channelLen uint16 // beginning uint16 of message is channel name length
-		channelLen = (uint16(msg[0]) << 8) | uint16(msg[1])
-
-		if len(msg) < int(channelLen)+2+16+16 { // uint16 + nonce + hash //todo
-			log.Println("Incorrect channel name length")
-			continue
-		}
-		var crypt bc.KeyPair
-		channelName := ""
-		if channelLen == 0 { // private message (zero length channel)
-			crypt = node.contentKey
-		} else { // channel message
-			channelName = string(msg[2 : 2+channelLen])
-			cc, ok := node.channels[channelName]
-			if !ok { // we are not listening to this channel
-				checkMessageForMe = false
-			}
-			crypt = cc.Privkey
-		}
-		msg = msg[2+channelLen:] //skip over the channel name
-		forward := true
-
-		if node.seenRecently(msg[:16]) { // LOOP PREVENTION before handling or forwarding
-			forward = false
-			checkMessageForMe = false
-		}
-		if checkMessageForMe { // check to see if this is a msg for me
-			pubkey := crypt.GetPubKey()
-			hash, err := bc.DestHash(pubkey, msg[:16])
-			if err != nil {
-				continue
-			}
-			if bytes.Equal(hash, msg[16:16+len(hash)]) {
-				if channelLen == 0 {
-					forward = false
-				}
-				clear, err := crypt.DecryptMessage(msg[16+len(hash):])
-				if err != nil {
-					continue
-				}
-				var clearMsg api.Msg // write msg to out channel
-				if channelLen == 0 {
-					clearMsg = api.Msg{Name: "[content]", IsChan: false}
-				} else {
-					clearMsg = api.Msg{Name: channelName, IsChan: true}
-				}
-				clearMsg.Content = bytes.NewBuffer(clear)
-
-				select {
-				case node.Out() <- clearMsg:
-					node.debugMsg("sent message " + fmt.Sprint(msg))
-				default:
-					node.debugMsg("no message sent")
-				}
-			}
-		}
-		if forward {
-			for _, mail := range node.outbox {
-				if mail.channel == channelName && mail.msg == lines[i] {
-					m := new(outboxMsg)
-					m.channel = channelName
-					m.timeStamp = time.Now().UnixNano()
-					m.msg = lines[i]
-					node.outbox = append(node.outbox, m)
-				}
-			}
-		}
+		node.router.Route(node, msg)
 	}
 	node.debugMsg("Dropoff returned")
 	return nil
