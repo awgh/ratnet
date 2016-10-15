@@ -26,6 +26,7 @@ type Node struct {
 	recentPage2   map[string]byte
 
 	policies  []api.Policy
+    router api.Router
 	db        func() *sql.DB
 	firstRun  bool
 	isRunning bool
@@ -59,12 +60,20 @@ func New(contentKey, routingKey bc.KeyPair) *Node {
 	node.out = make(chan api.Msg)
 	node.err = make(chan api.Msg)
 
+	// setup default router
+	node.router = new(api.DefaultRouter)
+
 	return node
 }
 
 // SetPolicy : set the array of Policy objects for this Node
 func (node *Node) SetPolicy(policies ...api.Policy) {
 	node.policies = policies
+}
+
+// SetRouter : set the Router object for this Node
+func (node *Node) SetRouter(router api.Router) {
+	node.router = router
 }
 
 // FlushOutbox : Deletes outbound messages older than maxAgeSeconds seconds

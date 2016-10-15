@@ -9,6 +9,7 @@ type Node interface {
 	Start() error
 	Stop()
 	SetPolicy(policies ...Policy)
+	SetRouter(router Router)
 	GetChannelPrivKey(name string) (string, error)
 
 	// FlushOutbox : Empties the outbox of messages older than maxAgeSeconds
