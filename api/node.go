@@ -9,6 +9,7 @@ type Node interface {
 	Start() error
 	Stop()
 	SetPolicy(policies ...Policy)
+	SetRouter(router Router)
 	GetChannelPrivKey(name string) (string, error)
 
 	// FlushOutbox : Empties the outbox of messages older than maxAgeSeconds
@@ -97,7 +98,9 @@ type Node interface {
 	// Err : Returns the In channel of this node
 	Err() chan Msg
 
-	//
+	// Debug
+	GetDebug() bool
+	SetDebug(mode bool)
 }
 
 // Contact : object that describes a contact (named public key)

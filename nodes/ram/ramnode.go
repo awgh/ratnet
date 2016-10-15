@@ -23,8 +23,11 @@ type Node struct {
 	recentPage2   map[string]byte
 
 	policies  []api.Policy
+	router    api.Router
 	firstRun  bool
 	isRunning bool
+
+	debugMode bool
 
 	// external data members
 	in  chan api.Msg
@@ -65,12 +68,20 @@ func New(contentKey, routingKey bc.KeyPair) *Node {
 	node.out = make(chan api.Msg)
 	node.err = make(chan api.Msg)
 
+	// setup default router
+	node.router = new(api.DefaultRouter)
+
 	return node
 }
 
 // SetPolicy : set the array of Policy objects for this Node
 func (node *Node) SetPolicy(policies ...api.Policy) {
 	node.policies = policies
+}
+
+// SetRouter : set the Router object for this Node
+func (node *Node) SetRouter(router api.Router) {
+	node.router = router
 }
 
 // FlushOutbox : Deletes outbound messages older than maxAgeSeconds seconds
@@ -98,4 +109,16 @@ func (node *Node) Out() chan api.Msg {
 // Err : Returns the In channel of this node
 func (node *Node) Err() chan api.Msg {
 	return node.err
+}
+
+// Debug
+
+// GetDebug : Returns the debug mode status of this node
+func (node *Node) GetDebug() bool {
+	return node.debugMode
+}
+
+// SetDebug : Sets the debug mode status of this node
+func (node *Node) SetDebug(mode bool) {
+	node.debugMode = mode
 }

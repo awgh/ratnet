@@ -62,7 +62,6 @@ func (p *Poll) RunPolicy() error {
 			for _, element := range peers {
 				if element.Enabled {
 					_, err := p.pollServer(p.transport, p.node, element.URI, pubsrv)
-
 					if err != nil {
 						log.Println("pollServer error: ", err.Error())
 					}

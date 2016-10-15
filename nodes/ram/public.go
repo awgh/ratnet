@@ -20,6 +20,7 @@ func (node *Node) ID() (bc.PubKey, error) {
 
 // Dropoff : Deliver a batch of  messages to a remote node
 func (node *Node) Dropoff(bundle api.Bundle) error {
+	node.debugMsg("Dropoff called")
 	if len(bundle.Data) < 1 { // todo: correct min length
 		return errors.New("Dropoff called with no data.")
 	}
@@ -91,9 +92,9 @@ func (node *Node) Dropoff(bundle api.Bundle) error {
 
 				select {
 				case node.Out() <- clearMsg:
-					fmt.Println("sent message", msg)
+					node.debugMsg("sent message " + fmt.Sprint(msg))
 				default:
-					fmt.Println("no message sent")
+					node.debugMsg("no message sent")
 				}
 			}
 		}
@@ -109,7 +110,7 @@ func (node *Node) Dropoff(bundle api.Bundle) error {
 			}
 		}
 	}
-	log.Println("Dropoff returned")
+	node.debugMsg("Dropoff returned")
 	return nil
 }
 
@@ -129,18 +130,32 @@ for _, profile := range profiles {
 
 // Pickup : Get messages from a remote node
 func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, channelNames ...string) (api.Bundle, error) {
+	node.debugMsg("Pickup called")
 	var retval api.Bundle
 	var msgs []string
+
+	retval.Time = lastTime
+
 	for _, mail := range node.outbox {
-		if lastTime != 0 {
-			if lastTime < mail.timeStamp {
-				msgs = append(msgs, mail.msg)
+		if lastTime < mail.timeStamp {
+			pickupMsg := false
+			if len(channelNames) > 0 {
+				for _, channelName := range channelNames {
+					if channelName == mail.channel {
+						pickupMsg = true
+					}
+				}
+			} else {
+				pickupMsg = true
 			}
-		} else {
-			msgs = append(msgs, mail.msg)
+			if pickupMsg == true {
+				msgs = append(msgs, mail.msg)
+				retval.Time = mail.timeStamp
+			}
 		}
 	}
-	retval.Time = lastTime
+
+	// transmit
 	if len(msgs) > 0 {
 		j, err := json.Marshal(msgs)
 		if err != nil {
@@ -153,5 +168,6 @@ func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, channelNames ...string)
 		retval.Data = cipher
 		return retval, err
 	}
+	node.debugMsg("Pickup returned")
 	return retval, nil
 }

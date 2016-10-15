@@ -319,6 +319,7 @@ func (node *Node) Start() error {
 
 			// read message off the input channel
 			message := <-node.In()
+			node.debugMsg("Message accepted on input channel")
 			switch message.IsChan {
 			case true:
 				node.SendChannel(message.Name, message.Content.Bytes(), message.PubKey)
