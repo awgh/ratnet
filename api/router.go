@@ -7,19 +7,55 @@ import (
 	"github.com/awgh/bencrypt/bc"
 )
 
+const (
+	// CONTENT key type id
+	CONTENT = iota
+	// PROFILE key type id
+	PROFILE = iota
+	// CHANNEL key type id
+	CHANNEL = iota
+	// KeyTypeCount number of key types
+	KeyTypeCount = iota
+)
+
 // Router : defines an interface for a stateful Routing object
 type Router interface {
 	// Route - TBD
 	Route(node Node, msg []byte) error
+	Patch(fromType int, fromName string, toType int, toName string)
+}
+
+type patch struct {
+	Name string
+	Type int
 }
 
 // DefaultRouter - The Default router makes no changes at all,
 //                 every message is sent out on the same channel it came in on,
 //                 and non-channel messages are consumed but not forwarded
 type DefaultRouter struct {
+	// Internal
 	recentPageIdx int
 	recentPage1   map[string]byte
 	recentPage2   map[string]byte
+
+	plugboard [KeyTypeCount]map[string]*patch
+
+	// Configuration Settings
+
+	// CheckContent - Check if incoming messages are for the contentKey
+	CheckContent bool
+	// CheckChannels - Check if incoming messages are for any of the channel keys
+	CheckChannels bool
+	// CheckProfiles - Check if incoming messages are for any of the profile keys
+	CheckProfiles bool
+
+	// ForwardContent - Should node forward consumed messages that matched contentKey
+	ForwardContent bool
+	// ForwardContent - Should node forward consumed messages that matched a channel key
+	ForwardChannels bool
+	// ForwardProfile - Should node forward consumed messages that matched a profile key
+	ForwardProfiles bool
 }
 
 // NewDefaultRouter - returns a new instance of DefaultRouter
@@ -28,15 +64,21 @@ func NewDefaultRouter() *DefaultRouter {
 	// init page maps
 	r.recentPage1 = make(map[string]byte)
 	r.recentPage2 = make(map[string]byte)
+
 	return r
+}
+
+// Patch - I don't even know
+func (r *DefaultRouter) Patch(fromType int, fromName string, toType int, toName string) {
+	p := new(patch)
+	p.Name = toName
+	p.Type = toType
+	r.plugboard[fromType][fromName] = p
 }
 
 // Route - Router that does default behavior
 func (r *DefaultRouter) Route(node Node, message []byte) error {
 
-	checkMessageForMe := true
-	var pubkey bc.PubKey
-	//
 	var channelLen uint16 // beginning uint16 of message is channel name length
 	channelName := ""
 	channelLen = (uint16(message[0]) << 8) | uint16(message[1])
@@ -47,6 +89,9 @@ func (r *DefaultRouter) Route(node Node, message []byte) error {
 	if err != nil {
 		return err
 	}
+
+	var pubkey bc.PubKey
+	checkMessageForMe := true
 	if channelLen > 0 { // channel message
 		channelName = string(message[2 : 2+channelLen])
 		chn, err := node.GetChannel(channelName)
