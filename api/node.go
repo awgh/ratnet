@@ -95,9 +95,9 @@ type Node interface {
 	// Channels
 	// In : Returns the In channel of this node
 	In() chan Msg
-	// Out : Returns the In channel of this node
+	// Out : Returns the Out channel of this node
 	Out() chan Msg
-	// Err : Returns the In channel of this node
+	// Err : Returns the Err channel of this node
 	Err() chan Msg
 
 	// Debug
