@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"errors"
-	"log"
 	"time"
 
 	"github.com/awgh/bencrypt/bc"
@@ -52,12 +51,12 @@ func (node *Node) AddContact(name string, key string) error {
 		return errors.New("Invalid Public Key in AddContact")
 	}
 	if tx, err := c.Begin(); err != nil {
-		log.Fatal(err.Error())
+		node.errMsg(err, true)
 	} else {
 		_, err = tx.Exec("DELETE FROM contacts WHERE name==$1;", name)
 		_, err = tx.Exec("INSERT INTO contacts VALUES( $1, $2 )", name, key)
 		if err != nil {
-			log.Fatal(err.Error())
+			node.errMsg(err, true)
 		}
 		tx.Commit()
 	}
@@ -214,11 +213,11 @@ func (node *Node) LoadProfile(name string) (bc.PubKey, error) {
 	row.Scan(&pk)
 	profileKey := node.contentKey.Clone()
 	if err := profileKey.FromB64(pk); err != nil {
-		log.Println(err.Error())
+		node.errMsg(err, false)
 		return nil, err
 	}
 	node.contentKey = profileKey
-	log.Println("Profile Loaded: " + profileKey.GetPubKey().ToB64())
+	node.debugMsg("Profile Loaded: " + profileKey.GetPubKey().ToB64())
 	return profileKey.GetPubKey(), nil
 }
 
@@ -260,11 +259,11 @@ func (node *Node) AddPeer(name string, enabled bool, uri string) error {
 	r := transactQueryRow(c, "SELECT name FROM peers WHERE name==$1;", name)
 	var n string
 	if err := r.Scan(&n); err == sql.ErrNoRows {
-		//log.Println("-> New Server")
+		node.debugMsg("New Server")
 		transactExec(c, "INSERT INTO peers (name,uri,enabled) VALUES( $1, $2, $3 );",
 			name, uri, enabled)
 	} else if err == nil {
-		//log.Println("-> Update Server")
+		node.debugMsg("Update Server")
 		transactExec(c, "UPDATE peers SET enabled=$1,uri=$2 WHERE name==$3;",
 			enabled, uri, name)
 	} else {

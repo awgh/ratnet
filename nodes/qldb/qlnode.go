@@ -6,7 +6,7 @@ package qldb
 
 import (
 	"database/sql"
-	"log"
+	"errors"
 	"time"
 
 	"github.com/awgh/bencrypt/bc"
@@ -93,7 +93,7 @@ func (node *Node) BootstrapDB(database string) func() *sql.DB {
 		//log.Println("db: " + database)  //todo: why does this trigger so much?
 		c, err := sql.Open("ql", database)
 		if err != nil {
-			log.Fatal("DB Error Opening: " + database + "\n  " + err.Error())
+			node.errMsg(errors.New("DB Error Opening: "+database+" => "+err.Error()), true)
 		}
 		return c
 	}
@@ -163,11 +163,11 @@ func (node *Node) BootstrapDB(database string) func() *sql.DB {
 		bs := node.contentKey.ToB64()
 		transactExec(c, "INSERT INTO config VALUES( `contentkey`, $1 );", bs)
 	} else if err != nil {
-		log.Fatal(err.Error())
+		node.errMsg(err, true)
 	} else {
 		err = node.contentKey.FromB64(s)
 		if err != nil {
-			log.Fatal(err.Error())
+			node.errMsg(err, true)
 		}
 	}
 	// Routing Key Setup
@@ -177,11 +177,11 @@ func (node *Node) BootstrapDB(database string) func() *sql.DB {
 		bs := node.routingKey.ToB64()
 		transactExec(c, "INSERT INTO config VALUES( `routingkey`, $1 );", bs)
 	} else if err != nil {
-		log.Fatal(err.Error())
+		node.errMsg(err, true)
 	} else {
 		err = node.routingKey.FromB64(s)
 		if err != nil {
-			log.Fatal(err.Error())
+			node.errMsg(err, true)
 		}
 	}
 	node.refreshChannels(c)
@@ -195,12 +195,12 @@ func (node *Node) In() chan api.Msg {
 	return node.in
 }
 
-// Out : Returns the In channel of this node
+// Out : Returns the Out channel of this node
 func (node *Node) Out() chan api.Msg {
 	return node.out
 }
 
-// Err : Returns the In channel of this node
+// Err : Returns the Err channel of this node
 func (node *Node) Err() chan api.Msg {
 	return node.err
 }

@@ -3,7 +3,6 @@ package ram
 import (
 	"encoding/base64"
 	"errors"
-	"log"
 	"time"
 
 	"github.com/awgh/bencrypt/bc"
@@ -164,7 +163,7 @@ func (node *Node) LoadProfile(name string) (bc.PubKey, error) {
 		return nil, errors.New("Profile not found.")
 	}
 	node.contentKey = node.profiles[name].Privkey
-	log.Println("Profile Loaded: " + node.contentKey.GetPubKey().ToB64())
+	node.debugMsg("Profile Loaded: " + node.contentKey.GetPubKey().ToB64())
 	return node.contentKey.GetPubKey(), nil
 }
 
