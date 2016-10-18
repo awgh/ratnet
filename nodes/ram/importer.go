@@ -22,6 +22,7 @@ type importedNode struct {
 	Contacts   []api.Contact
 	Channels   []channelPrivB64
 	Peers      []api.Peer
+	Router     api.Router
 }
 
 // Import : Load a node configuration from a JSON config
@@ -61,6 +62,9 @@ func (node *Node) Import(jsonConfig []byte) error {
 
 		node.profiles[cp.Name] = cp
 	}
+	if nj.Router != nil {
+		node.SetRouter(nj.Router)
+	}
 	return nil
 }
 
@@ -92,6 +96,7 @@ func (node *Node) Export() ([]byte, error) {
 		nj.Profiles[i].Privkey = v.Privkey.ToB64()
 		i++
 	}
+	nj.Router = node.router
 
 	return json.Marshal(nj)
 }

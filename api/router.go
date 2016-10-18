@@ -19,11 +19,12 @@ type Router interface {
 //                 and non-channel messages are consumed but not forwarded
 type DefaultRouter struct {
 	// Internal
+	initialized   bool
 	recentPageIdx int
 	recentPage1   map[string]byte
 	recentPage2   map[string]byte
 
-	patches map[string][]string
+	Patches map[string][]string
 
 	// Configuration Settings
 
@@ -52,34 +53,26 @@ type DefaultRouter struct {
 // NewDefaultRouter - returns a new instance of DefaultRouter
 func NewDefaultRouter() *DefaultRouter {
 	r := new(DefaultRouter)
-	// init page maps
-	r.recentPage1 = make(map[string]byte)
-	r.recentPage2 = make(map[string]byte)
-
-	r.patches = make(map[string][]string)
-
+	r.Patches = make(map[string][]string)
 	r.CheckContent = true
 	r.CheckChannels = true
 	r.CheckProfiles = false
-
 	r.ForwardUnknownContent = true
 	r.ForwardUnknownChannels = true
 	r.ForwardUnknownProfiles = false
-
 	r.ForwardConsumedContent = false
 	r.ForwardConsumedChannels = true
 	r.ForwardConsumedProfiles = false
-
 	return r
 }
 
 // Patch - Redirect messages from one input to different outputs
 func (r *DefaultRouter) Patch(from string, to ...string) {
-	r.patches[from] = to
+	r.Patches[from] = to
 }
 
 func (r *DefaultRouter) forward(node Node, channelName string, message []byte) error {
-	v, ok := r.patches[channelName]
+	v, ok := r.Patches[channelName]
 	if ok {
 		for i := 0; i < len(v); i++ {
 			if err := node.Forward(v[i], message); err != nil {
@@ -200,6 +193,12 @@ func (r *DefaultRouter) Route(node Node, message []byte) error {
 }
 
 func (r *DefaultRouter) seenRecently(hdr []byte) bool {
+	if !r.initialized {
+		// init page maps
+		r.recentPage1 = make(map[string]byte)
+		r.recentPage2 = make(map[string]byte)
+		r.initialized = true
+	}
 	shdr := string(hdr)
 	_, aok := r.recentPage1[shdr]
 	_, bok := r.recentPage2[shdr]
