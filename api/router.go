@@ -7,27 +7,11 @@ import (
 	"github.com/awgh/bencrypt/bc"
 )
 
-const (
-	// CONTENT key type id
-	CONTENT = iota
-	// PROFILE key type id
-	PROFILE = iota
-	// CHANNEL key type id
-	CHANNEL = iota
-	// KeyTypeCount number of key types
-	KeyTypeCount = iota
-)
-
 // Router : defines an interface for a stateful Routing object
 type Router interface {
 	// Route - TBD
 	Route(node Node, msg []byte) error
-	Patch(fromType int, fromName string, toType int, toName string)
-}
-
-type patch struct {
-	Name string
-	Type int
+	Patch(from string, to ...string)
 }
 
 // DefaultRouter - The Default router makes no changes at all,
@@ -39,7 +23,7 @@ type DefaultRouter struct {
 	recentPage1   map[string]byte
 	recentPage2   map[string]byte
 
-	plugboard [KeyTypeCount]map[string]*patch
+	patches map[string][]string
 
 	// Configuration Settings
 
@@ -50,12 +34,19 @@ type DefaultRouter struct {
 	// CheckProfiles - Check if incoming messages are for any of the profile keys
 	CheckProfiles bool
 
-	// ForwardContent - Should node forward consumed messages that matched contentKey
-	ForwardContent bool
-	// ForwardContent - Should node forward consumed messages that matched a channel key
-	ForwardChannels bool
-	// ForwardProfile - Should node forward consumed messages that matched a profile key
-	ForwardProfiles bool
+	// ForwardConsumedContent - Should node forward consumed messages that matched contentKey
+	ForwardConsumedContent bool
+	// ForwardConsumedContent - Should node forward consumed messages that matched a channel key
+	ForwardConsumedChannels bool
+	// ForwardConsumedProfile - Should node forward consumed messages that matched a profile key
+	ForwardConsumedProfiles bool
+
+	// ForwardUnknownContent - Should node forward non-consumed messages that matched contentKey
+	ForwardUnknownContent bool
+	// ForwardUnknownContent - Should node forward non-consumed messages that matched a channel key
+	ForwardUnknownChannels bool
+	// ForwardUnknownProfile - Should node forward non-consumed messages that matched a profile key
+	ForwardUnknownProfiles bool
 }
 
 // NewDefaultRouter - returns a new instance of DefaultRouter
@@ -65,70 +56,145 @@ func NewDefaultRouter() *DefaultRouter {
 	r.recentPage1 = make(map[string]byte)
 	r.recentPage2 = make(map[string]byte)
 
+	r.patches = make(map[string][]string)
+
+	r.CheckContent = true
+	r.CheckChannels = true
+	r.CheckProfiles = false
+
+	r.ForwardUnknownContent = true
+	r.ForwardUnknownChannels = true
+	r.ForwardUnknownProfiles = false
+
+	r.ForwardConsumedContent = false
+	r.ForwardConsumedChannels = true
+	r.ForwardConsumedProfiles = false
+
 	return r
 }
 
-// Patch - I don't even know
-func (r *DefaultRouter) Patch(fromType int, fromName string, toType int, toName string) {
-	p := new(patch)
-	p.Name = toName
-	p.Type = toType
-	r.plugboard[fromType][fromName] = p
+// Patch - Redirect messages from one input to different outputs
+func (r *DefaultRouter) Patch(from string, to ...string) {
+	r.patches[from] = to
+}
+
+func (r *DefaultRouter) forward(node Node, channelName string, message []byte) error {
+	v, ok := r.patches[channelName]
+	if ok {
+		for i := 0; i < len(v); i++ {
+			if err := node.Forward(v[i], message); err != nil {
+				return err
+			}
+		}
+	} else {
+		if err := node.Forward(channelName, message); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *DefaultRouter) check(node Node, pubkey bc.PubKey, channelName string, idx uint16, nonce []byte, message []byte) (bool, error) {
+	hash, err := bc.DestHash(pubkey, nonce)
+	if err != nil {
+		return false, err
+	}
+	hashLen := uint16(len(hash))
+	nonceHash := message[idx+16 : idx+16+hashLen]
+	if bytes.Equal(hash, nonceHash) { // named channel key match
+		if err := node.Handle(channelName, message[idx+16+hashLen:]); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+	return false, nil
 }
 
 // Route - Router that does default behavior
 func (r *DefaultRouter) Route(node Node, message []byte) error {
 
+	//  Stuff Everything will need just about every time...
+	//
 	var channelLen uint16 // beginning uint16 of message is channel name length
 	channelName := ""
 	channelLen = (uint16(message[0]) << 8) | uint16(message[1])
 	if len(message) < int(channelLen)+2+16+16 { // uint16 + nonce + hash //todo
 		return errors.New("Incorrect channel name length")
 	}
-	cid, err := node.CID()
+	idx := 2 + channelLen //skip over the channel name
+	nonce := message[idx : idx+16]
+	if r.seenRecently(nonce) { // LOOP PREVENTION before handling or forwarding
+		return nil
+	}
+
+	cid, err := node.CID() // we need this for cloning
 	if err != nil {
 		return err
 	}
+	//
 
-	var pubkey bc.PubKey
-	checkMessageForMe := true
+	// When the channel tag is set...
 	if channelLen > 0 { // channel message
 		channelName = string(message[2 : 2+channelLen])
-		chn, err := node.GetChannel(channelName)
-		if err != nil {
-			checkMessageForMe = false
-		} else {
-			pubkey = cid.Clone()
-			pubkey.FromB64(chn.Pubkey)
+		consumed := false
+		if r.CheckChannels {
+			chn, err := node.GetChannel(channelName)
+			if err == nil { // this is a channel key we know
+				pubkey := cid.Clone()
+				pubkey.FromB64(chn.Pubkey)
+				consumed, err = r.check(node, pubkey, channelName, idx, nonce, message)
+				if err != nil {
+					return err
+				}
+			}
+		}
+		if (!consumed && r.ForwardUnknownChannels) || (consumed && r.ForwardConsumedChannels) {
+			if err := r.forward(node, channelName, message); err != nil {
+				return err
+			}
 		}
 	} else { // private message (zero length channel)
-		pubkey = cid
-	}
-
-	idx := 2 + channelLen //skip over the channel name
-	forward := true
-
-	nonce := message[idx : idx+16]
-	if r.seenRecently(nonce) { // LOOP PREVENTION before handling or forwarding
-		forward = false
-		checkMessageForMe = false
-	}
-	if checkMessageForMe { // check to see if this is a msg for me
-		hash, err := bc.DestHash(pubkey, nonce)
-		if err != nil {
-			return err
-		}
-		hashLen := uint16(len(hash))
-		nonceHash := message[idx+16 : idx+16+hashLen]
-		if bytes.Equal(hash, nonceHash) {
-			if channelLen == 0 {
-				forward = false
+		// content key case (to be removed, deprecated)
+		consumed := false
+		if r.CheckContent {
+			consumed, err = r.check(node, cid, channelName, idx, nonce, message)
+			if err != nil {
+				return err
 			}
-			node.Handle(channelName, message[idx+16+hashLen:])
 		}
-	}
-	if forward {
-		return node.Forward(channelName, message)
+		if (!consumed && r.ForwardUnknownContent) || (consumed && r.ForwardConsumedContent) {
+			if err := r.forward(node, channelName, message); err != nil {
+				return err
+			}
+		}
+
+		// profile keys case
+		consumed = false
+		if r.CheckProfiles {
+			profiles, err := node.GetProfiles()
+			if err != nil {
+				return err
+			}
+			for _, profile := range profiles {
+				if !profile.Enabled {
+					continue
+				}
+				pubkey := cid.Clone()
+				pubkey.FromB64(profile.Pubkey)
+				consumed, err = r.check(node, pubkey, channelName, idx, nonce, message)
+				if err != nil {
+					return err
+				}
+				if consumed {
+					break
+				}
+			}
+		}
+		if (!consumed && r.ForwardUnknownProfiles) || (consumed && r.ForwardConsumedProfiles) {
+			if err := r.forward(node, channelName, message); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
