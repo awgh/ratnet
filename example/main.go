@@ -10,6 +10,7 @@ import (
 
 	"bufio"
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -31,7 +32,7 @@ func init() {
 func main() {
 	// check arguments
 	if len(os.Args) < 3 {
-		fmt.Println("Usage: " + os.Args[0] + " <port> <ram|ql>")
+		fmt.Println("Usage: " + os.Args[0] + " <[address]:port> <ram|ql> [debug]")
 		os.Exit(0)
 	}
 
@@ -47,6 +48,48 @@ func main() {
 		RATNET.(*qldb.Node).BootstrapDB(os.Args[0] + ".ql")
 		defer os.Remove(os.Args[0] + ".ql")
 		RATNET.(*qldb.Node).FlushOutbox(0)
+	}
+
+	/*
+		- start the error server if appropiate
+		(this loop will read from the node's err channel and replay it's contents over a TCP/IP connection)
+		(a description of the message format is below):
+		type ratnet/api.message struct {
+			Name:		the error type (ERROR or DEBUG)
+			Content:	the error data itself
+			IsChan:		bool value that dictates whether or not this message is "fatal"
+			PubKey:		[TODO]
+		}
+	*/
+	if len(os.Args) > 3 {
+		if strings.Contains(os.Args[3], "debug") {
+			errListner, err := net.Listen("tcp", "localhost:9990")
+			if err != nil {
+				fmt.Println(err.Error())
+				os.Exit(1)
+			}
+			connection, err := errListner.Accept()
+			if err != nil {
+				fmt.Println(err.Error())
+			}
+			RATNET.SetDebug(true)
+			go func() {
+				for {
+					// write the error content to the connected socket
+					msg := <-RATNET.Err()
+					_, err := connection.Write([]byte(msg.Content.String() + "\n"))
+					if err != nil {
+						fmt.Println(err.Error())
+						os.Exit(1)
+					}
+
+					// if the error is a fatal error, exit the application
+					if msg.IsChan {
+						os.Exit(1)
+					}
+				}
+			}()
+		}
 	}
 
 	/*

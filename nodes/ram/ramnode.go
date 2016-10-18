@@ -93,12 +93,12 @@ func (node *Node) In() chan api.Msg {
 	return node.in
 }
 
-// Out : Returns the In channel of this node
+// Out : Returns the Out channel of this node
 func (node *Node) Out() chan api.Msg {
 	return node.out
 }
 
-// Err : Returns the In channel of this node
+// Err : Returns the Err channel of this node
 func (node *Node) Err() chan api.Msg {
 	return node.err
 }
