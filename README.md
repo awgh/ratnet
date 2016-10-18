@@ -28,7 +28,11 @@ In real-world usage, you're very likely to want to implement your own version of
 
 # Examples
 
-## Fully Working Demo App
+## RatNet Shell Example
+
+There is a standalone example application specifically designed to showcase the relationship between common use-cases and the Ratnet API available [here](https://github.com/awgh/ratnet/tree/master/example).
+
+## Fully Working IRC-like Demo 
 
 [Hushcom](https://github.com/awgh/hushcom) is a fully working demo app that implements IRC-like chat functionality with a client and a server.
 
@@ -36,7 +40,6 @@ The [hushcom client application](https://github.com/awgh/hushcom/blob/master/hus
 
 The [hushcomd server application](https://github.com/awgh/hushcom/blob/master/hushcom/main.go) is a good reference for how to set up a server using the Server connection policy.
 
-There is also a standalone example application specificly designed to showcase the relationship bewteen common usecases and the Ratnet API [here](https://github.com/awgh/ratnet/tree/master/example).
 
 ## Making a Node
 
@@ -53,7 +56,7 @@ Or, make a RAM-Only Node, which won't write anything to the disk:
 	node := ram.New(new(ecc.KeyPair), new(ecc.KeyPair))
 ```
 
-The KeyPairs passed in as arguments are just used to determine which cryptosystem should be used for the Onion-Routing (first argument) and for the Content Encryption (second argument).  
+The KeyPairs passed in as arguments are just used to determine which cryptosystem should be used for the Onion-Routing (first argument) and for the Content Encryption (second argument).  There is no requirement that the routing encryption be the same as the content encryption.  It's easy to use RSA for content and ECC for routing, for example, just change the second argument above to rsa.KeyPair. 
 
 ## Setup Transports and Policies 
 

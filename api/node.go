@@ -9,7 +9,10 @@ type Node interface {
 	Start() error
 	Stop()
 	SetPolicy(policies ...Policy)
+	SetRouter(router Router)
 	GetChannelPrivKey(name string) (string, error)
+	Handle(channelName string, message []byte) error
+	Forward(channelName string, message []byte) error
 
 	// FlushOutbox : Empties the outbox of messages older than maxAgeSeconds
 	FlushOutbox(maxAgeSeconds int64)
@@ -92,9 +95,9 @@ type Node interface {
 	// Channels
 	// In : Returns the In channel of this node
 	In() chan Msg
-	// Out : Returns the In channel of this node
+	// Out : Returns the Out channel of this node
 	Out() chan Msg
-	// Err : Returns the In channel of this node
+	// Err : Returns the Err channel of this node
 	Err() chan Msg
 
 	// Debug

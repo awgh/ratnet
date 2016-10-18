@@ -1,10 +1,17 @@
 package qldb
 
 import (
+	"bytes"
 	"database/sql"
+	"encoding/base64"
+	"errors"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
+	"time"
+
+	"github.com/awgh/ratnet/api"
 )
 
 // GetChannelPrivKey : Return the private key of a given channel
@@ -21,6 +28,58 @@ func (node *Node) GetChannelPrivKey(name string) (string, error) {
 	}
 }
 
+// Forward - Add an already-encrypted message to the outbound message queue (forward it along)
+func (node *Node) Forward(channelName string, message []byte) error {
+	b64msg := base64.StdEncoding.EncodeToString(message)
+	c := node.db()
+
+	// save message in my outbox, if not already present
+	// todo:  do we really still need this check?
+	r1 := transactQueryRow(c, "SELECT channel FROM outbox WHERE channel==$1 AND msg==$2;", channelName, b64msg)
+	var rc string
+	err := r1.Scan(&rc)
+	if err == sql.ErrNoRows {
+		// we don't have this yet, so add it
+		t := time.Now().UnixNano()
+		transactExec(c, "INSERT INTO outbox(channel,msg,timestamp) VALUES($1,$2,$3);",
+			channelName, b64msg, t)
+		return nil
+	}
+	return err
+}
+
+// Handle - Decrypt and handle an encrypted message
+func (node *Node) Handle(channelName string, message []byte) error {
+	var clear []byte
+	var err error
+	var clearMsg api.Msg // msg to out channel
+	channelLen := len(channelName)
+
+	if channelLen > 0 {
+		v, ok := node.channelKeys[channelName]
+		if !ok {
+			return errors.New("Cannot Handle message for Unknown Channel")
+		}
+		clearMsg = api.Msg{Name: channelName, IsChan: true}
+		clear, err = v.DecryptMessage(message)
+	} else {
+		clearMsg = api.Msg{Name: "[content]", IsChan: false}
+		clear, err = node.contentKey.DecryptMessage(message)
+	}
+	if err != nil {
+		return err
+	}
+	clearMsg.Content = bytes.NewBuffer(clear)
+
+	select {
+	case node.Out() <- clearMsg:
+		node.debugMsg("Sent message " + fmt.Sprint(message))
+	default:
+		node.debugMsg("No message sent")
+	}
+	return nil
+}
+
 func (node *Node) refreshChannels(c *sql.DB) { // todo: this could be selective or somehow less heavy
 	// refresh the channelKeys map
 	rc := transactQuery(c, "SELECT name,privkey FROM channels;")
@@ -32,40 +91,6 @@ func (node *Node) refreshChannels(c *sql.DB) { // todo: this could be selective 
 			node.channelKeys[n] = cc
 		}
 	}
-}
-
-func (node *Node) seenRecently(hdr []byte) bool {
-
-	shdr := string(hdr)
-	_, aok := node.recentPage1[shdr]
-	_, bok := node.recentPage2[shdr]
-	retval := aok || bok
-
-	switch node.recentPageIdx {
-	case 1:
-		if len(node.recentPage1) >= 50 {
-			if len(node.recentPage2) >= 50 {
-				node.recentPage2 = nil
-				node.recentPage2 = make(map[string]byte)
-			}
-			node.recentPageIdx = 2
-			node.recentPage2[shdr] = 1
-		} else {
-			node.recentPage1[shdr] = 1
-		}
-	case 2:
-		if len(node.recentPage2) >= 50 {
-			if len(node.recentPage1) >= 50 {
-				node.recentPage1 = nil
-				node.recentPage1 = make(map[string]byte)
-			}
-			node.recentPageIdx = 1
-			node.recentPage1[shdr] = 1
-		} else {
-			node.recentPage2[shdr] = 1
-		}
-	}
-	return retval
 }
 
 /*

@@ -18,11 +18,8 @@ type Node struct {
 	contentKey bc.KeyPair
 	routingKey bc.KeyPair
 
-	recentPageIdx int
-	recentPage1   map[string]byte
-	recentPage2   map[string]byte
-
 	policies  []api.Policy
+	router    api.Router
 	firstRun  bool
 	isRunning bool
 
@@ -47,10 +44,6 @@ func New(contentKey, routingKey bc.KeyPair) *Node {
 	// create node
 	node := new(Node)
 
-	// init page maps
-	node.recentPage1 = make(map[string]byte)
-	node.recentPage2 = make(map[string]byte)
-
 	// init assorted other
 	node.channels = make(map[string]*api.ChannelPriv)
 	node.config = make(map[string]string)
@@ -67,12 +60,20 @@ func New(contentKey, routingKey bc.KeyPair) *Node {
 	node.out = make(chan api.Msg)
 	node.err = make(chan api.Msg)
 
+	// setup default router
+	node.router = api.NewDefaultRouter()
+
 	return node
 }
 
 // SetPolicy : set the array of Policy objects for this Node
 func (node *Node) SetPolicy(policies ...api.Policy) {
 	node.policies = policies
+}
+
+// SetRouter : set the Router object for this Node
+func (node *Node) SetRouter(router api.Router) {
+	node.router = router
 }
 
 // FlushOutbox : Deletes outbound messages older than maxAgeSeconds seconds
