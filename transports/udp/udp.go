@@ -38,6 +38,12 @@ func (m *Module) Name() string {
 	return "udp"
 }
 
+// MarshalJSON : Create a serialied representation of the config of this module
+func (m *Module) MarshalJSON() (b []byte, e error) {
+	return json.Marshal(map[string]interface{}{
+		"type": "udp"})
+}
+
 // Listen : opens a UDP socket and listens
 func (m *Module) Listen(listen string, adminMode bool) {
 	// make sure we dont run twice

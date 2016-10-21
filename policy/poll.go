@@ -20,8 +20,16 @@ type Poll struct {
 
 	// last poll times
 	lastPollLocal, lastPollRemote int64
-	transport                     api.Transport
-	node                          api.Node
+
+	Transport api.Transport
+	node      api.Node
+}
+
+// MarshalJSON : Create a serialied representation of the config of this policy
+func (p *Poll) MarshalJSON() (b []byte, e error) {
+	return json.Marshal(map[string]interface{}{
+		"type":      "poll",
+		"Transport": p.Transport})
 }
 
 // RunPolicy : Poll
@@ -61,7 +69,7 @@ func (p *Poll) RunPolicy() error {
 			}
 			for _, element := range peers {
 				if element.Enabled {
-					_, err := p.pollServer(p.transport, p.node, element.URI, pubsrv)
+					_, err := p.pollServer(p.Transport, p.node, element.URI, pubsrv)
 					if err != nil {
 						log.Println("pollServer error: ", err.Error())
 					}
@@ -133,13 +141,13 @@ func (p *Poll) pollServer(transport api.Transport, node api.Node, host string, p
 func (p *Poll) Stop() {
 	p.isRunning = false
 	p.wg.Wait()
-	p.transport.Stop()
+	p.Transport.Stop()
 }
 
 // NewPoll : Returns a new instance of a Poll Connection Policy
 func NewPoll(transport api.Transport, node api.Node) *Poll {
 	p := new(Poll)
-	p.transport = transport
+	p.Transport = transport
 	p.node = node
 	return p
 }

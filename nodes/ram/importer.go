@@ -2,8 +2,12 @@ package ram
 
 import (
 	"encoding/json"
+	"errors"
 
 	"github.com/awgh/ratnet/api"
+	"github.com/awgh/ratnet/policy"
+	"github.com/awgh/ratnet/transports/https"
+	"github.com/awgh/ratnet/transports/udp"
 )
 
 type profilePrivB64 struct {
@@ -15,7 +19,8 @@ type channelPrivB64 struct {
 	Name    string
 	Privkey string //base64 encoded
 }
-type importedNode struct {
+
+type exportedNode struct {
 	ContentKey string
 	RoutingKey string
 	Profiles   []profilePrivB64
@@ -23,6 +28,40 @@ type importedNode struct {
 	Channels   []channelPrivB64
 	Peers      []api.Peer
 	Router     api.Router
+	Policies   []api.Policy
+}
+
+type importedNode struct {
+	ContentKey string
+	RoutingKey string
+	Profiles   []profilePrivB64
+	Contacts   []api.Contact
+	Channels   []channelPrivB64
+	Peers      []api.Peer
+	Router     routerWrapper
+	Policies   []map[string]interface{}
+
+	node api.Node
+}
+
+type routerWrapper struct {
+	routerInst api.Router
+}
+
+func (r *routerWrapper) UnmarshalJSON(b []byte) error {
+	var m map[string]interface{}
+	if err := json.Unmarshal(b, &m); err != nil {
+		return err
+	}
+	routerType := m["type"].(string)
+	if routerType == "default" {
+		dr := api.NewDefaultRouter()
+		if err := json.Unmarshal(b, &dr); err != nil {
+			return err
+		}
+		r.routerInst = dr
+	}
+	return nil
 }
 
 // Import : Load a node configuration from a JSON config
@@ -62,16 +101,47 @@ func (node *Node) Import(jsonConfig []byte) error {
 
 		node.profiles[cp.Name] = cp
 	}
-	if nj.Router != nil {
-		node.SetRouter(nj.Router)
+	node.SetRouter(nj.Router.routerInst)
+
+	for _, p := range nj.Policies {
+		// extract the inner Transport first
+		var trans api.Transport
+		t := p["Transport"].(map[string]interface{})
+		switch t["type"] {
+		case "https":
+			certfile := t["Certfile"].(string)
+			keyfile := t["Keyfile"].(string)
+			eccMode := t["EccMode"].(bool)
+			trans = https.New(certfile, keyfile, node, eccMode)
+			break
+		case "udp":
+			trans = udp.New(node)
+			break
+		default:
+			return errors.New("Unknown Transport")
+		}
+
+		var pol api.Policy
+		switch p["type"].(string) {
+		case "poll":
+			pol = policy.NewPoll(trans, node)
+			break
+		case "server":
+			listenURI := p["ListenURI"].(string)
+			adminMode := p["AdminMode"].(bool)
+			pol = policy.NewServer(trans, listenURI, adminMode)
+			break
+		default:
+			return errors.New("Unknown Policy")
+		}
+		node.policies = append(node.policies, pol)
 	}
 	return nil
 }
 
 // Export : Save a node configuration to a JSON config
 func (node *Node) Export() ([]byte, error) {
-	var nj importedNode
-
+	var nj exportedNode
 	nj.ContentKey = node.contentKey.ToB64()
 	nj.RoutingKey = node.routingKey.ToB64()
 	nj.Channels = make([]channelPrivB64, len(node.channels))
@@ -97,7 +167,7 @@ func (node *Node) Export() ([]byte, error) {
 		i++
 	}
 	nj.Router = node.router
-
+	nj.Policies = node.policies
 	return json.Marshal(nj)
 }
 

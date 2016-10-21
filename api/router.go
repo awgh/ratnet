@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 
 	"github.com/awgh/bencrypt/bc"
@@ -12,6 +13,7 @@ type Router interface {
 	// Route - TBD
 	Route(node Node, msg []byte) error
 	Patch(from string, to ...string)
+	MarshalJSON() (b []byte, e error)
 }
 
 // DefaultRouter - The Default router makes no changes at all,
@@ -229,4 +231,20 @@ func (r *DefaultRouter) seenRecently(hdr []byte) bool {
 		}
 	}
 	return retval
+}
+
+func (r *DefaultRouter) MarshalJSON() (b []byte, e error) {
+
+	return json.Marshal(map[string]interface{}{
+		"type":                    "default",
+		"CheckContent":            r.CheckContent,
+		"CheckChannels":           r.CheckChannels,
+		"CheckProfiles":           r.CheckProfiles,
+		"ForwardUnknownContent":   r.ForwardUnknownContent,
+		"ForwardUnknownChannels":  r.ForwardUnknownChannels,
+		"ForwardUnknownProfiles":  r.ForwardUnknownProfiles,
+		"ForwardConsumedContent":  r.ForwardConsumedContent,
+		"ForwardConsumedChannels": r.ForwardConsumedChannels,
+		"ForwardConsumedProfiles": r.ForwardConsumedProfiles,
+		"Patches":                 r.Patches})
 }
