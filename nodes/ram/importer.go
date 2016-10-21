@@ -64,6 +64,11 @@ func (r *routerWrapper) UnmarshalJSON(b []byte) error {
 
 // Import : Load a node configuration from a JSON config
 func (node *Node) Import(jsonConfig []byte) error {
+	restartNode := false
+	if node.isRunning {
+		node.Stop()
+		restartNode = true
+	}
 	var nj importedNode
 	if err := json.Unmarshal(jsonConfig, &nj); err != nil {
 		return err
@@ -134,6 +139,9 @@ func (node *Node) Import(jsonConfig []byte) error {
 		}
 		node.policies = append(node.policies, pol)
 	}
+	if restartNode {
+		return node.Start()
+	}
 	return nil
 }
 
@@ -170,36 +178,46 @@ func (node *Node) Export() ([]byte, error) {
 }
 
 /* Sample JSON for a node configuration
-	   {
-		   "ContentKey":"CPRIVKEY_b64",
-	       "RoutingKey":"RPRIVKEY_b64",
-
-           "Profiles": [
-           		{
-           			"Name:"NAME",
-	           		"Privkey":"CPRIVKEY_b64",
-	           		"Enabled": true
-	           	}
-           ],
-           "Contacts": [
-           		{
-           			"Name":DST_NAME",
-           			"Pubkey":"DST_CPUBKEY_b64"
-           		}
-           ],
-           "Channels": [
-           		{
-           			"Name":CHAN_NAME",
-           			"Privkey":"CHAN_PRIVKEY_b64"
-           		}
-           ],
-           "Peers": [
-           		{
-	           		"Name":"SRV_NAME",
-	           		"URI":"SRV_URI",
-	           		"Enabled": true,
-	           		"Pubkey":"SRV_PUBKEY_b64"
-	           	}
-           	]
-	   }
+{
+	"ContentKey": "JsQTwSsZW4srWuX+9iCi5SRCulXSWo3xwFIfbu3y9gtIIUmk8fzloo0Nik1R88mSpJ8ODsn9NzWJ22VQ/xtnnw==",
+	"RoutingKey": "b6f1o1e51JvMmoerJKWI47ZbYSTO+Pi03dOXvZCYzGbsVJbuoEmqo48Wnxag2GzCVeOrtJZS02jT5Nq3jrpQgQ==",
+	"Profiles": [],
+	"Contacts": [],
+	"Channels": [],
+	"Peers": null,
+	"Router": {
+		"CheckChannels": true,
+		"CheckContent": true,
+		"CheckProfiles": false,
+		"ForwardConsumedChannels": true,
+		"ForwardConsumedContent": false,
+		"ForwardConsumedProfiles": false,
+		"ForwardUnknownChannels": true,
+		"ForwardUnknownContent": true,
+		"ForwardUnknownProfiles": false,
+		"Patches": {},
+		"type": "default"
+	},
+	"Policies": [ {
+		"AdminMode": false,
+		"ListenURI": ":20001",
+		"Transport": {
+			"Certfile": "cert.pem",
+			"EccMode": true,
+			"Keyfile": "key.pem",
+			"type": "https"
+		},
+		"type": "server"
+	}, {
+		"AdminMode": true,
+		"ListenURI": "localhost:20002",
+		"Transport": {
+			"Certfile": "cert.pem",
+			"EccMode": true,
+			"Keyfile": "key.pem",
+			"type": "https"
+		},
+		"type": "server"
+	} ]
+}
 */
