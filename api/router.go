@@ -21,7 +21,6 @@ type Router interface {
 //                 and non-channel messages are consumed but not forwarded
 type DefaultRouter struct {
 	// Internal
-	initialized   bool
 	recentPageIdx int
 	recentPage1   map[string]byte
 	recentPage2   map[string]byte
@@ -65,6 +64,9 @@ func NewDefaultRouter() *DefaultRouter {
 	r.ForwardConsumedContent = false
 	r.ForwardConsumedChannels = true
 	r.ForwardConsumedProfiles = false
+	// init page maps
+	r.recentPage1 = make(map[string]byte)
+	r.recentPage2 = make(map[string]byte)
 	return r
 }
 
@@ -195,12 +197,6 @@ func (r *DefaultRouter) Route(node Node, message []byte) error {
 }
 
 func (r *DefaultRouter) seenRecently(hdr []byte) bool {
-	if !r.initialized {
-		// init page maps
-		r.recentPage1 = make(map[string]byte)
-		r.recentPage2 = make(map[string]byte)
-		r.initialized = true
-	}
 	shdr := string(hdr)
 	_, aok := r.recentPage1[shdr]
 	_, bok := r.recentPage2[shdr]
@@ -233,6 +229,7 @@ func (r *DefaultRouter) seenRecently(hdr []byte) bool {
 	return retval
 }
 
+// MarshalJSON : Create a serialized JSON blob out of the config of this router
 func (r *DefaultRouter) MarshalJSON() (b []byte, e error) {
 
 	return json.Marshal(map[string]interface{}{

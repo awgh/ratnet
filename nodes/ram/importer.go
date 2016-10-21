@@ -40,8 +40,6 @@ type importedNode struct {
 	Peers      []api.Peer
 	Router     routerWrapper
 	Policies   []map[string]interface{}
-
-	node api.Node
 }
 
 type routerWrapper struct {
