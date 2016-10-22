@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strconv"
+	"strings"
 
 	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/ratnet/api"
@@ -65,6 +66,14 @@ func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, channelNames ...string)
 	wildcard := false
 	if len(channelNames) < 1 {
 		wildcard = true // if no channels are given, get everything
+	} else {
+		for _, cname := range channelNames {
+			for _, char := range cname {
+				if strings.Index("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0987654321", string(char)) == -1 {
+					return retval, errors.New("Invalid character in channel name!")
+				}
+			}
+		}
 	}
 	sqlq := "SELECT msg, timestamp FROM outbox"
 	if lastTime != 0 {
