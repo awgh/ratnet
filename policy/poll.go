@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/awgh/bencrypt/bc"
+	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
 )
 
@@ -20,8 +21,33 @@ type Poll struct {
 
 	// last poll times
 	lastPollLocal, lastPollRemote int64
-	transport                     api.Transport
-	node                          api.Node
+
+	Transport api.Transport
+	node      api.Node
+}
+
+func init() {
+	ratnet.Policies["poll"] = NewPollFromMap // register this module by name (for deserialization support)
+}
+
+// NewPollFromMap : Makes a new instance of this transport module from a map of arguments (for deserialization support)
+func NewPollFromMap(transport api.Transport, node api.Node, t map[string]interface{}) api.Policy {
+	return NewPoll(transport, node)
+}
+
+// NewPoll : Returns a new instance of a Poll Connection Policy
+func NewPoll(transport api.Transport, node api.Node) *Poll {
+	p := new(Poll)
+	p.Transport = transport
+	p.node = node
+	return p
+}
+
+// MarshalJSON : Create a serialied representation of the config of this policy
+func (p *Poll) MarshalJSON() (b []byte, e error) {
+	return json.Marshal(map[string]interface{}{
+		"type":      "poll",
+		"Transport": p.Transport})
 }
 
 // RunPolicy : Poll
@@ -61,7 +87,7 @@ func (p *Poll) RunPolicy() error {
 			}
 			for _, element := range peers {
 				if element.Enabled {
-					_, err := p.pollServer(p.transport, p.node, element.URI, pubsrv)
+					_, err := p.pollServer(p.Transport, p.node, element.URI, pubsrv)
 					if err != nil {
 						log.Println("pollServer error: ", err.Error())
 					}
@@ -133,13 +159,5 @@ func (p *Poll) pollServer(transport api.Transport, node api.Node, host string, p
 func (p *Poll) Stop() {
 	p.isRunning = false
 	p.wg.Wait()
-	p.transport.Stop()
-}
-
-// NewPoll : Returns a new instance of a Poll Connection Policy
-func NewPoll(transport api.Transport, node api.Node) *Poll {
-	p := new(Poll)
-	p.transport = transport
-	p.node = node
-	return p
+	p.Transport.Stop()
 }

@@ -6,6 +6,7 @@ type Transport interface {
 	Name() string
 	RPC(host string, method string, args ...string) ([]byte, error)
 	Stop()
+	MarshalJSON() (b []byte, e error)
 }
 
 // RemoteCall : defines a Remote Procedure Call

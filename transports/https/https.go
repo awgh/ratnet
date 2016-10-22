@@ -11,18 +11,31 @@ import (
 	"sync"
 
 	"github.com/awgh/bencrypt/bc"
+	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
 )
+
+func init() {
+	ratnet.Transports["https"] = NewFromMap // register this module by name (for deserialization support)
+}
+
+// NewFromMap : Makes a new instance of this transport module from a map of arguments (for deserialization support)
+func NewFromMap(node api.Node, t map[string]interface{}) api.Transport {
+	certfile := t["Certfile"].(string)
+	keyfile := t["Keyfile"].(string)
+	eccMode := t["EccMode"].(bool)
+	return New(certfile, keyfile, node, eccMode)
+}
 
 // New : Makes a new instance of this transport module
 func New(certfile string, keyfile string, node api.Node, eccMode bool) *Module {
 
 	web := new(Module)
 
-	web.certfile = certfile
-	web.keyfile = keyfile
+	web.Certfile = certfile
+	web.Keyfile = keyfile
 	web.node = node
-	web.eccMode = eccMode
+	web.EccMode = eccMode
 
 	web.transport = &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
@@ -36,19 +49,27 @@ func New(certfile string, keyfile string, node api.Node, eccMode bool) *Module {
 type Module struct {
 	transport *http.Transport
 	client    *http.Client
-
-	certfile, keyfile string
-	node              api.Node
-
-	eccMode   bool
+	node      api.Node
 	isRunning bool
 	wg        sync.WaitGroup
-	Listeners []net.Listener
+	listeners []net.Listener
+
+	Certfile, Keyfile string
+	EccMode           bool
 }
 
 // Name : Returns this module's common name, which should be unique
 func (Module) Name() string {
 	return "https"
+}
+
+// MarshalJSON : Create a serialied representation of the config of this module
+func (h *Module) MarshalJSON() (b []byte, e error) {
+	return json.Marshal(map[string]interface{}{
+		"type":     "https",
+		"Certfile": h.Certfile,
+		"Keyfile":  h.Keyfile,
+		"EccMode":  h.EccMode})
 }
 
 // Listen : Server interface
@@ -60,8 +81,8 @@ func (h *Module) Listen(listen string, adminMode bool) {
 	}
 
 	// init ssl components
-	bc.InitSSL(h.certfile, h.keyfile, h.eccMode)
-	cert, err := tls.LoadX509KeyPair(h.certfile, h.keyfile)
+	bc.InitSSL(h.Certfile, h.Keyfile, h.EccMode)
+	cert, err := tls.LoadX509KeyPair(h.Certfile, h.Keyfile)
 	if err != nil {
 		log.Println(err.Error())
 		return
@@ -87,7 +108,7 @@ func (h *Module) Listen(listen string, adminMode bool) {
 	)
 
 	// add Listener to the Listener pool
-	h.Listeners = append(h.Listeners, listener)
+	h.listeners = append(h.listeners, listener)
 
 	// start
 	go func() {
@@ -149,8 +170,8 @@ func (h *Module) RPC(host string, method string, args ...string) ([]byte, error)
 // Stop : stops the HTTPS transport from running
 func (h *Module) Stop() {
 	h.isRunning = false
-	for _, Listener := range h.Listeners {
-		Listener.Close()
+	for _, listener := range h.listeners {
+		listener.Close()
 	}
 	h.wg.Wait()
 }
