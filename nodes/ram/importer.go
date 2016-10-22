@@ -174,7 +174,7 @@ func (node *Node) Export() ([]byte, error) {
 	}
 	nj.Router = node.router
 	nj.Policies = node.policies
-	return json.Marshal(nj)
+	return json.MarshalIndent(nj, "", "    ")
 }
 
 /* Sample JSON for a node configuration
