@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/awgh/bencrypt/bc"
+	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
 )
 
@@ -23,6 +24,23 @@ type Poll struct {
 
 	Transport api.Transport
 	node      api.Node
+}
+
+func init() {
+	ratnet.Policies["poll"] = NewPollFromMap // register this module by name (for deserialization support)
+}
+
+// NewPollFromMap : Makes a new instance of this transport module from a map of arguments (for deserialization support)
+func NewPollFromMap(transport api.Transport, node api.Node, t map[string]interface{}) api.Policy {
+	return NewPoll(transport, node)
+}
+
+// NewPoll : Returns a new instance of a Poll Connection Policy
+func NewPoll(transport api.Transport, node api.Node) *Poll {
+	p := new(Poll)
+	p.Transport = transport
+	p.node = node
+	return p
 }
 
 // MarshalJSON : Create a serialied representation of the config of this policy
@@ -142,12 +160,4 @@ func (p *Poll) Stop() {
 	p.isRunning = false
 	p.wg.Wait()
 	p.Transport.Stop()
-}
-
-// NewPoll : Returns a new instance of a Poll Connection Policy
-func NewPoll(transport api.Transport, node api.Node) *Poll {
-	p := new(Poll)
-	p.Transport = transport
-	p.node = node
-	return p
 }

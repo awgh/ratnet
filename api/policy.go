@@ -6,5 +6,3 @@ type Policy interface {
 	Stop()
 	MarshalJSON() (b []byte, e error)
 }
-
-//transport transports.Transport, node Node, args ...string

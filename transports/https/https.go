@@ -11,8 +11,21 @@ import (
 	"sync"
 
 	"github.com/awgh/bencrypt/bc"
+	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
 )
+
+func init() {
+	ratnet.Transports["https"] = NewFromMap // register this module by name (for deserialization support)
+}
+
+// NewFromMap : Makes a new instance of this transport module from a map of arguments (for deserialization support)
+func NewFromMap(node api.Node, t map[string]interface{}) api.Transport {
+	certfile := t["Certfile"].(string)
+	keyfile := t["Keyfile"].(string)
+	eccMode := t["EccMode"].(bool)
+	return New(certfile, keyfile, node, eccMode)
+}
 
 // New : Makes a new instance of this transport module
 func New(certfile string, keyfile string, node api.Node, eccMode bool) *Module {

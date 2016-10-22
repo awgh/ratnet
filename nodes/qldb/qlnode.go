@@ -11,6 +11,7 @@ import (
 
 	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/ratnet/api"
+	"github.com/awgh/ratnet/router"
 
 	_ "github.com/cznic/ql/driver" // load the QL database driver
 )
@@ -53,7 +54,7 @@ func New(contentKey, routingKey bc.KeyPair) *Node {
 	node.err = make(chan api.Msg)
 
 	// setup default router
-	node.router = api.NewDefaultRouter()
+	node.router = router.NewDefaultRouter()
 
 	return node
 }

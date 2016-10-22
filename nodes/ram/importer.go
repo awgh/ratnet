@@ -2,12 +2,9 @@ package ram
 
 import (
 	"encoding/json"
-	"errors"
 
+	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
-	"github.com/awgh/ratnet/policy"
-	"github.com/awgh/ratnet/transports/https"
-	"github.com/awgh/ratnet/transports/udp"
 )
 
 type profilePrivB64 struct {
@@ -38,28 +35,8 @@ type importedNode struct {
 	Contacts   []api.Contact
 	Channels   []channelPrivB64
 	Peers      []api.Peer
-	Router     routerWrapper
+	Router     map[string]interface{}
 	Policies   []map[string]interface{}
-}
-
-type routerWrapper struct {
-	routerInst api.Router
-}
-
-func (r *routerWrapper) UnmarshalJSON(b []byte) error {
-	var m map[string]interface{}
-	if err := json.Unmarshal(b, &m); err != nil {
-		return err
-	}
-	routerType := m["type"].(string)
-	if routerType == "default" {
-		dr := api.NewDefaultRouter()
-		if err := json.Unmarshal(b, &dr); err != nil {
-			return err
-		}
-		r.routerInst = dr
-	}
-	return nil
 }
 
 // Import : Load a node configuration from a JSON config
@@ -104,39 +81,13 @@ func (node *Node) Import(jsonConfig []byte) error {
 
 		node.profiles[cp.Name] = cp
 	}
-	node.SetRouter(nj.Router.routerInst)
 
+	node.SetRouter(ratnet.NewRouterFromMap(nj.Router))
 	for _, p := range nj.Policies {
 		// extract the inner Transport first
-		var trans api.Transport
 		t := p["Transport"].(map[string]interface{})
-		switch t["type"] {
-		case "https":
-			certfile := t["Certfile"].(string)
-			keyfile := t["Keyfile"].(string)
-			eccMode := t["EccMode"].(bool)
-			trans = https.New(certfile, keyfile, node, eccMode)
-			break
-		case "udp":
-			trans = udp.New(node)
-			break
-		default:
-			return errors.New("Unknown Transport")
-		}
-
-		var pol api.Policy
-		switch p["type"].(string) {
-		case "poll":
-			pol = policy.NewPoll(trans, node)
-			break
-		case "server":
-			listenURI := p["ListenURI"].(string)
-			adminMode := p["AdminMode"].(bool)
-			pol = policy.NewServer(trans, listenURI, adminMode)
-			break
-		default:
-			return errors.New("Unknown Policy")
-		}
+		trans := ratnet.NewTransportFromMap(node, t)
+		pol := ratnet.NewPolicyFromMap(trans, node, p)
 		node.policies = append(node.policies, pol)
 	}
 	if restartNode {

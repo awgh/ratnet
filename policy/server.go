@@ -3,6 +3,7 @@ package policy
 import (
 	"encoding/json"
 
+	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
 )
 
@@ -12,6 +13,27 @@ type Server struct {
 	Transport api.Transport
 	ListenURI string
 	AdminMode bool
+}
+
+func init() {
+	ratnet.Policies["server"] = NewFromMap // register this module by name (for deserialization support)
+}
+
+// NewFromMap : Makes a new instance of this transport module from a map of arguments (for deserialization support)
+func NewFromMap(transport api.Transport, node api.Node, p map[string]interface{}) api.Policy {
+	listenURI := p["ListenURI"].(string)
+	adminMode := p["AdminMode"].(bool)
+	return NewServer(transport, listenURI, adminMode)
+}
+
+// NewServer : Returns a new instance of a Server Connection Policy
+//
+func NewServer(transport api.Transport, listenURI string, adminMode bool) *Server {
+	s := new(Server)
+	s.Transport = transport
+	s.ListenURI = listenURI
+	s.AdminMode = adminMode
+	return s
 }
 
 // MarshalJSON : Create a serialied representation of the config of this policy
@@ -34,14 +56,4 @@ func (s *Server) RunPolicy() error {
 //
 func (s *Server) Stop() {
 	s.Transport.Stop()
-}
-
-// NewServer : Returns a new instance of a Server Connection Policy
-//
-func NewServer(transport api.Transport, listenURI string, adminMode bool) *Server {
-	s := new(Server)
-	s.Transport = transport
-	s.ListenURI = listenURI
-	s.AdminMode = adminMode
-	return s
 }

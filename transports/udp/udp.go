@@ -7,6 +7,7 @@ import (
 	"net"
 	"sync"
 
+	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
 )
 
@@ -15,6 +16,12 @@ var DELIM byte
 
 func init() {
 	DELIM = 0x0a
+	ratnet.Transports["udp"] = NewFromMap // register this module by name (for deserialization support)
+}
+
+// NewFromMap : Makes a new instance of this transport module from a map of arguments (for deserialization support)
+func NewFromMap(node api.Node, t map[string]interface{}) api.Transport {
+	return New(node)
 }
 
 // New : Makes a new instance of this transport module
