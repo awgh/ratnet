@@ -64,6 +64,11 @@ func (node *Node) SetPolicy(policies ...api.Policy) {
 	node.policies = policies
 }
 
+// Router : get the Router object for this Node
+func (node *Node) Router() api.Router {
+	return node.router
+}
+
 // SetRouter : set the Router object for this Node
 func (node *Node) SetRouter(router api.Router) {
 	node.router = router

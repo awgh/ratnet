@@ -66,10 +66,10 @@ func (Module) Name() string {
 // MarshalJSON : Create a serialied representation of the config of this module
 func (h *Module) MarshalJSON() (b []byte, e error) {
 	return json.Marshal(map[string]interface{}{
-		"type":     "https",
-		"Certfile": h.Certfile,
-		"Keyfile":  h.Keyfile,
-		"EccMode":  h.EccMode})
+		"Transport": "https",
+		"Certfile":  h.Certfile,
+		"Keyfile":   h.Keyfile,
+		"EccMode":   h.EccMode})
 }
 
 // Listen : Server interface

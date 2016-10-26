@@ -39,7 +39,7 @@ func NewServer(transport api.Transport, listenURI string, adminMode bool) *Serve
 // MarshalJSON : Create a serialied representation of the config of this policy
 func (s *Server) MarshalJSON() (b []byte, e error) {
 	return json.Marshal(map[string]interface{}{
-		"type":      "server",
+		"Policy":    "server",
 		"ListenURI": s.ListenURI,
 		"AdminMode": s.AdminMode,
 		"Transport": s.Transport})

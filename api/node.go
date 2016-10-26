@@ -9,6 +9,7 @@ type Node interface {
 	Start() error
 	Stop()
 	SetPolicy(policies ...Policy)
+	Router() Router
 	SetRouter(router Router)
 	GetChannelPrivKey(name string) (string, error)
 	Handle(channelName string, message []byte) error
@@ -141,8 +142,8 @@ type ProfilePriv struct {
 // Peer : object that describes a peer (transport connection instructions)
 type Peer struct {
 	Name    string
-	URI     string
 	Enabled bool
+	URI     string
 }
 
 // Bundle : mostly-opaque data blob returned by Pickup and passed into Dropoff

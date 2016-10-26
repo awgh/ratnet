@@ -19,7 +19,7 @@ type DefaultRouter struct {
 	recentPage1   map[string]byte
 	recentPage2   map[string]byte
 
-	Patches map[string][]string
+	Patches []api.Patch
 
 	// Configuration Settings
 
@@ -57,7 +57,6 @@ func NewRouterFromMap(r map[string]interface{}) api.Router {
 // NewDefaultRouter - returns a new instance of DefaultRouter
 func NewDefaultRouter() *DefaultRouter {
 	r := new(DefaultRouter)
-	r.Patches = make(map[string][]string)
 	r.CheckContent = true
 	r.CheckChannels = true
 	r.CheckProfiles = false
@@ -73,23 +72,29 @@ func NewDefaultRouter() *DefaultRouter {
 	return r
 }
 
-// Patch - Redirect messages from one input to different outputs
-func (r *DefaultRouter) Patch(from string, to ...string) {
-	r.Patches[from] = to
+// Patch : Redirect messages from one input to different outputs
+func (r *DefaultRouter) Patch(patch api.Patch) {
+	r.Patches = append(r.Patches, patch)
+}
+
+// GetPatches : Returns an array with the mappings of incoming channels to destination channels
+func (r *DefaultRouter) GetPatches() []api.Patch {
+	return r.Patches
 }
 
 func (r *DefaultRouter) forward(node api.Node, channelName string, message []byte) error {
-	v, ok := r.Patches[channelName]
-	if ok {
-		for i := 0; i < len(v); i++ {
-			if err := node.Forward(v[i], message); err != nil {
-				return err
+	for _, p := range r.Patches { //todo: this could be constant-time
+		if channelName == p.From {
+			for i := 0; i < len(p.To); i++ {
+				if err := node.Forward(p.To[i], message); err != nil {
+					return err
+				}
 			}
+			return nil
 		}
-	} else {
-		if err := node.Forward(channelName, message); err != nil {
-			return err
-		}
+	}
+	if err := node.Forward(channelName, message); err != nil {
+		return err
 	}
 	return nil
 }
@@ -236,15 +241,15 @@ func (r *DefaultRouter) seenRecently(hdr []byte) bool {
 func (r *DefaultRouter) MarshalJSON() (b []byte, e error) {
 
 	return json.Marshal(map[string]interface{}{
-		"type":                    "default",
+		"Router":                  "default",
 		"CheckContent":            r.CheckContent,
-		"CheckChannels":           r.CheckChannels,
-		"CheckProfiles":           r.CheckProfiles,
-		"ForwardUnknownContent":   r.ForwardUnknownContent,
-		"ForwardUnknownChannels":  r.ForwardUnknownChannels,
-		"ForwardUnknownProfiles":  r.ForwardUnknownProfiles,
 		"ForwardConsumedContent":  r.ForwardConsumedContent,
-		"ForwardConsumedChannels": r.ForwardConsumedChannels,
+		"ForwardUnknownContent":   r.ForwardUnknownContent,
+		"CheckProfiles":           r.CheckProfiles,
 		"ForwardConsumedProfiles": r.ForwardConsumedProfiles,
+		"ForwardUnknownProfiles":  r.ForwardUnknownProfiles,
+		"CheckChannels":           r.CheckChannels,
+		"ForwardConsumedChannels": r.ForwardConsumedChannels,
+		"ForwardUnknownChannels":  r.ForwardUnknownChannels,
 		"Patches":                 r.Patches})
 }

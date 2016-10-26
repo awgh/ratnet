@@ -46,7 +46,7 @@ func NewPoll(transport api.Transport, node api.Node) *Poll {
 // MarshalJSON : Create a serialied representation of the config of this policy
 func (p *Poll) MarshalJSON() (b []byte, e error) {
 	return json.Marshal(map[string]interface{}{
-		"type":      "poll",
+		"Policy":    "poll",
 		"Transport": p.Transport})
 }
 

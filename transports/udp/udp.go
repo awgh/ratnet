@@ -48,7 +48,7 @@ func (m *Module) Name() string {
 // MarshalJSON : Create a serialied representation of the config of this module
 func (m *Module) MarshalJSON() (b []byte, e error) {
 	return json.Marshal(map[string]interface{}{
-		"type": "udp"})
+		"Transport": "udp"})
 }
 
 // Listen : opens a UDP socket and listens

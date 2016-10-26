@@ -21,18 +21,18 @@ func init() {
 
 // NewTransportFromMap : Create a new instance of a Transport from a map of arguments
 func NewTransportFromMap(node api.Node, t map[string]interface{}) api.Transport {
-	ttype := t["type"].(string)
+	ttype := t["Transport"].(string)
 	return Transports[ttype](node, t)
 }
 
 // NewRouterFromMap : Create a new instance of a Router from a map of arguments
 func NewRouterFromMap(r map[string]interface{}) api.Router {
-	rtype := r["type"].(string)
+	rtype := r["Router"].(string)
 	return Routers[rtype](r)
 }
 
 // NewPolicyFromMap : Create a new instance of a Policy from a map of arguments
 func NewPolicyFromMap(transport api.Transport, node api.Node, p map[string]interface{}) api.Policy {
-	ptype := p["type"].(string)
+	ptype := p["Policy"].(string)
 	return Policies[ptype](transport, node, p)
 }

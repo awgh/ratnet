@@ -24,12 +24,13 @@ type exportedNode struct {
 	ContentType string
 	RoutingKey  string
 	RoutingType string
-	Profiles    []profilePrivB64
-	Contacts    []api.Contact
-	Channels    []channelPrivB64
-	Peers       []api.Peer
-	Router      api.Router
 	Policies    []api.Policy
+
+	Profiles []profilePrivB64
+	Channels []channelPrivB64
+	Peers    []api.Peer
+	Contacts []api.Contact
+	Router   api.Router
 }
 
 type importedNode struct {
@@ -37,12 +38,13 @@ type importedNode struct {
 	ContentType string
 	RoutingKey  string
 	RoutingType string
-	Profiles    []profilePrivB64
-	Contacts    []api.Contact
-	Channels    []channelPrivB64
-	Peers       []api.Peer
-	Router      map[string]interface{}
 	Policies    []map[string]interface{}
+
+	Profiles []profilePrivB64
+	Channels []channelPrivB64
+	Peers    []api.Peer
+	Contacts []api.Contact
+	Router   map[string]interface{}
 }
 
 // Import : Load a node configuration from a JSON config
@@ -143,57 +145,15 @@ func (node *Node) Export() ([]byte, error) {
 		nj.Profiles[i].Privkey = v.Privkey.ToB64()
 		i++
 	}
+	nj.Peers = make([]api.Peer, len(node.peers))
+	i = 0
+	for _, v := range node.peers {
+		nj.Peers[i].Name = v.Name
+		nj.Peers[i].Enabled = v.Enabled
+		nj.Peers[i].URI = v.URI
+		i++
+	}
 	nj.Router = node.router
 	nj.Policies = node.policies
 	return json.MarshalIndent(nj, "", "    ")
 }
-
-/* Sample JSON for a node configuration
- {
-    "ContentKey": "JsQTwSsZW4srWuX+9iCi5SRCulXSWo3xwFIfbu3y9gtIIUmk8fzloo0Nik1R88mSpJ8ODsn9NzWJ22VQ/xtnnw==",
-    "ContentType": "Curve25519,AES-CBC-256,HMAC-SHA-256",
-    "RoutingKey": "b6f1o1e51JvMmoerJKWI47ZbYSTO+Pi03dOXvZCYzGbsVJbuoEmqo48Wnxag2GzCVeOrtJZS02jT5Nq3jrpQgQ==",
-    "RoutingType": "Curve25519,AES-CBC-256,HMAC-SHA-256",
-    "Profiles": [],
-    "Contacts": [],
-    "Channels": [],
-    "Peers": null,
-    "Router": {
-        "CheckChannels": true,
-        "CheckContent": true,
-        "CheckProfiles": false,
-        "ForwardConsumedChannels": true,
-        "ForwardConsumedContent": false,
-        "ForwardConsumedProfiles": false,
-        "ForwardUnknownChannels": true,
-        "ForwardUnknownContent": true,
-        "ForwardUnknownProfiles": false,
-        "Patches": {},
-        "type": "default"
-    },
-    "Policies": [
-        {
-            "AdminMode": false,
-            "ListenURI": ":20001",
-            "Transport": {
-                "Certfile": "cert.pem",
-                "EccMode": true,
-                "Keyfile": "key.pem",
-                "type": "https"
-            },
-            "type": "server"
-        },
-        {
-            "AdminMode": true,
-            "ListenURI": "localhost:20002",
-            "Transport": {
-                "Certfile": "cert.pem",
-                "EccMode": true,
-                "Keyfile": "key.pem",
-                "type": "https"
-            },
-            "type": "server"
-        }
-    ]
-}
-*/
