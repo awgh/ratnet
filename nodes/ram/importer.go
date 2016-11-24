@@ -9,39 +9,39 @@ import (
 	"github.com/awgh/ratnet/api"
 )
 
-type profilePrivB64 struct {
+type ProfilePrivB64 struct {
 	Name    string
 	Privkey string //base64 encoded
 	Enabled bool
 }
-type channelPrivB64 struct {
+type ChannelPrivB64 struct {
 	Name    string
 	Privkey string //base64 encoded
 }
 
-type exportedNode struct {
+type ExportedNode struct {
 	ContentKey  string
 	ContentType string
 	RoutingKey  string
 	RoutingType string
 	Policies    []api.Policy
 
-	Profiles []profilePrivB64
-	Channels []channelPrivB64
+	Profiles []ProfilePrivB64
+	Channels []ChannelPrivB64
 	Peers    []api.Peer
 	Contacts []api.Contact
 	Router   api.Router
 }
 
-type importedNode struct {
+type ImportedNode struct {
 	ContentKey  string
 	ContentType string
 	RoutingKey  string
 	RoutingType string
 	Policies    []map[string]interface{}
 
-	Profiles []profilePrivB64
-	Channels []channelPrivB64
+	Profiles []ProfilePrivB64
+	Channels []ChannelPrivB64
 	Peers    []api.Peer
 	Contacts []api.Contact
 	Router   map[string]interface{}
@@ -54,7 +54,7 @@ func (node *Node) Import(jsonConfig []byte) error {
 		node.Stop()
 		restartNode = true
 	}
-	var nj importedNode
+	var nj ImportedNode
 	if err := json.Unmarshal(jsonConfig, &nj); err != nil {
 		return err
 	}
@@ -118,12 +118,12 @@ func (node *Node) Import(jsonConfig []byte) error {
 
 // Export : Save a node configuration to a JSON config
 func (node *Node) Export() ([]byte, error) {
-	var nj exportedNode
+	var nj ExportedNode
 	nj.ContentKey = node.contentKey.ToB64()
 	nj.ContentType = node.contentKey.GetName()
 	nj.RoutingKey = node.routingKey.ToB64()
 	nj.RoutingType = node.routingKey.GetName()
-	nj.Channels = make([]channelPrivB64, len(node.channels))
+	nj.Channels = make([]ChannelPrivB64, len(node.channels))
 	i := 0
 	for _, v := range node.channels {
 		nj.Channels[i].Name = v.Name
@@ -137,7 +137,7 @@ func (node *Node) Export() ([]byte, error) {
 		nj.Contacts[i].Pubkey = v.Pubkey
 		i++
 	}
-	nj.Profiles = make([]profilePrivB64, len(node.profiles))
+	nj.Profiles = make([]ProfilePrivB64, len(node.profiles))
 	i = 0
 	for _, v := range node.profiles {
 		nj.Profiles[i].Name = v.Name
