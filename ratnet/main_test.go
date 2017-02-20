@@ -35,6 +35,13 @@ var (
 	admin1 api.Transport
 	admin2 api.Transport
 	admin3 api.Transport
+
+	p2p1       api.Node
+	p2p2       api.Node
+	p2p1public api.Transport
+	p2p1admin  api.Transport
+	p2p2public api.Transport
+	p2p2admin  api.Transport
 )
 
 var udpMode bool
@@ -123,6 +130,58 @@ func initServer3() (api.Transport, api.Transport) {
 		time.Sleep(2 * time.Second)
 	}
 	return public3, admin3
+}
+
+func initP2P1() (api.Transport, api.Transport) {
+	if p2p1 == nil {
+		if ramMode {
+			// RamNode Mode:
+			p2p1 = ram.New(new(ecc.KeyPair), new(ecc.KeyPair))
+		} else {
+			// QLDB Mode
+			s := qldb.New(new(ecc.KeyPair), new(ecc.KeyPair))
+			os.Mkdir("tmp", os.FileMode(int(0755)))
+			s.BootstrapDB("tmp/ratnet_p2p_test1.ql")
+			s.FlushOutbox(0)
+			p2p1 = s
+		}
+		if udpMode {
+			p2p1public = udp.New(p2p1)
+			p2p1admin = udp.New(p2p1)
+		} else {
+			p2p1public = https.New("tmp/cert3.pem", "tmp/key3.pem", p2p1, true)
+			p2p1admin = https.New("tmp/cert3.pem", "tmp/key3.pem", p2p1, true)
+		}
+		go p2p(p2p1public, p2p1admin, p2p1, "localhost:30004", "localhost:30404")
+		time.Sleep(2 * time.Second)
+	}
+	return p2p1public, p2p1admin
+}
+
+func initP2P2() (api.Transport, api.Transport) {
+	if p2p2 == nil {
+		if ramMode {
+			// RamNode Mode:
+			p2p2 = ram.New(new(ecc.KeyPair), new(ecc.KeyPair))
+		} else {
+			// QLDB Mode
+			s := qldb.New(new(ecc.KeyPair), new(ecc.KeyPair))
+			os.Mkdir("tmp", os.FileMode(int(0755)))
+			s.BootstrapDB("tmp/ratnet_p2p_test2.ql")
+			s.FlushOutbox(0)
+			p2p2 = s
+		}
+		if udpMode {
+			p2p2public = udp.New(p2p2)
+			p2p2admin = udp.New(p2p2)
+		} else {
+			p2p2public = https.New("tmp/cert3.pem", "tmp/key3.pem", p2p2, true)
+			p2p2admin = https.New("tmp/cert3.pem", "tmp/key3.pem", p2p2, true)
+		}
+		go p2p(p2p2public, p2p2admin, p2p2, "localhost:30004", "localhost:30404")
+		time.Sleep(2 * time.Second)
+	}
+	return p2p2public, p2p2admin
 }
 
 func Test_server_ID_1(t *testing.T) {
@@ -314,6 +373,16 @@ func Test_server_PickupDropoff_2(t *testing.T) {
 	if err != nil {
 		t.Error(err.Error())
 	}
+}
+
+func Test_p2p_Basic_1(t *testing.T) {
+
+	//	p1admin, p1public := initP2P1()
+	//	p2admin, p2public := initP2P1()
+	initP2P1()
+	initP2P1()
+	time.Sleep(30 * time.Second)
+
 }
 
 //func Benchmark_TheAddIntsFunction(b *testing.B) {
