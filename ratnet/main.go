@@ -28,7 +28,7 @@ func serve(transportPublic api.Transport, transportAdmin api.Transport, node api
 
 func p2p(transportPublic api.Transport, transportAdmin api.Transport, node api.Node, listenPublic string, listenAdmin string) {
 	node.SetPolicy(
-		policy.NewP2P(transportPublic, listenPublic, false),
+		policy.NewP2P(transportPublic, listenPublic, node, false),
 		policy.NewServer(transportAdmin, listenAdmin, true))
 
 	log.Println("Public Server starting: ", listenPublic)

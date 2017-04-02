@@ -178,7 +178,7 @@ func initP2P2() (api.Transport, api.Transport) {
 			p2p2public = https.New("tmp/cert3.pem", "tmp/key3.pem", p2p2, true)
 			p2p2admin = https.New("tmp/cert3.pem", "tmp/key3.pem", p2p2, true)
 		}
-		go p2p(p2p2public, p2p2admin, p2p2, "localhost:30004", "localhost:30404")
+		go p2p(p2p2public, p2p2admin, p2p2, "localhost:30005", "localhost:30505")
 		time.Sleep(2 * time.Second)
 	}
 	return p2p2public, p2p2admin
@@ -377,12 +377,31 @@ func Test_server_PickupDropoff_2(t *testing.T) {
 
 func Test_p2p_Basic_1(t *testing.T) {
 
-	//	p1admin, p1public := initP2P1()
-	//	p2admin, p2public := initP2P1()
 	initP2P1()
-	initP2P1()
-	time.Sleep(30 * time.Second)
+	initP2P2()
 
+	for p2p1 == nil || p2p2 == nil {
+		time.Sleep(1 * time.Second)
+	}
+
+	go func() {
+		msg := <-p2p2.Out()
+		t.Log("p2p2.Out Got: ")
+		t.Log(msg)
+	}()
+
+	if err := p2p1.AddChannel("test1", pubprivkeyb64Ecc); err != nil {
+		t.Error(err.Error())
+	}
+	if err := p2p2.AddChannel("test1", pubprivkeyb64Ecc); err != nil {
+		t.Error(err.Error())
+	}
+
+	if err := p2p1.SendChannel("test1", []byte(base64.StdEncoding.EncodeToString([]byte(testMessage2)))); err != nil {
+		t.Error(err.Error())
+	}
+
+	time.Sleep(30 * time.Second)
 }
 
 //func Benchmark_TheAddIntsFunction(b *testing.B) {

@@ -1,17 +1,22 @@
 package policy
 
 import (
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
 
 	"log"
 	"net"
+
+	"math/rand"
 
 	dns "github.com/miekg/dns"
 )
@@ -22,12 +27,18 @@ type P2P struct {
 	Transport api.Transport
 	ListenURI string
 	AdminMode bool
+	Node      api.Node
 
 	IsListening   bool
 	IsAdvertising bool
 
 	listenSocket *net.UDPConn
 	dialSocket   *net.UDPConn
+
+	negotiationRank uint64
+
+	// last poll times
+	lastPollLocal, lastPollRemote int64
 }
 
 var (
@@ -47,16 +58,19 @@ func init() {
 func NewP2PFromMap(transport api.Transport, node api.Node, p map[string]interface{}) api.Policy {
 	listenURI := p["ListenURI"].(string)
 	adminMode := p["AdminMode"].(bool)
-	return NewP2P(transport, listenURI, adminMode)
+	return NewP2P(transport, listenURI, node, adminMode)
 }
 
 // NewP2P : Returns a new instance of a P2P Connection Policy
 //
-func NewP2P(transport api.Transport, listenURI string, adminMode bool) *P2P {
+func NewP2P(transport api.Transport, listenURI string, node api.Node, adminMode bool) *P2P {
 	s := new(P2P)
 	s.Transport = transport
 	s.ListenURI = listenURI
 	s.AdminMode = adminMode
+	s.Node = node
+
+	s.rerollNegotiationRank()
 	return s
 }
 
@@ -84,6 +98,10 @@ func (s *P2P) initDialSocket() {
 		log.Fatal(err.Error())
 	}
 	s.dialSocket = socket
+}
+
+func (s *P2P) rerollNegotiationRank() {
+	s.negotiationRank = uint64(rand.Uint32())<<32 + uint64(rand.Uint32())
 }
 
 // RunPolicy : Executes the policy as a goroutine
@@ -120,7 +138,6 @@ func (s *P2P) Stop() {
 
 func (s *P2P) mdnsListen() error {
 	for s.IsListening {
-		log.Println("listen loop")
 		b := make([]byte, maxDatagramSize)
 		conn := s.listenSocket
 		if _, _, err := conn.ReadFromUDP(b); err != nil {
@@ -128,15 +145,48 @@ func (s *P2P) mdnsListen() error {
 		}
 		msg := &dns.Msg{}
 		msg.Unpack(b[:])
+
+		target := ""
+		var targetNegRank uint64
+		prefixLen := 3 // .rn or .ng
+
 		for _, q := range msg.Question {
-			if q.Name[:len("rn.")] == "rn." {
-				qn := strings.Split(q.String(), ".")
-				hexed := qn[1]
-				dehexed, err := hex.DecodeString(hexed)
-				if err != nil {
-					return err
+			if len(q.Name) > prefixLen {
+				if q.Name[:prefixLen] == "rn." {
+					qn := strings.Split(q.String(), ".")
+					hexed := qn[1]
+					dehexed, err := hex.DecodeString(hexed)
+					if err != nil {
+						return err
+					}
+					target = string(dehexed)
+				} else if q.Name[:prefixLen] == "ng." {
+					qm := strings.Split(q.String(), ".")
+					hexed := qm[1]
+					dehexed, err := hex.DecodeString(hexed)
+					if err != nil {
+						return err
+					}
+					targetNegRank = binary.LittleEndian.Uint64(dehexed)
 				}
-				log.Println(string(dehexed))
+			}
+		}
+		if target != "" && targetNegRank > 0 {
+			/*
+				Negotiation:
+					- The lowest rank does a push/pull
+					- In case of collision, they both do a push/pull
+						(not ideal, but loop detection should eat it and we made it a uint64...
+						 don't want to reroll because that way the push/pull relationships can be more long-lived)
+			*/
+			if s.negotiationRank <= targetNegRank {
+				pubsrv, err := s.Node.ID()
+				if err != nil {
+					log.Fatal("Couldn't get routing key in P2P.RunPolicy:\n" + err.Error())
+				}
+				log.Println("Won Negotiation, Push/Pulling target/me ", target, s.ListenURI)
+				_, err = s.pollServer(s.Transport, s.Node, target, pubsrv) //actually, we might want a different transport here based on the scheme
+				return err
 			}
 		}
 	}
@@ -160,8 +210,11 @@ func (s *P2P) mdnsAdvertise() error {
 	}
 	laddr := ip[0]
 	clear := s.Transport.Name() + "://" + laddr + ":" + port
+	a := make([]byte, 8)
+	binary.LittleEndian.PutUint64(a, s.negotiationRank)
 	encodedStr := hex.EncodeToString([]byte(clear))
 	oname := "rn." + encodedStr + ".local."
+	oneg := "ng." + hex.EncodeToString(a) + ".local."
 
 	// send the query
 	m := new(dns.Msg)
@@ -170,11 +223,12 @@ func (s *P2P) mdnsAdvertise() error {
 	m.Response = true
 	m.Opcode = dns.OpcodeQuery
 	m.Rcode = dns.RcodeSuccess
-	m.Question = make([]dns.Question, 1)
+	m.Question = make([]dns.Question, 2)
 	m.Question[0] = dns.Question{Name: oname, Qtype: dns.TypeSRV, Qclass: dns.ClassINET}
+	m.Question[1] = dns.Question{Name: oneg, Qtype: dns.TypeSRV, Qclass: dns.ClassINET}
 	msgBytes, err := m.Pack()
 	if err != nil {
-		log.Println("Pack failed with:", err.Error())
+		log.Println("Pack failed with:", err.Error(), oname)
 		return err
 	}
 
@@ -184,4 +238,56 @@ func (s *P2P) mdnsAdvertise() error {
 		log.Println("Write failed with:", err.Error())
 	}
 	return nil
+}
+
+// pollServer will keep trying until either we get a result or the timeout expires
+// todo: this is exactly the same as the one in Poll... merge somehow?
+func (p *P2P) pollServer(transport api.Transport, node api.Node, host string, pubsrv bc.PubKey) (bool, error) {
+
+	// Pickup Local
+	rpubkey, err := transport.RPC(host, "ID")
+	if err != nil {
+		return false, err
+	}
+	rpk := pubsrv.Clone()
+	if err := rpk.FromB64(string(rpubkey)); err != nil {
+		return false, err
+	}
+
+	toRemoteRaw, err := node.Pickup(rpk, p.lastPollLocal)
+	if err != nil {
+		return false, err
+	}
+
+	// Pickup Remote
+	toLocalRaw, err := transport.RPC(host, "Pickup", pubsrv.ToB64(), strconv.FormatInt(p.lastPollRemote, 10))
+	if err != nil {
+		return false, err
+	}
+	var toLocal api.Bundle
+	if err := json.Unmarshal(toLocalRaw, &toLocal); err != nil {
+		return false, err
+	}
+
+	p.lastPollLocal = toRemoteRaw.Time
+	p.lastPollRemote = toLocal.Time
+
+	toRemote, err := json.Marshal(toRemoteRaw)
+	if err != nil {
+		return false, err
+	}
+
+	// Dropoff Remote
+	if len(toRemoteRaw.Data) > 0 {
+		if _, err := transport.RPC(host, "Dropoff", string(toRemote)); err != nil {
+			return false, err
+		}
+	}
+	// Dropoff Local
+	if len(toLocal.Data) > 0 {
+		if err := node.Dropoff(toLocal); err != nil {
+			return false, err
+		}
+	}
+	return true, nil
 }
