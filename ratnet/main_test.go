@@ -48,7 +48,7 @@ var udpMode bool
 var ramMode bool
 
 func init() {
-	udpMode = false
+	udpMode = true
 	ramMode = false
 }
 
@@ -201,7 +201,7 @@ func Test_server_ID_1(t *testing.T) {
 		t.Log(r2)
 	}
 	if bytes.Compare(r1, r2) != 0 {
-		t.Error(errors.New("Public and Admin interfaces returned different results."))
+		t.Error(errors.New("Public and Admin interfaces returned different results"))
 	}
 }
 
@@ -239,7 +239,7 @@ func Test_server_AddContact_1(t *testing.T) {
 		t.Error(err.Error())
 	}
 	if bytes.Compare(result[:2], []byte("OK")) == 0 {
-		t.Error(errors.New("AddContact was accessible on Public network interface."))
+		t.Error(errors.New("AddContact was accessible on Public network interface"))
 	}
 	t.Log("API AddContact RESULT: " + string(result))
 
@@ -263,7 +263,7 @@ func Test_server_AddChannel_1(t *testing.T) {
 		t.Error(err.Error())
 	}
 	if bytes.Compare(result[:2], []byte("OK")) == 0 {
-		t.Error(errors.New("AddChannel was accessible on Public network interface."))
+		t.Error(errors.New("AddChannel was accessible on Public network interface"))
 	}
 
 	t.Log("Trying AddChannel on Admin interface")
@@ -283,7 +283,7 @@ func Test_server_Send_1(t *testing.T) {
 		t.Error(err.Error())
 	}
 	if bytes.Compare(result[:2], []byte("OK")) == 0 {
-		t.Error(errors.New("Send was accessible on Public network interface."))
+		t.Error(errors.New("Send was accessible on Public network interface"))
 	}
 
 	result, err = admin1.RPC("localhost:30101", "Send", "destname1", base64.StdEncoding.EncodeToString([]byte(testMessage1)))
@@ -302,7 +302,7 @@ func Test_server_SendChannel_1(t *testing.T) {
 		t.Error(err.Error())
 	}
 	if bytes.Compare(result[:2], []byte("OK")) == 0 {
-		t.Error(errors.New("SendChannel was accessible on Public network interface."))
+		t.Error(errors.New("SendChannel was accessible on Public network interface"))
 	}
 
 	result, err = admin1.RPC("localhost:30101", "SendChannel", "channel1", base64.StdEncoding.EncodeToString([]byte(testMessage2)))
@@ -400,8 +400,6 @@ func Test_p2p_Basic_1(t *testing.T) {
 	if err := p2p1.SendChannel("test1", []byte(base64.StdEncoding.EncodeToString([]byte(testMessage2)))); err != nil {
 		t.Error(err.Error())
 	}
-
-	time.Sleep(30 * time.Second)
 }
 
 //func Benchmark_TheAddIntsFunction(b *testing.B) {
@@ -466,7 +464,7 @@ var pubkeyb64 = "LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUlJQ0lqQU5CZ2txaGtpRzl3MEJ
 	"RUFBUT09Ci0tLS0tRU5EIFBVQkxJQyBLRVktLS0tLQo="
 
 var privkeypem = `-----BEGIN RSA PRIVATE KEY-----
-MIIJJwIBAAKCAgEAsHZQ6wRM/V5r6DGCr2ioUs10ORayIPZEm4RwaqJSf8KdnaWa
+MIIJJwIBAAKCAgEAsHZQ6wRM/V5r6DGCr2ioUs10ORayIPZEm4RwaqJSf8KdnaW
 8sPdQInrpf0l9b2dqOHWk45pbHqRReyhOC8IOmmdfIwqbmxqznQxCXtlek+wwrA7
 KXdrUkr4eIHbdo1g6TFBGweRmGklGkyZnL5XWkMYFgCbn7s191Eron/yxj0WuKD3
 wpgZoN7qymT1dRLEQ8bgIE4YD7P7QbpcF3+DibuEQnwGQq3YXByBkFB97sT3cR5j

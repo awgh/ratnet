@@ -21,9 +21,19 @@ func init() {
 
 // NewFromMap : Makes a new instance of this transport module from a map of arguments (for deserialization support)
 func NewFromMap(node api.Node, t map[string]interface{}) api.Transport {
-	certfile := t["Certfile"].(string)
-	keyfile := t["Keyfile"].(string)
-	eccMode := t["EccMode"].(bool)
+	certfile := "cert.pem"
+	keyfile := "key.pem"
+	eccMode := true
+
+	if _, ok := t["Certfile"]; ok {
+		certfile = t["Certfile"].(string)
+	}
+	if _, ok := t["KeyFile"]; ok {
+		keyfile = t["KeyFile"].(string)
+	}
+	if _, ok := t["EccMode"]; ok {
+		eccMode = t["EccMode"].(bool)
+	}
 	return New(certfile, keyfile, node, eccMode)
 }
 

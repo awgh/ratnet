@@ -4,8 +4,9 @@ import (
 	"bufio"
 	"encoding/json"
 	"log"
-	"net"
 	"sync"
+
+	kcp "github.com/xtaci/kcp-go"
 
 	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
@@ -57,39 +58,37 @@ func (m *Module) Listen(listen string, adminMode bool) {
 	if m.isRunning {
 		return
 	}
-
-	// parse UDP address
-	udpAddress, err := net.ResolveUDPAddr("udp", listen)
+	lis, err := kcp.ListenWithOptions(listen, nil, 10, 3)
 	if err != nil {
 		log.Println(err.Error())
 		return
 	}
-
-	// open socket
-	socket, err := net.ListenUDP("udp", udpAddress)
-	if err != nil {
-		log.Println(err.Error())
-		return
-	}
-
 	m.isRunning = true
 
 	// read loop
 	go func() {
 		m.wg.Add(1)
-		defer socket.Close() // make sure the socket closes when we're done with it
+		defer lis.Close() // make sure the socket closes when we're done with it
 		defer m.wg.Done()
 
 		// read from socket
 		for m.isRunning {
-			b := make([]byte, 8192)
-			n, remoteAddr, err := socket.ReadFrom(b)
+			conn, err := lis.Accept()
 			if err != nil {
 				log.Println(err)
 				continue
 			}
+
+			reader := bufio.NewReader(conn)
+			writer := bufio.NewWriter(conn)
+			b, err := reader.ReadBytes(DELIM)
+			if err != nil {
+				log.Println(err)
+				continue
+			}
+
 			var a api.RemoteCall
-			if err := json.Unmarshal(b[:n], &a); err != nil {
+			if err := json.Unmarshal(b, &a); err != nil {
 				log.Println(err.Error())
 				continue
 			}
@@ -106,7 +105,8 @@ func (m *Module) Listen(listen string, adminMode bool) {
 			} else if len(result) < 1 {
 				result = "OK" // todo: for backwards compatability, remove when nothing needs it
 			}
-			socket.WriteTo(append([]byte(result), DELIM), remoteAddr)
+			writer.Write(append([]byte(result), DELIM))
+			writer.Flush()
 		}
 	}()
 }
@@ -114,22 +114,13 @@ func (m *Module) Listen(listen string, adminMode bool) {
 // RPC : transmit data via UDP
 func (m *Module) RPC(host string, method string, args ...string) ([]byte, error) {
 
-	// parse UDP addresses
-	udpRemoteAddress, err := net.ResolveUDPAddr("udp", host)
-	if err != nil {
-		return nil, err
-	}
-	udpClientAddress, err := net.ResolveUDPAddr("udp", "0.0.0.0:0")
-	if err != nil {
-		return nil, err
-	}
-
 	// open client socket
-	conn, err := net.DialUDP("udp", udpClientAddress, udpRemoteAddress)
+	conn, err := kcp.DialWithOptions(host, nil, 10, 3)
 	if err != nil {
 		return nil, err
 	}
 	defer conn.Close()
+
 	reader := bufio.NewReader(conn)
 	writer := bufio.NewWriter(conn)
 
@@ -140,19 +131,16 @@ func (m *Module) RPC(host string, method string, args ...string) ([]byte, error)
 	if err != nil {
 		return nil, err
 	}
-
 	// send data
-	writer.Write(b)
+	_, err = writer.Write(b)
+	if err != nil {
+		return nil, err
+	}
 	writer.WriteByte(DELIM)
 	writer.Flush()
 
-	// get response
 	resp, err := reader.ReadBytes(DELIM)
-	if err != nil {
-		log.Println(err.Error())
-		return nil, err
-	}
-	return resp, nil
+	return resp, err
 }
 
 // Stop : Stops module
