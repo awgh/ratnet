@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"runtime/debug"
@@ -49,25 +50,28 @@ func (node *Node) Forward(channelName string, message []byte) error {
 }
 
 // Handle - Decrypt and handle an encrypted message
-func (node *Node) Handle(channelName string, message []byte) error {
+func (node *Node) Handle(channelName string, message []byte) (bool, error) {
 	var clear []byte
 	var err error
+	var tagOK bool
 	var clearMsg api.Msg // msg to out channel
 	channelLen := len(channelName)
 
 	if channelLen > 0 {
 		v, ok := node.channelKeys[channelName]
 		if !ok {
-			return errors.New("Cannot Handle message for Unknown Channel")
+			return false, errors.New("Cannot Handle message for Unknown Channel")
 		}
 		clearMsg = api.Msg{Name: channelName, IsChan: true}
-		clear, err = v.DecryptMessage(message)
+		tagOK, clear, err = v.DecryptMessage(message)
 	} else {
 		clearMsg = api.Msg{Name: "[content]", IsChan: false}
-		clear, err = node.contentKey.DecryptMessage(message)
+		tagOK, clear, err = node.contentKey.DecryptMessage(message)
 	}
 	if err != nil {
-		return err
+		return tagOK, err
+	} else if !tagOK {
+		return false, errors.New("Luggage Tag Check Failed in Dropoff")
 	}
 	clearMsg.Content = bytes.NewBuffer(clear)
 
@@ -77,7 +81,7 @@ func (node *Node) Handle(channelName string, message []byte) error {
 	default:
 		node.debugMsg("No message sent")
 	}
-	return nil
+	return tagOK, nil
 }
 
 func (node *Node) refreshChannels(c *sql.DB) { // todo: this could be selective or somehow less heavy
@@ -85,7 +89,9 @@ func (node *Node) refreshChannels(c *sql.DB) { // todo: this could be selective 
 	rc := transactQuery(c, "SELECT name,privkey FROM channels;")
 	for rc.Next() {
 		var n, s string
-		rc.Scan(&n, &s)
+		if err := rc.Scan(&n, &s); err != nil {
+			log.Fatal(err)
+		}
 		cc := node.contentKey.Clone()
 		if err := cc.FromB64(s); err == nil {
 			node.channelKeys[n] = cc

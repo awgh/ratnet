@@ -1,11 +1,9 @@
 package router
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 
-	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
 )
@@ -99,22 +97,6 @@ func (r *DefaultRouter) forward(node api.Node, channelName string, message []byt
 	return nil
 }
 
-func (r *DefaultRouter) check(node api.Node, pubkey bc.PubKey, channelName string, idx uint16, nonce []byte, message []byte) (bool, error) {
-	hash, err := bc.DestHash(pubkey, nonce)
-	if err != nil {
-		return false, err
-	}
-	hashLen := uint16(len(hash))
-	nonceHash := message[idx+16 : idx+16+hashLen]
-	if bytes.Equal(hash, nonceHash) { // named channel key match
-		if err := node.Handle(channelName, message[idx+16+hashLen:]); err != nil {
-			return false, err
-		}
-		return true, nil
-	}
-	return false, nil
-}
-
 // Route - Router that does default behavior
 func (r *DefaultRouter) Route(node api.Node, message []byte) error {
 
@@ -123,12 +105,12 @@ func (r *DefaultRouter) Route(node api.Node, message []byte) error {
 	var channelLen uint16 // beginning uint16 of message is channel name length
 	channelName := ""
 	channelLen = (uint16(message[0]) << 8) | uint16(message[1])
-	if len(message) < int(channelLen)+2+16+16 { // uint16 + nonce + hash //todo
+	if len(message) < int(channelLen)+2+64 { // uint16 + LuggageTag
 		return errors.New("Incorrect channel name length")
 	}
-	idx := 2 + channelLen //skip over the channel name
-	nonce := message[idx : idx+16]
-	if r.seenRecently(nonce) { // LOOP PREVENTION before handling or forwarding
+	idx := 2 + channelLen          //skip over the channel name
+	nonce := message[idx : idx+16] // todo: this is truncating half the pubkey
+	if r.seenRecently(nonce) {     // LOOP PREVENTION before handling or forwarding
 		return nil
 	}
 
@@ -147,7 +129,7 @@ func (r *DefaultRouter) Route(node api.Node, message []byte) error {
 			if err == nil { // this is a channel key we know
 				pubkey := cid.Clone()
 				pubkey.FromB64(chn.Pubkey)
-				consumed, err = r.check(node, pubkey, channelName, idx, nonce, message)
+				consumed, err = node.Handle(channelName, message[idx:])
 				if err != nil {
 					return err
 				}
@@ -162,7 +144,7 @@ func (r *DefaultRouter) Route(node api.Node, message []byte) error {
 		// content key case (to be removed, deprecated)
 		consumed := false
 		if r.CheckContent {
-			consumed, err = r.check(node, cid, channelName, idx, nonce, message)
+			consumed, err = node.Handle(channelName, message[idx:])
 			if err != nil {
 				return err
 			}
@@ -186,7 +168,7 @@ func (r *DefaultRouter) Route(node api.Node, message []byte) error {
 				}
 				pubkey := cid.Clone()
 				pubkey.FromB64(profile.Pubkey)
-				consumed, err = r.check(node, pubkey, channelName, idx, nonce, message)
+				consumed, err = node.Handle(channelName, message[idx:])
 				if err != nil {
 					return err
 				}

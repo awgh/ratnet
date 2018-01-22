@@ -35,8 +35,7 @@ func Test_apicall_ID_1(t *testing.T) {
 }
 
 func Test_apicall_AddContact_1(t *testing.T) {
-	var p1 string
-	p1 = pubkeyb64Ecc
+	p1 := pubkeyb64Ecc
 	if err := node.AddContact("destname1", p1); err != nil {
 		t.Error(err.Error())
 	}
@@ -88,7 +87,7 @@ var testMessage1 = `'In THAT direction,' the Cat said, waving its right paw roun
 'You must be,' said the Cat, 'or you wouldn't have come here.'`
 
 // RSA TEST KEYS
-
+/*
 var pubkeypem = `-----BEGIN PUBLIC KEY-----
 MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAsHZQ6wRM/V5r6DGCr2io
 Us10ORayIPZEm4RwaqJSf8KdnaWa8sPdQInrpf0l9b2dqOHWk45pbHqRReyhOC8I
@@ -103,7 +102,7 @@ LV9KXyt63fVz8Pa9zp09n3Q/2jJXFQo762CGJlenOWNz9KdUnoS18NYIGC2/h94D
 cfIwUpmaj3/9DNEp8pVI8RXRSkr1AuZkKX105cDzjgTn7uRMfPRDyVppl5ila7d/
 p7Jq7xy90lg2zUXU0UuCXhkCAwEAAQ==
 -----END PUBLIC KEY-----`
-
+*/
 var pubkeyb64 = "LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUlJQ0lqQU5CZ2txaGtpRzl3MEJB" +
 	"UUVGQUFPQ0FnOEFNSUlDQ2dLQ0FnRUFzSFpRNndSTS9WNXI2REdDcjJpbwpVczEw" +
 	"T1JheUlQWkVtNFJ3YXFKU2Y4S2RuYVdhOHNQZFFJbnJwZjBsOWIyZHFPSFdrNDVw" +
@@ -122,6 +121,7 @@ var pubkeyb64 = "LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUlJQ0lqQU5CZ2txaGtpRzl3MEJ
 	"bjd1Uk1mUFJEeVZwcGw1aWxhN2QvCnA3SnE3eHk5MGxnMnpVWFUwVXVDWGhrQ0F3" +
 	"RUFBUT09Ci0tLS0tRU5EIFBVQkxJQyBLRVktLS0tLQo="
 
+/*
 var privkeypem = `-----BEGIN RSA PRIVATE KEY-----
 MIIJJwIBAAKCAgEAsHZQ6wRM/V5r6DGCr2ioUs10ORayIPZEm4RwaqJSf8KdnaWa
 8sPdQInrpf0l9b2dqOHWk45pbHqRReyhOC8IOmmdfIwqbmxqznQxCXtlek+wwrA7
@@ -416,8 +416,9 @@ var privkey3b64 = "LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQpNSUlKS2dJQkFBS0NBZ
 	"RnVkV3ZTWHBRWmNQQjV4cVNLSXpPWTBjYzNuNlBzbgphMTZxQWZwZE1sYkpaZ1F3" +
 	"elMrZ3JsNW9hSW04MXUwT2NFZWRYZGljV2wremVqR21BZmZFYkVySEYzQ2VlUT09" +
 	"Ci0tLS0tRU5EIFJTQSBQUklWQVRFIEtFWS0tLS0tCg=="
-
+*/
 // ECC TEST KEYS
 var pubprivkeyb64Ecc = "Tcksa18txiwMEocq7NXdeMwz6PPBD+nxCjb/WCtxq1+dln3M3IaOmg+YfTIbBpk+jIbZZZiT+4CoeFzaJGEWmg=="
 var pubkeyb64Ecc = "Tcksa18txiwMEocq7NXdeMwz6PPBD+nxCjb/WCtxq18="
-var privkeyb64Ecc = "nZZ9zNyGjpoPmH0yGwaZPoyG2WWYk/uAqHhc2iRhFpo="
+
+//var privkeyb64Ecc = "nZZ9zNyGjpoPmH0yGwaZPoyG2WWYk/uAqHhc2iRhFpo="

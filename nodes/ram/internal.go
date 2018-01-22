@@ -39,25 +39,28 @@ func (node *Node) Forward(channelName string, message []byte) error {
 }
 
 // Handle - Decrypt and handle an encrypted message
-func (node *Node) Handle(channelName string, message []byte) error {
+func (node *Node) Handle(channelName string, message []byte) (bool, error) {
 	var clear []byte
 	var err error
+	tagOK := false
 	var clearMsg api.Msg // msg to out channel
 	channelLen := len(channelName)
 
 	if channelLen > 0 {
 		v, ok := node.channels[channelName]
 		if !ok || v.Privkey == nil {
-			return errors.New("Cannot Handle message for Unknown Channel")
+			return tagOK, errors.New("Cannot Handle message for Unknown Channel")
 		}
 		clearMsg = api.Msg{Name: channelName, IsChan: true}
-		clear, err = v.Privkey.DecryptMessage(message)
+		tagOK, clear, err = v.Privkey.DecryptMessage(message)
 	} else {
 		clearMsg = api.Msg{Name: "[content]", IsChan: false}
-		clear, err = node.contentKey.DecryptMessage(message)
+		tagOK, clear, err = node.contentKey.DecryptMessage(message)
 	}
 	if err != nil {
-		return err
+		return tagOK, err
+	} else if !tagOK {
+		return false, errors.New("Luggage Tag Check Failed in Dropoff")
 	}
 	clearMsg.Content = bytes.NewBuffer(clear)
 
@@ -67,7 +70,7 @@ func (node *Node) Handle(channelName string, message []byte) error {
 	default:
 		node.debugMsg("No message sent")
 	}
-	return nil
+	return tagOK, nil
 }
 
 func (node *Node) signalMonitor() {
@@ -78,7 +81,7 @@ func (node *Node) signalMonitor() {
 		for {
 			switch <-sigChannel {
 			case os.Kill:
-				break
+				return
 			}
 		}
 	}()

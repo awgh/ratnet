@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"errors"
+	"log"
 	"time"
 
 	"github.com/awgh/bencrypt/bc"
@@ -38,7 +39,9 @@ func (node *Node) GetContacts() ([]api.Contact, error) {
 	var contacts []api.Contact
 	for s.Next() {
 		var d api.Contact
-		s.Scan(&d.Name, &d.Pubkey)
+		if err := s.Scan(&d.Name, &d.Pubkey); err != nil {
+			return nil, err
+		}
 		contacts = append(contacts, d)
 	}
 	return contacts, nil
@@ -53,12 +56,15 @@ func (node *Node) AddContact(name string, key string) error {
 	if tx, err := c.Begin(); err != nil {
 		node.errMsg(err, true)
 	} else {
-		_, err = tx.Exec("DELETE FROM contacts WHERE name==$1;", name)
+		_, _ = tx.Exec("DELETE FROM contacts WHERE name==$1;", name)
 		_, err = tx.Exec("INSERT INTO contacts VALUES( $1, $2 )", name, key)
 		if err != nil {
 			node.errMsg(err, true)
 		}
-		tx.Commit()
+		err = tx.Commit()
+		if err != nil {
+			node.errMsg(err, true)
+		}
 	}
 	return nil
 }
@@ -98,7 +104,9 @@ func (node *Node) GetChannels() ([]api.Channel, error) {
 	var channels []api.Channel
 	for r.Next() {
 		var n, p string
-		r.Scan(&n, &p)
+		if err := r.Scan(&n, &p); err != nil {
+			return nil, err
+		}
 		prv := node.contentKey.Clone()
 		if err := prv.FromB64(p); err != nil {
 			return nil, err
@@ -117,11 +125,14 @@ func (node *Node) AddChannel(name string, privkey string) error {
 		return err
 	}
 	if _, err := tx.Exec("DELETE FROM channels WHERE name==$1;", name); err != nil {
+		return err
 	}
 	if _, err := tx.Exec("INSERT INTO channels VALUES( $1, $2 )", name, privkey); err != nil {
 		return err
 	}
-	tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
 	node.refreshChannels(c)
 	return nil
 }
@@ -163,7 +174,9 @@ func (node *Node) GetProfiles() ([]api.Profile, error) {
 	for r.Next() {
 		var p api.Profile
 		var prv string
-		r.Scan(&p.Name, &p.Enabled, &prv)
+		if err := r.Scan(&p.Name, &p.Enabled, &prv); err != nil {
+			return nil, err
+		}
 		pk := node.contentKey.Clone()
 		if err := pk.FromB64(prv); err != nil {
 			return nil, err
@@ -210,7 +223,9 @@ func (node *Node) LoadProfile(name string) (bc.PubKey, error) {
 	c := node.db()
 	row := transactQueryRow(c, "SELECT privkey FROM profiles WHERE name==$1;", name)
 	var pk string
-	row.Scan(&pk)
+	if err := row.Scan(&pk); err != nil {
+		return nil, err
+	}
 	profileKey := node.contentKey.Clone()
 	if err := profileKey.FromB64(pk); err != nil {
 		node.errMsg(err, false)
@@ -242,12 +257,13 @@ func (node *Node) GetPeer(name string) (*api.Peer, error) {
 // GetPeers : Retrieve a list of peers in this node's database
 func (node *Node) GetPeers() ([]api.Peer, error) {
 	c := node.db()
-	var r *sql.Rows
-	r = transactQuery(c, "SELECT name,uri,enabled FROM peers;")
+	r := transactQuery(c, "SELECT name,uri,enabled FROM peers;")
 	var peers []api.Peer
 	for r.Next() {
 		var s api.Peer
-		r.Scan(&s.Name, &s.URI, &s.Enabled)
+		if err := r.Scan(&s.Name, &s.URI, &s.Enabled); err != nil {
+			return nil, err
+		}
 		peers = append(peers, s)
 	}
 	return peers, nil
@@ -327,8 +343,7 @@ func (node *Node) SendChannel(channelName string, data []byte, pubkey ...bc.PubK
 	}
 
 	// prepend a uint16 of channel name length, little-endian
-	var t uint16
-	t = uint16(len(channelName))
+	t := uint16(len(channelName))
 	rxsum = []byte{byte(t >> 8), byte(t & 0xFF)}
 	rxsum = append(rxsum, []byte(channelName)...)
 
@@ -336,19 +351,6 @@ func (node *Node) SendChannel(channelName string, data []byte, pubkey ...bc.PubK
 }
 
 func (node *Node) send(channelName string, rxsum []byte, destkey bc.PubKey, msg []byte, c *sql.DB) error {
-	// append a nonce
-	salt, err := bc.GenerateRandomBytes(16)
-	if err != nil {
-		return err
-	}
-	rxsum = append(rxsum, salt...)
-
-	// append a hash of content public key so recepient will know it's for them
-	dh, err := bc.DestHash(destkey, salt)
-	if err != nil {
-		return err
-	}
-	rxsum = append(rxsum, dh...)
 
 	//todo: is this passing msg by reference or not???
 	data, err := node.contentKey.EncryptMessage(msg, destkey)
@@ -378,7 +380,9 @@ func (node *Node) Start() error {
 	// start the policies
 	if node.policies != nil {
 		for i := 0; i < len(node.policies); i++ {
-			node.policies[i].RunPolicy()
+			if err := node.policies[i].RunPolicy(); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -394,11 +398,15 @@ func (node *Node) Start() error {
 			message := <-node.In()
 			switch message.IsChan {
 			case true:
-				node.SendChannel(message.Name, message.Content.Bytes(), message.PubKey)
-				break
+				if err := node.SendChannel(message.Name, message.Content.Bytes(), message.PubKey); err != nil {
+					log.Fatal(err)
+				}
+
 			case false:
-				node.Send(message.Name, message.Content.Bytes(), message.PubKey)
-				break
+				if err := node.Send(message.Name, message.Content.Bytes(), message.PubKey); err != nil {
+					log.Fatal(err)
+				}
+
 			}
 		}
 	}()

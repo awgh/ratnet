@@ -24,23 +24,24 @@ func (node *Node) PublicRPC(method string, args ...string) (string, error) {
 
 	case "Pickup":
 		if len(args) < 2 {
-			return "", errors.New("Invalid argument count.")
+			return "", errors.New("Invalid argument count")
 		}
 
 		var i int64
 		i, err := strconv.ParseInt(args[1], 10, 64)
 		if err != nil {
-			return "", errors.New("Invalid argument.")
+			return "", errors.New("Invalid argument")
 		}
 
 		rpk := node.routingKey.GetPubKey().Clone()
-		if err := rpk.FromB64(args[0]); err != nil {
-			return "", errors.New("Invalid argument.")
+		err = rpk.FromB64(args[0])
+		if err != nil {
+			return "", errors.New("Invalid argument")
 		}
 
 		b, err := node.Pickup(rpk, i, args[2:]...)
 		if err != nil {
-			return "", errors.New("Invalid argument.")
+			return "", errors.New("Invalid argument")
 		}
 
 		var j []byte
@@ -51,7 +52,7 @@ func (node *Node) PublicRPC(method string, args ...string) (string, error) {
 
 	case "Dropoff":
 		if len(args) < 1 {
-			return "", errors.New("Invalid argument count.")
+			return "", errors.New("Invalid argument count")
 		}
 		var bundle api.Bundle
 		if err := json.Unmarshal([]byte(args[0]), &bundle); err != nil {
@@ -83,17 +84,17 @@ func (node *Node) AdminRPC(method string, args ...string) (string, error) {
 		}
 	case "GetChannelPrivKey":
 		if len(args) < 1 {
-			return "", errors.New("Invalid argument count.")
+			return "", errors.New("Invalid argument count")
 		}
 		return node.GetChannelPrivKey(args[0])
 	case "AddChannel":
 		if len(args) < 2 {
-			return "", errors.New("Invalid argument count.")
+			return "", errors.New("Invalid argument count")
 		}
 		return "", node.AddChannel(args[0], args[1])
 	case "DeleteChannel":
 		if len(args) < 1 {
-			return "", errors.New("Invalid argument count.")
+			return "", errors.New("Invalid argument count")
 		}
 		return "", node.DeleteChannel(args[0])
 	case "GetContacts":
@@ -106,17 +107,17 @@ func (node *Node) AdminRPC(method string, args ...string) (string, error) {
 		}
 	case "AddContact":
 		if len(args) < 2 {
-			return "", errors.New("Invalid argument count.")
+			return "", errors.New("Invalid argument count")
 		}
 		return "", node.AddContact(args[0], args[1])
 	case "DeleteContact":
 		if len(args) < 1 {
-			return "", errors.New("Invalid argument count.")
+			return "", errors.New("Invalid argument count")
 		}
 		return "", node.DeleteContact(args[0])
 	case "GetPeers":
 		if len(args) != 0 {
-			return "", errors.New("Invalid argument count.")
+			return "", errors.New("Invalid argument count")
 		}
 		if peers, err := node.GetPeers(); err != nil {
 			return "", err
@@ -127,16 +128,15 @@ func (node *Node) AdminRPC(method string, args ...string) (string, error) {
 		}
 	case "AddPeer":
 		if len(args) != 3 {
-			return "", errors.New("Invalid argument count.")
+			return "", errors.New("Invalid argument count")
 		}
 		name := args[0]
 		uri := args[1]
-		enabled := false
-		enabled, _ = strconv.ParseBool(args[2])
+		enabled, _ := strconv.ParseBool(args[2])
 		return "", node.AddPeer(name, enabled, uri)
 	case "DeletePeer":
 		if len(args) < 1 {
-			return "", errors.New("Invalid argument count.")
+			return "", errors.New("Invalid argument count")
 		}
 		return "", node.DeletePeer(args[0])
 	case "GetProfiles":
@@ -149,7 +149,7 @@ func (node *Node) AdminRPC(method string, args ...string) (string, error) {
 		}
 	case "LoadProfile":
 		if len(args) < 1 {
-			return "", errors.New("Invalid argument count.")
+			return "", errors.New("Invalid argument count")
 		}
 		p, err := node.LoadProfile(args[0])
 		if err != nil {
@@ -158,19 +158,21 @@ func (node *Node) AdminRPC(method string, args ...string) (string, error) {
 		return p.ToB64(), nil
 	case "AddProfile":
 		if len(args) != 2 {
-			return "", errors.New("Invalid argument count.")
+			return "", errors.New("Invalid argument count")
 		}
-		enabled := false
-		enabled, _ = strconv.ParseBool(args[1])
+		enabled, err := strconv.ParseBool(args[1])
+		if err != nil {
+			return "", errors.New("Invalid boolean for enabled")
+		}
 		return "", node.AddProfile(args[0], enabled)
 	case "DeleteProfile":
 		if len(args) < 1 {
-			return "", errors.New("Invalid argument count.")
+			return "", errors.New("Invalid argument count")
 		}
 		return "", node.DeleteProfile(args[0])
 	case "Send":
 		if len(args) < 2 {
-			return "", errors.New("Invalid argument count.")
+			return "", errors.New("Invalid argument count")
 		}
 		msg, err := base64.StdEncoding.DecodeString(args[1])
 		if err != nil {
@@ -187,7 +189,7 @@ func (node *Node) AdminRPC(method string, args ...string) (string, error) {
 
 	case "SendChannel":
 		if len(args) < 2 {
-			return "", errors.New("Invalid argument count.")
+			return "", errors.New("Invalid argument count")
 		}
 		msg, err := base64.StdEncoding.DecodeString(args[1])
 		if err != nil {

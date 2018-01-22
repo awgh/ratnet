@@ -12,7 +12,7 @@ type Node interface {
 	Router() Router
 	SetRouter(router Router)
 	GetChannelPrivKey(name string) (string, error)
-	Handle(channelName string, message []byte) error
+	Handle(channelName string, message []byte) (bool, error)
 	Forward(channelName string, message []byte) error
 
 	// FlushOutbox : Empties the outbox of messages older than maxAgeSeconds

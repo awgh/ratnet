@@ -22,10 +22,10 @@ type Node struct {
 	routingKey  bc.KeyPair
 	channelKeys map[string]bc.KeyPair
 
-	policies  []api.Policy
-	router    api.Router
-	db        func() *sql.DB
-	firstRun  bool
+	policies []api.Policy
+	router   api.Router
+	db       func() *sql.DB
+	//firstRun  bool
 	isRunning bool
 
 	debugMode bool

@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -21,8 +20,8 @@ import (
 )
 
 var (
-	dbinit = false
-	db     func() *sql.DB
+	//dbinit = false
+	//db func() *sql.DB
 
 	server1 api.Node
 	server2 api.Node
@@ -49,7 +48,7 @@ var ramMode bool
 
 func init() {
 	udpMode = true
-	ramMode = false
+	ramMode = true
 }
 
 func initServer1() (api.Transport, api.Transport) {
@@ -185,7 +184,7 @@ func initP2P2() (api.Transport, api.Transport) {
 }
 
 func Test_server_ID_1(t *testing.T) {
-	admin1, public1 := initServer1()
+	admin1, public1 = initServer1()
 
 	var err error
 	var r1, r2 []byte
@@ -200,32 +199,32 @@ func Test_server_ID_1(t *testing.T) {
 	} else {
 		t.Log(r2)
 	}
-	if bytes.Compare(r1, r2) != 0 {
+	if !bytes.Equal(r1, r2) {
 		t.Error(errors.New("Public and Admin interfaces returned different results"))
 	}
 }
 
 func Test_server_CID_1(t *testing.T) {
-	admin1, public1 := initServer1()
+	admin1, public1 = initServer1()
 
 	// should not work on public interface
 	result, err := public1.RPC("localhost:30001", "CID")
 	if err != nil {
 		t.Error(err.Error())
 	}
-	if bytes.Compare(result[:2], []byte("OK")) == 0 {
+	if bytes.Equal(result[:2], []byte("OK")) {
 		t.Error(errors.New("CID was accessible on Public network interface"))
 	}
 
-	result, err = admin1.RPC("localhost:30101", "CID")
+	_, err = admin1.RPC("localhost:30101", "CID")
 	if err != nil {
 		t.Error(err.Error())
 	}
 }
 
 func Test_server_AddContact_1(t *testing.T) {
-	admin1, public1 := initServer1()
-	admin2, _ := initServer2()
+	admin1, public1 = initServer1()
+	admin2, _ = initServer2()
 
 	p1, err := admin2.RPC("localhost:30202", "CID")
 	if err != nil {
@@ -238,7 +237,7 @@ func Test_server_AddContact_1(t *testing.T) {
 	if err != nil {
 		t.Error(err.Error())
 	}
-	if bytes.Compare(result[:2], []byte("OK")) == 0 {
+	if bytes.Equal(result[:2], []byte("OK")) {
 		t.Error(errors.New("AddContact was accessible on Public network interface"))
 	}
 	t.Log("API AddContact RESULT: " + string(result))
@@ -252,7 +251,7 @@ func Test_server_AddContact_1(t *testing.T) {
 }
 
 func Test_server_AddChannel_1(t *testing.T) {
-	admin1, public1 := initServer1()
+	admin1, public1 = initServer1()
 	// todo: add RSA test?
 	chankey := pubprivkeyb64Ecc
 
@@ -262,7 +261,7 @@ func Test_server_AddChannel_1(t *testing.T) {
 	if err != nil {
 		t.Error(err.Error())
 	}
-	if bytes.Compare(result[:2], []byte("OK")) == 0 {
+	if bytes.Equal(result[:2], []byte("OK")) {
 		t.Error(errors.New("AddChannel was accessible on Public network interface"))
 	}
 
@@ -275,14 +274,14 @@ func Test_server_AddChannel_1(t *testing.T) {
 }
 
 func Test_server_Send_1(t *testing.T) {
-	admin1, public1 := initServer1()
+	admin1, public1 = initServer1()
 
 	// should not work on public interface
 	result, err := public1.RPC("localhost:30001", "Send", "destname1", base64.StdEncoding.EncodeToString([]byte(testMessage1)))
 	if err != nil {
 		t.Error(err.Error())
 	}
-	if bytes.Compare(result[:2], []byte("OK")) == 0 {
+	if bytes.Equal(result[:2], []byte("OK")) {
 		t.Error(errors.New("Send was accessible on Public network interface"))
 	}
 
@@ -294,14 +293,14 @@ func Test_server_Send_1(t *testing.T) {
 }
 
 func Test_server_SendChannel_1(t *testing.T) {
-	admin1, public1 := initServer1()
+	admin1, public1 = initServer1()
 
 	// should not work on public interface
 	result, err := public1.RPC("localhost:30001", "SendChannel", "channel1", base64.StdEncoding.EncodeToString([]byte(testMessage2)))
 	if err != nil {
 		t.Error(err.Error())
 	}
-	if bytes.Compare(result[:2], []byte("OK")) == 0 {
+	if bytes.Equal(result[:2], []byte("OK")) {
 		t.Error(errors.New("SendChannel was accessible on Public network interface"))
 	}
 
@@ -330,11 +329,12 @@ func Test_server_PickupDropoff_1(t *testing.T) {
 	}
 
 	var bundle api.Bundle
-	if err := json.Unmarshal(result, &bundle); err != nil {
+	err = json.Unmarshal(result, &bundle)
+	if err != nil {
 		t.Error(err.Error())
 	}
 
-	result, err = public1.RPC("localhost:30002", "Dropoff", string(result))
+	_, err = public1.RPC("localhost:30002", "Dropoff", string(result))
 	if err != nil {
 		t.Error(err.Error())
 	}
@@ -353,7 +353,7 @@ func Test_server_PickupDropoff_2(t *testing.T) {
 	}()
 
 	t.Log("Trying AddChannel on server3 Admin interface")
-	result, err := admin3.RPC("localhost:30303", "AddChannel", "channel1", chankey)
+	_, err := admin3.RPC("localhost:30303", "AddChannel", "channel1", chankey)
 	if err != nil {
 		t.Error(err.Error())
 	}
@@ -361,15 +361,15 @@ func Test_server_PickupDropoff_2(t *testing.T) {
 	if err != nil {
 		t.Error(err.Error())
 	}
-	result, err = admin1.RPC("localhost:30101", "SendChannel", "channel1", base64.StdEncoding.EncodeToString([]byte(testMessage1)))
+	_, err = admin1.RPC("localhost:30101", "SendChannel", "channel1", base64.StdEncoding.EncodeToString([]byte(testMessage1)))
 	if err != nil {
 		t.Error(err.Error())
 	}
-	result, err = public1.RPC("localhost:30001", "Pickup", string(pubsrv), "31536000", "channel1") // seconds in a year
+	result, err := public1.RPC("localhost:30001", "Pickup", string(pubsrv), "31536000", "channel1") // seconds in a year
 	if err != nil {
 		t.Error(err.Error())
 	}
-	result, err = public1.RPC("localhost:30003", "Dropoff", string(result))
+	_, err = public1.RPC("localhost:30003", "Dropoff", string(result))
 	if err != nil {
 		t.Error(err.Error())
 	}
@@ -429,7 +429,7 @@ I want to have a talk with the spider,
 I want her to weave me a star.`
 
 // RSA TEST KEYS
-
+/*
 var pubkeypem = `-----BEGIN PUBLIC KEY-----
 MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAsHZQ6wRM/V5r6DGCr2io
 Us10ORayIPZEm4RwaqJSf8KdnaWa8sPdQInrpf0l9b2dqOHWk45pbHqRReyhOC8I
@@ -757,8 +757,10 @@ var privkey3b64 = "LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQpNSUlKS2dJQkFBS0NBZ
 	"RnVkV3ZTWHBRWmNQQjV4cVNLSXpPWTBjYzNuNlBzbgphMTZxQWZwZE1sYkpaZ1F3" +
 	"elMrZ3JsNW9hSW04MXUwT2NFZWRYZGljV2wremVqR21BZmZFYkVySEYzQ2VlUT09" +
 	"Ci0tLS0tRU5EIFJTQSBQUklWQVRFIEtFWS0tLS0tCg=="
-
+*/
 // ECC TEST KEYS
 var pubprivkeyb64Ecc = "Tcksa18txiwMEocq7NXdeMwz6PPBD+nxCjb/WCtxq1+dln3M3IaOmg+YfTIbBpk+jIbZZZiT+4CoeFzaJGEWmg=="
-var pubkeyb64Ecc = "Tcksa18txiwMEocq7NXdeMwz6PPBD+nxCjb/WCtxq18="
-var privkeyb64Ecc = "nZZ9zNyGjpoPmH0yGwaZPoyG2WWYk/uAqHhc2iRhFpo="
+
+//var pubkeyb64Ecc = "Tcksa18txiwMEocq7NXdeMwz6PPBD+nxCjb/WCtxq18="
+
+//var privkeyb64Ecc = "nZZ9zNyGjpoPmH0yGwaZPoyG2WWYk/uAqHhc2iRhFpo="

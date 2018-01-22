@@ -3,6 +3,7 @@ package ram
 import (
 	"encoding/base64"
 	"errors"
+	"log"
 	"time"
 
 	"github.com/awgh/bencrypt/bc"
@@ -101,7 +102,7 @@ func (node *Node) AddChannel(name string, privkey string) error {
 // DeleteChannel : Remove a channel from this node's database
 func (node *Node) DeleteChannel(name string) error {
 	if _, ok := node.channels[name]; !ok {
-		return errors.New("Channel not found.")
+		return errors.New("Channel not found")
 	}
 	delete(node.channels, name)
 	return nil
@@ -151,7 +152,7 @@ func (node *Node) AddProfile(name string, enabled bool) error {
 // DeleteProfile : Remove a profile from this node's database
 func (node *Node) DeleteProfile(name string) error {
 	if _, ok := node.profiles[name]; !ok {
-		return errors.New("Profile not found.")
+		return errors.New("Profile not found")
 	}
 	delete(node.profiles, name)
 	return nil
@@ -160,7 +161,7 @@ func (node *Node) DeleteProfile(name string) error {
 // LoadProfile : Load a profile key from the database as the content key
 func (node *Node) LoadProfile(name string) (bc.PubKey, error) {
 	if _, ok := node.channels[name]; !ok {
-		return nil, errors.New("Profile not found.")
+		return nil, errors.New("Profile not found")
 	}
 	node.contentKey = node.profiles[name].Privkey
 	node.debugMsg("Profile Loaded: " + node.contentKey.GetPubKey().ToB64())
@@ -202,7 +203,7 @@ func (node *Node) AddPeer(name string, enabled bool, uri string) error {
 // DeletePeer : Remove a peer from this node's database
 func (node *Node) DeletePeer(name string) error {
 	if _, ok := node.peers[name]; !ok {
-		return errors.New("Peer not found.")
+		return errors.New("Peer not found")
 	}
 	delete(node.peers, name)
 	return nil
@@ -217,7 +218,7 @@ func (node *Node) Send(contactName string, data []byte, pubkey ...bc.PubKey) err
 		destkey = pubkey[0]
 	} else {
 		if _, ok := node.contacts[contactName]; !ok {
-			return errors.New("Contact not found.")
+			return errors.New("Contact not found")
 		}
 		destkey = node.contentKey.GetPubKey().Clone()
 		if err := destkey.FromB64(node.contacts[contactName].Pubkey); err != nil {
@@ -247,8 +248,7 @@ func (node *Node) SendChannel(channelName string, data []byte, pubkey ...bc.PubK
 	}
 
 	// prepend a uint16 of channel name length, little-endian
-	var t uint16
-	t = uint16(len(channelName))
+	t := uint16(len(channelName))
 	rxsum = []byte{byte(t >> 8), byte(t & 0xFF)}
 	rxsum = append(rxsum, []byte(channelName)...)
 
@@ -256,29 +256,16 @@ func (node *Node) SendChannel(channelName string, data []byte, pubkey ...bc.PubK
 }
 
 func (node *Node) send(channelName string, rxsum []byte, destkey bc.PubKey, msg []byte) error {
-	// append a nonce
-	salt, err := bc.GenerateRandomBytes(16)
-	if err != nil {
-		return err
-	}
-	rxsum = append(rxsum, salt...)
-
-	// append a hash of content public key so recepient will know it's for them
-	dh, err := bc.DestHash(destkey, salt)
-	if err != nil {
-		return err
-	}
-	rxsum = append(rxsum, dh...)
 
 	//todo: is this passing msg by reference or not???
 	data, err := node.contentKey.EncryptMessage(msg, destkey)
 	if err != nil {
 		return err
 	}
-	data = append(rxsum, data...)
 	ts := time.Now().UnixNano()
 	d := base64.StdEncoding.EncodeToString(data)
 
+	//data = append(rxsum, data...)?
 	m := new(outboxMsg)
 	m.channel = channelName
 	m.timeStamp = ts
@@ -304,7 +291,9 @@ func (node *Node) Start() error {
 	// start the policies
 	if node.policies != nil {
 		for i := 0; i < len(node.policies); i++ {
-			node.policies[i].RunPolicy()
+			if err := node.policies[i].RunPolicy(); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -321,11 +310,13 @@ func (node *Node) Start() error {
 			node.debugMsg("Message accepted on input channel")
 			switch message.IsChan {
 			case true:
-				node.SendChannel(message.Name, message.Content.Bytes(), message.PubKey)
-				break
+				if err := node.SendChannel(message.Name, message.Content.Bytes(), message.PubKey); err != nil {
+					log.Fatal("SendChannel failed in input loop")
+				}
 			case false:
-				node.Send(message.Name, message.Content.Bytes(), message.PubKey)
-				break
+				if err := node.Send(message.Name, message.Content.Bytes(), message.PubKey); err != nil {
+					log.Fatal("Send failed in input loop")
+				}
 			}
 		}
 	}()

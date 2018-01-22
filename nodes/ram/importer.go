@@ -9,16 +9,20 @@ import (
 	"github.com/awgh/ratnet/api"
 )
 
+// ProfilePrivB64 - Private Key for a Profile in base64
 type ProfilePrivB64 struct {
 	Name    string
 	Privkey string //base64 encoded
 	Enabled bool
 }
+
+// ChannelPrivB64 - Private Key for a Channel in base64
 type ChannelPrivB64 struct {
 	Name    string
 	Privkey string //base64 encoded
 }
 
+// ExportedNode - Node Config structure for export
 type ExportedNode struct {
 	ContentKey  string
 	ContentType string
@@ -33,6 +37,7 @@ type ExportedNode struct {
 	Router   api.Router
 }
 
+// ImportedNode - Node Config structure for import
 type ImportedNode struct {
 	ContentKey  string
 	ContentType string

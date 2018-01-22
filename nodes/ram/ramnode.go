@@ -19,9 +19,9 @@ type Node struct {
 	contentKey bc.KeyPair
 	routingKey bc.KeyPair
 
-	policies  []api.Policy
-	router    api.Router
-	firstRun  bool
+	policies []api.Policy
+	router   api.Router
+	//firstRun  bool
 	isRunning bool
 
 	debugMode bool

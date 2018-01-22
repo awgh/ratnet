@@ -18,11 +18,13 @@ func (node *Node) ID() (bc.PubKey, error) {
 func (node *Node) Dropoff(bundle api.Bundle) error {
 	node.debugMsg("Dropoff called")
 	if len(bundle.Data) < 1 { // todo: correct min length
-		return errors.New("Dropoff called with no data.")
+		return errors.New("Dropoff called with no data")
 	}
-	data, err := node.routingKey.DecryptMessage(bundle.Data)
+	tagOK, data, err := node.routingKey.DecryptMessage(bundle.Data)
 	if err != nil {
 		return err
+	} else if !tagOK {
+		return errors.New("Luggage Tag Check Failed in Dropoff")
 	}
 	var lines []string
 	if err := json.Unmarshal(data, &lines); err != nil {
@@ -36,7 +38,10 @@ func (node *Node) Dropoff(bundle api.Bundle) error {
 		if err != nil {
 			continue
 		}
-		node.router.Route(node, msg)
+		err = node.router.Route(node, msg)
+		if err != nil {
+			return err
+		}
 	}
 	node.debugMsg("Dropoff returned")
 	return nil
@@ -76,7 +81,7 @@ func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, channelNames ...string)
 			} else {
 				pickupMsg = true
 			}
-			if pickupMsg == true {
+			if pickupMsg {
 				msgs = append(msgs, mail.msg)
 				retval.Time = mail.timeStamp
 			}
