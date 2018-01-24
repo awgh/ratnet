@@ -80,6 +80,7 @@ func (r *DefaultRouter) GetPatches() []api.Patch {
 	return r.Patches
 }
 
+// forward - channel prefixes have been stripped from message when they get here
 func (r *DefaultRouter) forward(node api.Node, channelName string, message []byte) error {
 	for _, p := range r.Patches { //todo: this could be constant-time
 		if channelName == p.From {
@@ -136,7 +137,7 @@ func (r *DefaultRouter) Route(node api.Node, message []byte) error {
 			}
 		}
 		if (!consumed && r.ForwardUnknownChannels) || (consumed && r.ForwardConsumedChannels) {
-			if err := r.forward(node, channelName, message); err != nil {
+			if err := r.forward(node, channelName, message[idx:]); err != nil {
 				return err
 			}
 		}
@@ -150,7 +151,7 @@ func (r *DefaultRouter) Route(node api.Node, message []byte) error {
 			}
 		}
 		if (!consumed && r.ForwardUnknownContent) || (consumed && r.ForwardConsumedContent) {
-			if err := r.forward(node, channelName, message); err != nil {
+			if err := r.forward(node, channelName, message[idx:]); err != nil {
 				return err
 			}
 		}
@@ -178,7 +179,7 @@ func (r *DefaultRouter) Route(node api.Node, message []byte) error {
 			}
 		}
 		if (!consumed && r.ForwardUnknownProfiles) || (consumed && r.ForwardConsumedProfiles) {
-			if err := r.forward(node, channelName, message); err != nil {
+			if err := r.forward(node, channelName, message[idx:]); err != nil {
 				return err
 			}
 		}

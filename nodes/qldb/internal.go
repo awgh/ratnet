@@ -31,6 +31,12 @@ func (node *Node) GetChannelPrivKey(name string) (string, error) {
 
 // Forward - Add an already-encrypted message to the outbound message queue (forward it along)
 func (node *Node) Forward(channelName string, message []byte) error {
+	// prepend a uint16 of channel name length, little-endian
+	t := uint16(len(channelName))
+	rxsum := []byte{byte(t >> 8), byte(t & 0xFF)}
+	rxsum = append(rxsum, []byte(channelName)...)
+	message = append(rxsum, message...)
+
 	b64msg := base64.StdEncoding.EncodeToString(message)
 	c := node.db()
 
@@ -107,7 +113,7 @@ func (node *Node) signalMonitor() {
 		for {
 			switch <-sigChannel {
 			case os.Kill:
-				break
+				return
 			}
 		}
 	}()

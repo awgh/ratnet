@@ -211,10 +211,8 @@ func (node *Node) DeletePeer(name string) error {
 
 // Send : Transmit a message to a single key
 func (node *Node) Send(contactName string, data []byte, pubkey ...bc.PubKey) error {
-	var rxsum []byte
-
 	var destkey bc.PubKey
-	if len(pubkey) > 0 { // third argument is optional pubkey override
+	if pubkey != nil && len(pubkey) > 0 && pubkey[0] != nil { // third argument is optional pubkey override
 		destkey = pubkey[0]
 	} else {
 		if _, ok := node.contacts[contactName]; !ok {
@@ -226,18 +224,14 @@ func (node *Node) Send(contactName string, data []byte, pubkey ...bc.PubKey) err
 		}
 	}
 
-	// prepend a uint16 zero, meaning channel name length is zero
-	rxsum = []byte{0, 0}
-
-	return node.send("", rxsum, destkey, data)
+	return node.send("", destkey, data)
 }
 
 // SendChannel : Transmit a message to a channel
 func (node *Node) SendChannel(channelName string, data []byte, pubkey ...bc.PubKey) error {
 	var destkey bc.PubKey
-	var rxsum []byte
 
-	if len(pubkey) > 0 { // third argument is optional PubKey override
+	if pubkey != nil && len(pubkey) > 0 && pubkey[0] != nil { // third argument is optional PubKey override
 		destkey = pubkey[0]
 	} else {
 		c, ok := node.channels[channelName]
@@ -247,25 +241,26 @@ func (node *Node) SendChannel(channelName string, data []byte, pubkey ...bc.PubK
 		destkey = c.Privkey.GetPubKey()
 	}
 
-	// prepend a uint16 of channel name length, little-endian
-	t := uint16(len(channelName))
-	rxsum = []byte{byte(t >> 8), byte(t & 0xFF)}
-	rxsum = append(rxsum, []byte(channelName)...)
-
-	return node.send(channelName, rxsum, destkey, data)
+	return node.send(channelName, destkey, data)
 }
 
-func (node *Node) send(channelName string, rxsum []byte, destkey bc.PubKey, msg []byte) error {
+func (node *Node) send(channelName string, destkey bc.PubKey, msg []byte) error {
 
 	//todo: is this passing msg by reference or not???
 	data, err := node.contentKey.EncryptMessage(msg, destkey)
 	if err != nil {
 		return err
 	}
+
+	// prepend a uint16 of channel name length, little-endian
+	t := uint16(len(channelName))
+	rxsum := []byte{byte(t >> 8), byte(t & 0xFF)}
+	rxsum = append(rxsum, []byte(channelName)...)
+	data = append(rxsum, data...)
+
 	ts := time.Now().UnixNano()
 	d := base64.StdEncoding.EncodeToString(data)
 
-	//data = append(rxsum, data...)?
 	m := new(outboxMsg)
 	m.channel = channelName
 	m.timeStamp = ts

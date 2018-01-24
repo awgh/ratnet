@@ -74,7 +74,7 @@ func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, channelNames ...string)
 	} else {
 		for _, cname := range channelNames {
 			for _, char := range cname {
-				if strings.Index("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0987654321", string(char)) == -1 {
+				if !strings.Contains("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0987654321", string(char)) {
 					return retval, errors.New("Invalid character in channel name")
 				}
 			}

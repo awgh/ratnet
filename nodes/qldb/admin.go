@@ -299,11 +299,10 @@ func (node *Node) DeletePeer(name string) error {
 func (node *Node) Send(contactName string, data []byte, pubkey ...bc.PubKey) error {
 	c := node.db()
 	var r1 *sql.Row
-	var rxsum []byte
 	var err error
 
 	var destkey bc.PubKey
-	if len(pubkey) > 0 { // third argument is optional pubkey override
+	if pubkey != nil && len(pubkey) > 0 && pubkey[0] != nil { // third argument is optional pubkey override
 		destkey = pubkey[0]
 	} else {
 		var s string
@@ -320,19 +319,15 @@ func (node *Node) Send(contactName string, data []byte, pubkey ...bc.PubKey) err
 		}
 	}
 
-	// prepend a uint16 zero, meaning channel name length is zero
-	rxsum = []byte{0, 0}
-
-	return node.send("", rxsum, destkey, data, c)
+	return node.send("", destkey, data, c)
 }
 
 // SendChannel : Transmit a message to a channel
 func (node *Node) SendChannel(channelName string, data []byte, pubkey ...bc.PubKey) error {
 	c := node.db()
 	var destkey bc.PubKey
-	var rxsum []byte
 
-	if len(pubkey) > 0 { // third argument is optional PubKey override
+	if pubkey != nil && len(pubkey) > 0 && pubkey[0] != nil { // third argument is optional PubKey override
 		destkey = pubkey[0]
 	} else {
 		key, ok := node.channelKeys[channelName]
@@ -342,22 +337,27 @@ func (node *Node) SendChannel(channelName string, data []byte, pubkey ...bc.PubK
 		destkey = key.GetPubKey()
 	}
 
-	// prepend a uint16 of channel name length, little-endian
-	t := uint16(len(channelName))
-	rxsum = []byte{byte(t >> 8), byte(t & 0xFF)}
-	rxsum = append(rxsum, []byte(channelName)...)
+	if destkey == nil {
+		log.Fatal("nil DestKey in SendChannel")
+	}
 
-	return node.send(channelName, rxsum, destkey, data, c)
+	return node.send(channelName, destkey, data, c)
 }
 
-func (node *Node) send(channelName string, rxsum []byte, destkey bc.PubKey, msg []byte, c *sql.DB) error {
+func (node *Node) send(channelName string, destkey bc.PubKey, msg []byte, c *sql.DB) error {
 
 	//todo: is this passing msg by reference or not???
 	data, err := node.contentKey.EncryptMessage(msg, destkey)
 	if err != nil {
 		return err
 	}
+
+	// prepend a uint16 of channel name length, little-endian
+	t := uint16(len(channelName))
+	rxsum := []byte{byte(t >> 8), byte(t & 0xFF)}
+	rxsum = append(rxsum, []byte(channelName)...)
 	data = append(rxsum, data...)
+
 	ts := time.Now().UnixNano()
 	d := base64.StdEncoding.EncodeToString(data)
 	transactExec(c, "INSERT INTO outbox(channel, msg, timestamp) VALUES($1,$2, $3);",
@@ -396,6 +396,7 @@ func (node *Node) Start() error {
 
 			// read message off the input channel
 			message := <-node.In()
+
 			switch message.IsChan {
 			case true:
 				if err := node.SendChannel(message.Name, message.Content.Bytes(), message.PubKey); err != nil {
@@ -406,7 +407,6 @@ func (node *Node) Start() error {
 				if err := node.Send(message.Name, message.Content.Bytes(), message.PubKey); err != nil {
 					log.Fatal(err)
 				}
-
 			}
 		}
 	}()

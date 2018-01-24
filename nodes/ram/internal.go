@@ -24,12 +24,19 @@ func (node *Node) GetChannelPrivKey(name string) (string, error) {
 
 // Forward - Add an already-encrypted message to the outbound message queue (forward it along)
 func (node *Node) Forward(channelName string, message []byte) error {
+	// prepend a uint16 of channel name length, little-endian
+	t := uint16(len(channelName))
+	rxsum := []byte{byte(t >> 8), byte(t & 0xFF)}
+	rxsum = append(rxsum, []byte(channelName)...)
+	message = append(rxsum, message...)
+
 	b64msg := base64.StdEncoding.EncodeToString(message)
 	for _, mail := range node.outbox {
 		if mail.channel == channelName && mail.msg == b64msg {
 			return nil // already have a copy... //todo: do we really need this check?
 		}
 	}
+
 	m := new(outboxMsg)
 	m.channel = channelName
 	m.timeStamp = time.Now().UnixNano()
