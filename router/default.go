@@ -127,7 +127,7 @@ func (r *DefaultRouter) Route(node api.Node, message []byte) error {
 		consumed := false
 		if r.CheckChannels {
 			chn, err := node.GetChannel(channelName)
-			if err == nil { // this is a channel key we know
+			if chn != nil && err == nil { // this is a channel key we know
 				pubkey := cid.Clone()
 				pubkey.FromB64(chn.Pubkey)
 				consumed, err = node.Handle(channelName, message[idx:])
