@@ -11,6 +11,7 @@ import (
 
 	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/ratnet/api"
+	"github.com/awgh/ratnet/nodes"
 	"github.com/awgh/ratnet/router"
 
 	_ "github.com/cznic/ql/driver" // load the QL database driver
@@ -136,7 +137,7 @@ func (node *Node) BootstrapDB(database string) func() *sql.DB {
 	transactExec(c, `
 		CREATE TABLE IF NOT EXISTS outbox (
 			channel		string	DEFAULT "",
-			msg			string	NOT NULL,
+			msg			blob	NOT NULL,
 			timestamp	int64	NOT NULL
 		);
 	`)
@@ -209,6 +210,17 @@ func (node *Node) Out() chan api.Msg {
 // Err : Returns the Err channel of this node
 func (node *Node) Err() chan api.Msg {
 	return node.err
+}
+
+// RPC set to default handlers
+// AdminRPC :
+func (node *Node) AdminRPC(call api.RemoteCall) (interface{}, error) {
+	return nodes.AdminRPC(node, call)
+}
+
+// PublicRPC :
+func (node *Node) PublicRPC(call api.RemoteCall) (interface{}, error) {
+	return nodes.PublicRPC(node, call)
 }
 
 // Debug

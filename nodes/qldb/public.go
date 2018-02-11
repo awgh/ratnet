@@ -1,9 +1,11 @@
 package qldb
 
 import (
-	"encoding/base64"
-	"encoding/json"
+	"bytes"
+	"encoding/gob"
 	"errors"
+	"log"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -28,21 +30,23 @@ func (node *Node) Dropoff(bundle api.Bundle) error {
 	} else if !tagOK {
 		return errors.New("Luggage Tag Check Failed in Dropoff")
 	}
-	var lines []string
-	if err := json.Unmarshal(data, &lines); err != nil {
+	var msgs [][]byte
+
+	//Use default gob decoder
+	reader := bytes.NewReader(data)
+	dec := gob.NewDecoder(reader)
+	if err := dec.Decode(&msgs); err != nil {
+		log.Printf("dropoff gob decode failed, len %d\n", len(data))
 		return err
 	}
-	for i := 0; i < len(lines); i++ {
-		if len(lines[i]) < 16 { // aes.BlockSize == 16
+	for i := 0; i < len(msgs); i++ {
+		if len(msgs[i]) < 16 { // aes.BlockSize == 16
 			continue //todo: remove padding before here?
 		}
-		msg, err := base64.StdEncoding.DecodeString(lines[i])
+		err = node.router.Route(node, msgs[i])
 		if err != nil {
-			continue
-		}
-		err = node.router.Route(node, msg)
-		if err != nil {
-			return err
+			log.Println("error in dropoff: " + err.Error())
+			continue // we don't want to return routing errors back out the remote public interface
 		}
 	}
 	node.debugMsg("Dropoff returned")
@@ -98,31 +102,45 @@ func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, channelNames ...string)
 		sqlq = sqlq + " )"
 	}
 	// todo:  ORDER BY breaks on android/arm and returns nothing without error, report to cznic
-	//			sqlq = sqlq + " ORDER BY timestamp ASC;"
-	sqlq = sqlq + ";"
+	sqlq = sqlq + " ORDER BY timestamp ASC LIMIT 250;"
+	//sqlq = sqlq;"
+
+	runtime.GC()
 	r := transactQuery(c, sqlq)
 
-	var msgs []string
+	var msgs [][]byte
+	var msg []byte
+	var ts int64
+	lastTimeReturned := lastTime
 	for r.Next() {
-		var msg string
-		var ts int64
 		r.Scan(&msg, &ts)
-		if ts > lastTime { // do this instead of ORDER BY, for android
-			lastTime = ts
+		if ts > lastTimeReturned { // do this instead of ORDER BY, for android
+			lastTimeReturned = ts
+		} else {
+			log.Printf("Timestamps not increasing - prev: %d  cur: %d\n", lastTimeReturned, ts)
 		}
+		//log.Printf("ts: %d\n", ts)
 		msgs = append(msgs, msg)
 	}
-	retval.Time = lastTime
+	r.Close()
+
+	//log.Printf("rows returned by Pickup query: %d, lastTime: %d\n", len(msgs), lastTimeReturned)
+	retval.Time = lastTimeReturned
 	if len(msgs) > 0 {
-		j, err := json.Marshal(msgs)
-		if err != nil {
+		//use default gob encoder
+		var buf bytes.Buffer
+		enc := gob.NewEncoder(&buf)
+		if err := enc.Encode(msgs); err != nil {
 			return retval, err
 		}
-		cipher, err := node.routingKey.EncryptMessage(j, rpub)
+		cipher, err := node.routingKey.EncryptMessage(buf.Bytes(), rpub)
 		if err != nil {
+			log.Printf("pickup gob encode failed, len %d\n", len(cipher))
 			return retval, err
 		}
 		retval.Data = cipher
+
+		msgs = nil
 		return retval, err
 	}
 	node.debugMsg("Pickup returned")

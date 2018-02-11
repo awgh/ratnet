@@ -2,7 +2,9 @@ package udp
 
 import (
 	"bufio"
+	"encoding/gob"
 	"encoding/json"
+	"errors"
 	"log"
 	"sync"
 
@@ -12,11 +14,7 @@ import (
 	"github.com/awgh/ratnet/api"
 )
 
-// DELIM : Message delimiter character
-var DELIM byte
-
 func init() {
-	DELIM = 0x0a
 	ratnet.Transports["udp"] = NewFromMap // register this module by name (for deserialization support)
 }
 
@@ -64,10 +62,10 @@ func (m *Module) Listen(listen string, adminMode bool) {
 		return
 	}
 	m.isRunning = true
+	m.wg.Add(1)
 
 	// read loop
 	go func() {
-		m.wg.Add(1)
 		defer lis.Close() // make sure the socket closes when we're done with it
 		defer m.wg.Done()
 
@@ -81,45 +79,60 @@ func (m *Module) Listen(listen string, adminMode bool) {
 
 			reader := bufio.NewReader(conn)
 			writer := bufio.NewWriter(conn)
-			b, err := reader.ReadBytes(DELIM)
-			if err != nil {
-				log.Println(err)
-				continue
-			}
 
 			var a api.RemoteCall
-			if err := json.Unmarshal(b, &a); err != nil {
-				log.Println(err.Error())
+			//Use default gob decoder
+			dec := gob.NewDecoder(reader)
+			if err = dec.Decode(&a); err != nil {
+				log.Println("listen gob decode failed: " + err.Error())
 				continue
 			}
 
-			var result string
+			var result interface{}
 			if adminMode {
-				result, err = m.node.AdminRPC(a.Action, a.Args...)
+				result, err = m.node.AdminRPC(a)
 			} else {
-				result, err = m.node.PublicRPC(a.Action, a.Args...)
+				result, err = m.node.PublicRPC(a)
 			}
+			//log.Printf("result type %T \n", result)
+
+			rr := api.RemoteResponse{}
 			if err != nil {
-				log.Println(err.Error())
-				result = err.Error()
-			} else if len(result) < 1 {
-				result = "OK" // todo: for backwards compatability, remove when nothing needs it
+				rr.Error = err.Error()
 			}
-			writer.Write(append([]byte(result), DELIM))
-			writer.Flush()
+			if result != nil { // gob cannot encode typed Nils, only interface{} Nils...wtf?
+				rr.Value = result
+			}
+
+			enc := gob.NewEncoder(writer)
+			if err := enc.Encode(rr); err != nil {
+				log.Println("listen gob encode failed: " + err.Error())
+				continue
+			}
+			_ = writer.Flush()
 		}
 	}()
 }
 
 // RPC : transmit data via UDP
-func (m *Module) RPC(host string, method string, args ...string) ([]byte, error) {
+func (m *Module) RPC(host string, method string, args ...interface{}) (interface{}, error) {
 
+	var conn *kcp.UDPSession
 	// open client socket
-	conn, err := kcp.DialWithOptions(host, nil, 10, 3)
+	var err error
+	conn, err = kcp.DialWithOptions(host, nil, 10, 3)
 	if err != nil {
 		return nil, err
 	}
 	defer conn.Close()
+
+	conn.SetStreamMode(true)
+	conn.SetWindowSize(512, 512)
+	conn.SetNoDelay(1, 40, 2, 1)
+	conn.SetACKNoDelay(false)
+
+	//conn.SetReadDeadline(time.Now().Add(timeout))
+	//conn.SetWriteDeadline(time.Now().Add(timeout))
 
 	reader := bufio.NewReader(conn)
 	writer := bufio.NewWriter(conn)
@@ -127,24 +140,36 @@ func (m *Module) RPC(host string, method string, args ...string) ([]byte, error)
 	var a api.RemoteCall
 	a.Action = method
 	a.Args = args
-	b, err := json.Marshal(a)
-	if err != nil {
+
+	//use default gob encoder
+	enc := gob.NewEncoder(writer)
+	if err := enc.Encode(a); err != nil {
+		//log.Println("rpc gob encode failed: " + err.Error())
 		return nil, err
 	}
-	// send data
-	_, err = writer.Write(b)
-	if err != nil {
-		return nil, err
-	}
-	writer.WriteByte(DELIM)
 	writer.Flush()
 
-	resp, err := reader.ReadBytes(DELIM)
-	return resp, err
+	var rr api.RemoteResponse
+	dec := gob.NewDecoder(reader)
+	if err := dec.Decode(&rr); err != nil {
+		//log.Println("rpc gob decode failed: " + err.Error())
+		return nil, err
+	}
+
+	//log.Printf("dirty rx in rpc: %+v\n", rr.Value)
+
+	if rr.IsErr() {
+		return nil, errors.New(rr.Error)
+	}
+	if rr.IsNil() {
+		return nil, nil
+	}
+	return rr.Value, nil
 }
 
 // Stop : Stops module
 func (m *Module) Stop() {
 	m.isRunning = false
+
 	m.wg.Wait()
 }

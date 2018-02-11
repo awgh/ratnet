@@ -6,11 +6,9 @@ import (
 	"encoding/json"
 	"errors"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
-	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
 
@@ -25,22 +23,23 @@ import (
 // P2P - a policy which makes peer-to-peer connections without a priori knowledge of peers
 //
 type P2P struct {
-	Transport api.Transport
-	ListenURI string
-	AdminMode bool
-	Node      api.Node
+	negotiationRank uint64
+	// last poll times - moving to peerTable
+	// lastPollLocal, lastPollRemote int64
+
+	ListenInterval    int
+	AdvertiseInterval int
 
 	IsListening   bool
 	IsAdvertising bool
+	AdminMode     bool
+	ListenURI     string
+	localAddress  string
+	Transport     api.Transport
+	Node          api.Node
 
 	listenSocket *net.UDPConn
 	dialSocket   *net.UDPConn
-	localAddress string
-
-	negotiationRank uint64
-
-	// last poll times
-	lastPollLocal, lastPollRemote int64
 }
 
 var (
@@ -60,17 +59,22 @@ func init() {
 func NewP2PFromMap(transport api.Transport, node api.Node, p map[string]interface{}) api.Policy {
 	listenURI := p["ListenURI"].(string)
 	adminMode := p["AdminMode"].(bool)
-	return NewP2P(transport, listenURI, node, adminMode)
+	listenInterval := p["ListenInterval"].(int)
+	advertiseInterval := p["AdvertiseInterval"].(int)
+	return NewP2P(transport, listenURI, node, adminMode, listenInterval, advertiseInterval)
 }
 
 // NewP2P : Returns a new instance of a P2P Connection Policy
 //
-func NewP2P(transport api.Transport, listenURI string, node api.Node, adminMode bool) *P2P {
+func NewP2P(transport api.Transport, listenURI string, node api.Node, adminMode bool,
+	listenInterval int, advertiseInterval int) *P2P {
 	s := new(P2P)
 	s.Transport = transport
 	s.ListenURI = listenURI
 	s.AdminMode = adminMode
 	s.Node = node
+	s.ListenInterval = listenInterval
+	s.AdvertiseInterval = advertiseInterval
 
 	s.rerollNegotiationRank()
 	return s
@@ -79,10 +83,12 @@ func NewP2P(transport api.Transport, listenURI string, node api.Node, adminMode 
 // MarshalJSON : Create a serialied representation of the config of this policy
 func (s *P2P) MarshalJSON() (b []byte, e error) {
 	return json.Marshal(map[string]interface{}{
-		"Policy":    "p2p",
-		"ListenURI": s.ListenURI,
-		"AdminMode": s.AdminMode,
-		"Transport": s.Transport})
+		"Policy":            "p2p",
+		"ListenURI":         s.ListenURI,
+		"AdminMode":         s.AdminMode,
+		"Transport":         s.Transport,
+		"ListenInterval":    s.ListenInterval,
+		"AdvertiseInterval": s.AdvertiseInterval})
 }
 
 func (s *P2P) initListenSocket() {
@@ -90,7 +96,10 @@ func (s *P2P) initListenSocket() {
 	if err != nil {
 		log.Fatal(err.Error())
 	}
-	socket.SetReadBuffer(maxDatagramSize)
+	err = socket.SetReadBuffer(maxDatagramSize)
+	if err != nil {
+		log.Fatal(err.Error())
+	}
 	s.listenSocket = socket
 }
 
@@ -105,12 +114,12 @@ func (s *P2P) initDialSocket() error {
 	// prepare the service string
 	hp := strings.Split(s.ListenURI, ":") // listen URI has no protocol, is in format [HOST]:PORT
 	if len(hp) < 1 {
-		return errors.New("Split Host/Port failed with no port.")
+		return errors.New("Split Host/Port failed with no port")
 	}
 	port := hp[len(hp)-1]
 	ip := strings.Split(s.dialSocket.LocalAddr().String(), ":") // LocalAddr has no protocol, is in format [HOST]:PORT
 	if len(ip) < 1 {
-		return errors.New("Split Host/Port failed.")
+		return errors.New("Split Host/Port failed")
 	}
 	s.localAddress = s.Transport.Name() + "://" + ip[0] + ":" + port
 
@@ -118,6 +127,7 @@ func (s *P2P) initDialSocket() error {
 }
 
 func (s *P2P) rerollNegotiationRank() {
+	rand.Seed(time.Now().UnixNano()) // otherwise go defaults to seed(1). really.
 	s.negotiationRank = uint64(rand.Uint32())<<32 + uint64(rand.Uint32())
 }
 
@@ -139,7 +149,7 @@ func (s *P2P) RunPolicy() error {
 			if err := s.mdnsAdvertise(); err != nil {
 				log.Println("mdnsAdvertise errored: ", err.Error())
 			}
-			time.Sleep(time.Second) //time.Minute)
+			time.Sleep(time.Duration(s.AdvertiseInterval) * time.Millisecond) // update interval
 		}
 	}()
 	return nil
@@ -197,6 +207,10 @@ func (s *P2P) mdnsListen() error {
 		//if exists {
 		//	log.Println("Ignoring peer we're already talking to.")
 		//}
+
+		//log.Println("Negotiation: " + s.localAddress + " " + target + " " +
+		//	strconv.FormatUint(targetNegRank, 10) + " " + strconv.FormatUint(s.negotiationRank, 10))
+
 		if !exists && (target != "" && targetNegRank > 0 && s.localAddress != target) {
 			/*
 				Negotiation:
@@ -224,11 +238,11 @@ func (s *P2P) mdnsListen() error {
 				peerlist[target] = trans
 				go func() {
 					for s.IsListening {
-						if happy, err := s.pollServer(trans, s.Node, target[len(u.Scheme)+3:], pubsrv); !happy {
+						if happy, err := PollServer(trans, s.Node, target[len(u.Scheme)+3:], pubsrv); !happy {
 							log.Println(err.Error())
-							break
+							continue
 						}
-						time.Sleep(20 * time.Second) // TODO: update interval
+						time.Sleep(time.Duration(s.ListenInterval) * time.Millisecond) // update interval
 					}
 				}()
 			}
@@ -268,58 +282,4 @@ func (s *P2P) mdnsAdvertise() error {
 		log.Println("Write failed with:", err.Error())
 	}
 	return nil
-}
-
-// pollServer will keep trying until either we get a result or the timeout expires
-// todo: this is exactly the same as the one in Poll... merge somehow?
-func (p *P2P) pollServer(transport api.Transport, node api.Node, host string, pubsrv bc.PubKey) (bool, error) {
-	// Pickup Local
-	log.Println("before remote ID")
-	rpubkey, err := transport.RPC(host, "ID")
-	if err != nil {
-		log.Println(err.Error())
-		return false, err
-	}
-	rpk := pubsrv.Clone()
-	if err := rpk.FromB64(string(rpubkey)); err != nil {
-		return false, err
-	}
-	log.Println("before local Pickup")
-	toRemoteRaw, err := node.Pickup(rpk, p.lastPollLocal)
-	if err != nil {
-		return false, err
-	}
-	log.Println("pollServer Pickup Local result len: ", len(toRemoteRaw.Data))
-	// Pickup Remote
-	toLocalRaw, err := transport.RPC(host, "Pickup", pubsrv.ToB64(), strconv.FormatInt(p.lastPollRemote, 10))
-	if err != nil {
-		return false, err
-	}
-	log.Println("pollServer Pickup Remote result len: ", len(toLocalRaw))
-	var toLocal api.Bundle
-	if err := json.Unmarshal(toLocalRaw, &toLocal); err != nil {
-		return false, err
-	}
-	p.lastPollLocal = toRemoteRaw.Time
-	p.lastPollRemote = toLocal.Time
-
-	toRemote, err := json.Marshal(toRemoteRaw)
-	if err != nil {
-		return false, err
-	}
-	log.Println("pollServer 5")
-	// Dropoff Remote
-	if len(toRemoteRaw.Data) > 0 {
-		if _, err := transport.RPC(host, "Dropoff", string(toRemote)); err != nil {
-			return false, err
-		}
-	}
-	// Dropoff Local
-	if len(toLocal.Data) > 0 {
-		if err := node.Dropoff(toLocal); err != nil {
-			return false, err
-		}
-	}
-	log.Println("pollServer 6")
-	return true, nil
 }

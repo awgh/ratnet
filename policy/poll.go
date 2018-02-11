@@ -4,11 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
-	"strconv"
 	"sync"
 	"time"
 
-	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
 )
@@ -24,6 +22,8 @@ type Poll struct {
 
 	Transport api.Transport
 	node      api.Node
+
+	Interval int
 }
 
 func init() {
@@ -31,15 +31,18 @@ func init() {
 }
 
 // NewPollFromMap : Makes a new instance of this transport module from a map of arguments (for deserialization support)
-func NewPollFromMap(transport api.Transport, node api.Node, t map[string]interface{}) api.Policy {
-	return NewPoll(transport, node)
+func NewPollFromMap(transport api.Transport, node api.Node,
+	t map[string]interface{}) api.Policy {
+	interval := t["Interval"].(int)
+	return NewPoll(transport, node, interval)
 }
 
 // NewPoll : Returns a new instance of a Poll Connection Policy
-func NewPoll(transport api.Transport, node api.Node) *Poll {
+func NewPoll(transport api.Transport, node api.Node, interval int) *Poll {
 	p := new(Poll)
 	p.Transport = transport
 	p.node = node
+	p.Interval = interval
 	return p
 }
 
@@ -47,7 +50,8 @@ func NewPoll(transport api.Transport, node api.Node) *Poll {
 func (p *Poll) MarshalJSON() (b []byte, e error) {
 	return json.Marshal(map[string]interface{}{
 		"Policy":    "poll",
-		"Transport": p.Transport})
+		"Transport": p.Transport,
+		"Interval":  p.Interval})
 }
 
 // RunPolicy : Poll
@@ -59,8 +63,8 @@ func (p *Poll) RunPolicy() error {
 	p.lastPollLocal = 0
 	p.lastPollRemote = 0
 
+	p.wg.Add(1)
 	go func() {
-		p.wg.Add(1)
 		defer p.wg.Done()
 		if p.isRunning {
 			return
@@ -74,10 +78,10 @@ func (p *Poll) RunPolicy() error {
 		counter := 0
 		for {
 			// check if we should still be running
-			if p.isRunning == false {
+			if !p.isRunning {
 				break
 			}
-			time.Sleep(500 * time.Millisecond) // update interval
+			time.Sleep(time.Duration(p.Interval) * time.Millisecond) // update interval
 
 			// Get Server List
 			peers, err := p.node.GetPeers()
@@ -87,7 +91,7 @@ func (p *Poll) RunPolicy() error {
 			}
 			for _, element := range peers {
 				if element.Enabled {
-					_, err := p.pollServer(p.Transport, p.node, element.URI, pubsrv)
+					_, err := PollServer(p.Transport, p.node, element.URI, pubsrv)
 					if err != nil {
 						log.Println("pollServer error: ", err.Error())
 					}
@@ -102,57 +106,6 @@ func (p *Poll) RunPolicy() error {
 	}()
 
 	return nil
-}
-
-// pollServer will keep trying until either we get a result or the timeout expires
-func (p *Poll) pollServer(transport api.Transport, node api.Node, host string, pubsrv bc.PubKey) (bool, error) {
-
-	// Pickup Local
-	rpubkey, err := transport.RPC(host, "ID")
-	if err != nil {
-		return false, err
-	}
-	rpk := pubsrv.Clone()
-	if err := rpk.FromB64(string(rpubkey)); err != nil {
-		return false, err
-	}
-
-	toRemoteRaw, err := node.Pickup(rpk, p.lastPollLocal)
-	if err != nil {
-		return false, err
-	}
-
-	// Pickup Remote
-	toLocalRaw, err := transport.RPC(host, "Pickup", pubsrv.ToB64(), strconv.FormatInt(p.lastPollRemote, 10))
-	if err != nil {
-		return false, err
-	}
-	var toLocal api.Bundle
-	if err := json.Unmarshal(toLocalRaw, &toLocal); err != nil {
-		return false, err
-	}
-
-	p.lastPollLocal = toRemoteRaw.Time
-	p.lastPollRemote = toLocal.Time
-
-	toRemote, err := json.Marshal(toRemoteRaw)
-	if err != nil {
-		return false, err
-	}
-
-	// Dropoff Remote
-	if len(toRemoteRaw.Data) > 0 {
-		if _, err := transport.RPC(host, "Dropoff", string(toRemote)); err != nil {
-			return false, err
-		}
-	}
-	// Dropoff Local
-	if len(toLocal.Data) > 0 {
-		if err := node.Dropoff(toLocal); err != nil {
-			return false, err
-		}
-	}
-	return true, nil
 }
 
 // Stop : Stops this instance of Poll from running

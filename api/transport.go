@@ -4,7 +4,7 @@ package api
 type Transport interface {
 	Listen(listen string, adminMode bool)
 	Name() string
-	RPC(host string, method string, args ...string) ([]byte, error)
+	RPC(host string, method string, args ...interface{}) (interface{}, error)
 	Stop()
 	MarshalJSON() (b []byte, e error)
 }
@@ -12,5 +12,17 @@ type Transport interface {
 // RemoteCall : defines a Remote Procedure Call
 type RemoteCall struct {
 	Action string
-	Args   []string
+	Args   []interface{}
 }
+
+// RemoteResponse : defines a response returned from a Remote Procedure Call
+type RemoteResponse struct {
+	Error string
+	Value interface{}
+}
+
+// IsNil - is this response Nil?
+func (r *RemoteResponse) IsNil() bool { return r.Value == nil }
+
+// IsErr - is this response an error?
+func (r *RemoteResponse) IsErr() bool { return r.Error != "" }

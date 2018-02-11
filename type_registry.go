@@ -1,6 +1,12 @@
 package ratnet
 
-import "github.com/awgh/ratnet/api"
+import (
+	"encoding/gob"
+
+	"github.com/awgh/bencrypt/ecc"
+	"github.com/awgh/bencrypt/rsa"
+	"github.com/awgh/ratnet/api"
+)
 
 // One map for each type of types:  Routers, Connection Policies, and Transports
 
@@ -17,6 +23,20 @@ func init() {
 	Routers = make(map[string]func(map[string]interface{}) api.Router)
 	Policies = make(map[string]func(api.Transport, api.Node, map[string]interface{}) api.Policy)
 	Transports = make(map[string]func(api.Node, map[string]interface{}) api.Transport)
+
+	// Register all types used by the gob encoder/decoder for RPC API calls
+	gob.Register(api.RemoteResponse{})
+	gob.Register(&rsa.PubKey{})
+	gob.Register(&ecc.PubKey{})
+	gob.Register(api.Bundle{})
+	gob.Register(&api.Contact{})
+	gob.Register([]api.Contact{})
+	gob.Register(&api.Channel{})
+	gob.Register([]api.Channel{})
+	gob.Register(&api.Profile{})
+	gob.Register([]api.Profile{})
+	gob.Register(&api.Peer{})
+	gob.Register([]api.Peer{})
 }
 
 // NewTransportFromMap : Create a new instance of a Transport from a map of arguments

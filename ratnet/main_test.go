@@ -2,13 +2,12 @@ package main
 
 import (
 	"bytes"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"os"
 	"testing"
 	"time"
 
+	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/bencrypt/ecc"
 	"github.com/awgh/ratnet/api"
 	"github.com/awgh/ratnet/nodes/qldb"
@@ -20,9 +19,6 @@ import (
 )
 
 var (
-	//dbinit = false
-	//db func() *sql.DB
-
 	server1 api.Node
 	server2 api.Node
 	server3 api.Node
@@ -47,8 +43,8 @@ var udpMode bool
 var ramMode bool
 
 func init() {
-	udpMode = true
-	ramMode = true
+	udpMode = false
+	ramMode = false
 }
 
 func initServer1() (api.Transport, api.Transport) {
@@ -187,19 +183,27 @@ func Test_server_ID_1(t *testing.T) {
 	admin1, public1 = initServer1()
 
 	var err error
-	var r1, r2 []byte
+	var r1, r2 interface{}
 	if r1, err = public1.RPC("localhost:30001", "ID"); err != nil {
 		t.Error(err.Error())
 	} else {
-		t.Log(r1)
+		t.Logf("%+v\n", r1)
 	}
 	// should work on both interfaces
 	if r2, err = admin1.RPC("localhost:30101", "ID"); err != nil {
 		t.Error(err.Error())
 	} else {
-		t.Log(r2)
+		t.Logf("%+v\n", r2)
 	}
-	if !bytes.Equal(r1, r2) {
+	r1k, ok := r1.(bc.PubKey)
+	if !ok {
+		t.Error("Public RPC did not return a PubKey")
+	}
+	r2k, ok := r2.(bc.PubKey)
+	if !ok {
+		t.Error("Admin RPC did not return a PubKey")
+	}
+	if !bytes.Equal(r1k.ToBytes(), r2k.ToBytes()) {
 		t.Error(errors.New("Public and Admin interfaces returned different results"))
 	}
 }
@@ -208,11 +212,8 @@ func Test_server_CID_1(t *testing.T) {
 	admin1, public1 = initServer1()
 
 	// should not work on public interface
-	result, err := public1.RPC("localhost:30001", "CID")
-	if err != nil {
-		t.Error(err.Error())
-	}
-	if bytes.Equal(result[:2], []byte("OK")) {
+	_, err := public1.RPC("localhost:30001", "CID")
+	if err == nil {
 		t.Error(errors.New("CID was accessible on Public network interface"))
 	}
 
@@ -233,21 +234,45 @@ func Test_server_AddContact_1(t *testing.T) {
 
 	t.Log("Trying AddContact on Public interface")
 	// should not work on public interface
-	result, err := public1.RPC("localhost:30001", "AddContact", "destname1", string(p1))
-	if err != nil {
-		t.Error(err.Error())
-	}
-	if bytes.Equal(result[:2], []byte("OK")) {
+	if _, erra := public1.RPC("localhost:30001", "AddContact", "destname1", p1); erra == nil {
 		t.Error(errors.New("AddContact was accessible on Public network interface"))
 	}
-	t.Log("API AddContact RESULT: " + string(result))
+
+	r1 := p1.(bc.PubKey)
+	//t.Logf("r1: %T %v %v\n", r1, r1, ok)
 
 	t.Log("Trying AddContact on Admin interface")
-	result, err = admin1.RPC("localhost:30101", "AddContact", "destname1", string(p1))
+	_, errb := admin1.RPC("localhost:30101", "AddContact", "destname1", r1.ToB64())
+	if errb != nil {
+		t.Error(errb.Error())
+	}
+}
+
+func Test_server_GetContact_1(t *testing.T) {
+	admin1, public1 = initServer1()
+
+	t.Log("Trying GetContact on Public interface")
+	// should not work on public interface
+	if _, erra := public1.RPC("localhost:30001", "GetContact", "destname1"); erra == nil {
+		t.Error(errors.New("GetContact was accessible on Public network interface"))
+	}
+
+	t.Log("Trying GetContacts on Public interface")
+	// should not work on public interface
+	if _, erra := public1.RPC("localhost:30001", "GetContacts"); erra == nil {
+		t.Error(errors.New("GetContacts was accessible on Public network interface"))
+	}
+
+	t.Log("Trying GetContact on Admin interface")
+	_, err := admin1.RPC("localhost:30101", "GetContact", "destname1")
 	if err != nil {
 		t.Error(err.Error())
 	}
-	t.Log("API AddContact RESULT: " + string(result))
+	t.Log("Trying GetContacts on Admin interface")
+	_, err = admin1.RPC("localhost:30101", "GetContacts")
+	if err != nil {
+		t.Error(err.Error())
+	}
 }
 
 func Test_server_AddChannel_1(t *testing.T) {
@@ -257,58 +282,159 @@ func Test_server_AddChannel_1(t *testing.T) {
 
 	t.Log("Trying AddChannel on Public interface")
 	// should not work on public interface
-	result, err := public1.RPC("localhost:30001", "AddChannel", "channel1", chankey)
-	if err != nil {
-		t.Error(err.Error())
-	}
-	if bytes.Equal(result[:2], []byte("OK")) {
+	_, err := public1.RPC("localhost:30001", "AddChannel", "channel1", chankey)
+	if err == nil {
 		t.Error(errors.New("AddChannel was accessible on Public network interface"))
 	}
 
 	t.Log("Trying AddChannel on Admin interface")
-	result, err = admin1.RPC("localhost:30101", "AddChannel", "channel1", chankey)
+	_, err = admin1.RPC("localhost:30101", "AddChannel", "channel1", chankey)
 	if err != nil {
 		t.Error(err.Error())
 	}
-	t.Log("API AddChannel RESULT: " + string(result))
+}
+
+func Test_server_GetChannel_1(t *testing.T) {
+	admin1, public1 = initServer1()
+
+	t.Log("Trying GetChannel on Public interface")
+	// should not work on public interface
+	if _, erra := public1.RPC("localhost:30001", "GetChannel", "channel1"); erra == nil {
+		t.Error(errors.New("GetChannel was accessible on Public network interface"))
+	}
+
+	t.Log("Trying GetChannels on Public interface")
+	// should not work on public interface
+	if _, erra := public1.RPC("localhost:30001", "GetChannels"); erra == nil {
+		t.Error(errors.New("GetChannels was accessible on Public network interface"))
+	}
+
+	t.Log("Trying GetChannel on Admin interface")
+	_, err := admin1.RPC("localhost:30101", "GetChannel", "channel1")
+	if err != nil {
+		t.Error(err.Error())
+	}
+	t.Log("Trying GetChannels on Admin interface")
+	_, err = admin1.RPC("localhost:30101", "GetChannels")
+	if err != nil {
+		t.Error(err.Error())
+	}
+}
+
+func Test_server_AddProfile_1(t *testing.T) {
+	admin1, public1 = initServer1()
+
+	t.Log("Trying AddProfile on Public interface")
+	// should not work on public interface
+	if _, erra := public1.RPC("localhost:30001", "AddProfile", "profile1", "false"); erra == nil {
+		t.Error(errors.New("AddProfile was accessible on Public network interface"))
+	}
+
+	t.Log("Trying AddProfile on Admin interface")
+	_, errb := admin1.RPC("localhost:30101", "AddProfile", "profile1", "false")
+	if errb != nil {
+		t.Error(errb.Error())
+	}
+}
+
+func Test_server_GetProfile_1(t *testing.T) {
+	admin1, public1 = initServer1()
+
+	t.Log("Trying GetProfile on Public interface")
+	// should not work on public interface
+	if _, erra := public1.RPC("localhost:30001", "GetProfile", "profile1"); erra == nil {
+		t.Error(errors.New("GetProfile was accessible on Public network interface"))
+	}
+
+	t.Log("Trying GetProfiles on Public interface")
+	// should not work on public interface
+	if _, erra := public1.RPC("localhost:30001", "GetProfiles"); erra == nil {
+		t.Error(errors.New("GetProfiles was accessible on Public network interface"))
+	}
+
+	t.Log("Trying GetProfile on Admin interface")
+	_, err := admin1.RPC("localhost:30101", "GetProfile", "profile1")
+	if err != nil {
+		t.Error(err.Error())
+	}
+	t.Log("Trying GetProfiles on Admin interface")
+	_, err = admin1.RPC("localhost:30101", "GetProfiles")
+	if err != nil {
+		t.Error(err.Error())
+	}
+}
+
+func Test_server_AddPeer_1(t *testing.T) {
+	admin1, public1 = initServer1()
+
+	t.Log("Trying AddPeer on Public interface")
+	// should not work on public interface
+	if _, erra := public1.RPC("localhost:30001", "AddPeer", "peer1", "false", "https://1.2.3.4:443"); erra == nil {
+		t.Error(errors.New("AddPeer was accessible on Public network interface"))
+	}
+
+	t.Log("Trying AddPeer on Admin interface")
+	_, errb := admin1.RPC("localhost:30101", "AddPeer", "peer1", "false", "https://1.2.3.4:443")
+	if errb != nil {
+		t.Error(errb.Error())
+	}
+}
+
+func Test_server_GetPeer_1(t *testing.T) {
+	admin1, public1 = initServer1()
+
+	t.Log("Trying GetPeer on Public interface")
+	// should not work on public interface
+	if _, erra := public1.RPC("localhost:30001", "GetPeer", "peer1"); erra == nil {
+		t.Error(errors.New("GetPeer was accessible on Public network interface"))
+	}
+
+	t.Log("Trying GetPeers on Public interface")
+	// should not work on public interface
+	if _, erra := public1.RPC("localhost:30001", "GetPeers"); erra == nil {
+		t.Error(errors.New("GetPeers was accessible on Public network interface"))
+	}
+
+	t.Log("Trying GetPeer on Admin interface")
+	_, err := admin1.RPC("localhost:30101", "GetPeer", "peer1")
+	if err != nil {
+		t.Error(err.Error())
+	}
+	t.Log("Trying GetPeers on Admin interface")
+	_, err = admin1.RPC("localhost:30101", "GetPeers")
+	if err != nil {
+		t.Error(err.Error())
+	}
 }
 
 func Test_server_Send_1(t *testing.T) {
 	admin1, public1 = initServer1()
 
 	// should not work on public interface
-	result, err := public1.RPC("localhost:30001", "Send", "destname1", base64.StdEncoding.EncodeToString([]byte(testMessage1)))
-	if err != nil {
-		t.Error(err.Error())
-	}
-	if bytes.Equal(result[:2], []byte("OK")) {
+	_, err := public1.RPC("localhost:30001", "Send", "destname1", []byte(testMessage1))
+	if err == nil {
 		t.Error(errors.New("Send was accessible on Public network interface"))
 	}
 
-	result, err = admin1.RPC("localhost:30101", "Send", "destname1", base64.StdEncoding.EncodeToString([]byte(testMessage1)))
+	_, err = admin1.RPC("localhost:30101", "Send", "destname1", []byte(testMessage1))
 	if err != nil {
 		t.Error(err.Error())
 	}
-	t.Log("API Send RESULT: " + string(result))
 }
 
 func Test_server_SendChannel_1(t *testing.T) {
 	admin1, public1 = initServer1()
 
 	// should not work on public interface
-	result, err := public1.RPC("localhost:30001", "SendChannel", "channel1", base64.StdEncoding.EncodeToString([]byte(testMessage2)))
-	if err != nil {
-		t.Error(err.Error())
-	}
-	if bytes.Equal(result[:2], []byte("OK")) {
+	_, err := public1.RPC("localhost:30001", "SendChannel", "channel1", []byte(testMessage2))
+	if err == nil {
 		t.Error(errors.New("SendChannel was accessible on Public network interface"))
 	}
 
-	result, err = admin1.RPC("localhost:30101", "SendChannel", "channel1", base64.StdEncoding.EncodeToString([]byte(testMessage2)))
+	_, err = admin1.RPC("localhost:30101", "SendChannel", "channel1", []byte(testMessage2))
 	if err != nil {
 		t.Error(err.Error())
 	}
-	t.Log("API SendChannel RESULT: " + string(result))
 }
 
 func Test_server_PickupDropoff_1(t *testing.T) {
@@ -319,26 +445,28 @@ func Test_server_PickupDropoff_1(t *testing.T) {
 		t.Log(msg)
 	}()
 
+	chankey := pubprivkeyb64Ecc
+	t.Log("Trying AddChannel on server2 Admin interface")
+	_, err := admin2.RPC("localhost:30202", "AddChannel", "channel1", chankey)
+	if err != nil {
+		t.Error(err.Error())
+	}
+
 	pubsrv, err := public1.RPC("localhost:30002", "ID")
 	if err != nil {
-		t.Error(err.Error())
+		t.Error("XXX:" + err.Error())
 	}
-	result, err := public1.RPC("localhost:30001", "Pickup", string(pubsrv), "31536000") // 31536000 seconds in a year
+	//p1 := pubsrv.(bc.PubKey)
+	bundle, err := public1.RPC("localhost:30001", "Pickup", pubsrv, int64(31536000)) // 31536000 seconds in a year
 	if err != nil {
-		t.Error(err.Error())
+		t.Error("YYY:" + err.Error())
 	}
 
-	var bundle api.Bundle
-	err = json.Unmarshal(result, &bundle)
+	_, err = public1.RPC("localhost:30002", "Dropoff", bundle)
 	if err != nil {
-		t.Error(err.Error())
+		t.Error("ZZZ:" + err.Error())
 	}
-
-	_, err = public1.RPC("localhost:30002", "Dropoff", string(result))
-	if err != nil {
-		t.Error(err.Error())
-	}
-	time.Sleep(2 * time.Second)
+	//time.Sleep(3 * time.Second)
 }
 
 func Test_server_PickupDropoff_2(t *testing.T) {
@@ -361,15 +489,15 @@ func Test_server_PickupDropoff_2(t *testing.T) {
 	if err != nil {
 		t.Error(err.Error())
 	}
-	_, err = admin1.RPC("localhost:30101", "SendChannel", "channel1", base64.StdEncoding.EncodeToString([]byte(testMessage1)))
+	_, err = admin1.RPC("localhost:30101", "SendChannel", "channel1", []byte(testMessage2))
 	if err != nil {
 		t.Error(err.Error())
 	}
-	result, err := public1.RPC("localhost:30001", "Pickup", string(pubsrv), "31536000", "channel1") // seconds in a year
+	result, err := public1.RPC("localhost:30001", "Pickup", pubsrv, int64(31536000), "channel1") // seconds in a year
 	if err != nil {
 		t.Error(err.Error())
 	}
-	_, err = public1.RPC("localhost:30003", "Dropoff", string(result))
+	_, err = public1.RPC("localhost:30003", "Dropoff", result)
 	if err != nil {
 		t.Error(err.Error())
 	}
@@ -397,13 +525,10 @@ func Test_p2p_Basic_1(t *testing.T) {
 		t.Error(err.Error())
 	}
 
-	if err := p2p1.SendChannel("test1", []byte(base64.StdEncoding.EncodeToString([]byte(testMessage2)))); err != nil {
+	if err := p2p1.SendChannel("test1", []byte(testMessage1)); err != nil {
 		t.Error(err.Error())
 	}
 }
-
-//func Benchmark_TheAddIntsFunction(b *testing.B) {
-//}
 
 // Test Messages
 
@@ -761,6 +886,6 @@ var privkey3b64 = "LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQpNSUlKS2dJQkFBS0NBZ
 // ECC TEST KEYS
 var pubprivkeyb64Ecc = "Tcksa18txiwMEocq7NXdeMwz6PPBD+nxCjb/WCtxq1+dln3M3IaOmg+YfTIbBpk+jIbZZZiT+4CoeFzaJGEWmg=="
 
-//var pubkeyb64Ecc = "Tcksa18txiwMEocq7NXdeMwz6PPBD+nxCjb/WCtxq18="
+var pubkeyb64Ecc = "Tcksa18txiwMEocq7NXdeMwz6PPBD+nxCjb/WCtxq18="
 
 //var privkeyb64Ecc = "nZZ9zNyGjpoPmH0yGwaZPoyG2WWYk/uAqHhc2iRhFpo="

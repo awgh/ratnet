@@ -3,8 +3,9 @@ package https
 import (
 	"bytes"
 	"crypto/tls"
+	"encoding/gob"
 	"encoding/json"
-	"io/ioutil"
+	"errors"
 	"log"
 	"net"
 	"net/http"
@@ -133,39 +134,52 @@ func (h *Module) Listen(listen string, adminMode bool) {
 
 func (Module) handleResponse(w http.ResponseWriter, r *http.Request, node api.Node, adminMode bool) {
 	var a api.RemoteCall
-	decoder := json.NewDecoder(r.Body)
-	err := decoder.Decode(&a)
-	if err != nil {
-		log.Println(err.Error())
+
+	dec := gob.NewDecoder(r.Body)
+	if err := dec.Decode(&a); err != nil {
+		log.Println("https handleResponse gob decode failed: " + err.Error())
+		return
 	}
-	var result string
+
+	var err error
+	var result interface{}
 	if adminMode {
-		result, err = node.AdminRPC(a.Action, a.Args...)
+		result, err = node.AdminRPC(a)
 	} else {
-		result, err = node.PublicRPC(a.Action, a.Args...)
+		result, err = node.PublicRPC(a)
 	}
+	//log.Printf("result type %T \n", result)
+
+	rr := api.RemoteResponse{}
 	if err != nil {
-		log.Println(err.Error())
-	} else if len(result) < 1 {
-		result = "OK" // todo: for backwards compatability, remove when nothing needs it
+		rr.Error = err.Error()
 	}
-	w.Write([]byte(result))
+	if result != nil { // gob cannot encode typed Nils, only interface{} Nils...wtf?
+		rr.Value = result
+	}
+
+	enc := gob.NewEncoder(w)
+	if err := enc.Encode(rr); err != nil {
+		log.Println("listen gob encode failed: " + err.Error())
+	}
 }
 
 // RPC : client interface
-func (h *Module) RPC(host string, method string, args ...string) ([]byte, error) {
+func (h *Module) RPC(host string, method string, args ...interface{}) (interface{}, error) {
 	var a api.RemoteCall
 	a.Action = method
 	a.Args = args
 
-	b, err := json.Marshal(a)
-	if err != nil {
+	var buf bytes.Buffer
+	//use default gob encoder
+	enc := gob.NewEncoder(&buf)
+	if err := enc.Encode(a); err != nil {
+		log.Println("https rpc gob encode failed: " + err.Error())
 		return nil, err
 	}
-	//log.Println("POSTING: " + string(b))
-	req, _ := http.NewRequest("POST", "https://"+host, bytes.NewReader(b))
-	//req.Close = true
-	req.Header.Add("Accept", "application/json")
+
+	req, _ := http.NewRequest("POST", "https://"+host, &buf)
+	//req.Header.Add("Accept", "application/json")
 
 	resp, err := h.client.Do(req)
 	if err != nil {
@@ -173,8 +187,22 @@ func (h *Module) RPC(host string, method string, args ...string) ([]byte, error)
 	}
 	defer resp.Body.Close()
 
-	buf, err := ioutil.ReadAll(resp.Body)
-	return buf, err
+	var rr api.RemoteResponse
+	dec := gob.NewDecoder(resp.Body)
+	if err := dec.Decode(&rr); err != nil {
+		log.Println("https rpc gob decode failed: " + err.Error())
+		return nil, err
+	}
+
+	//log.Printf("https dirty rx in rpc: %+v\n", rr.Value)
+
+	if rr.IsErr() {
+		return nil, errors.New(rr.Error)
+	}
+	if rr.IsNil() {
+		return nil, nil
+	}
+	return rr.Value, nil
 }
 
 // Stop : stops the HTTPS transport from running

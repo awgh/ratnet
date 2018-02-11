@@ -43,7 +43,7 @@ func PollServer(transport api.Transport, node api.Node, host string, pubsrv bc.P
 		debug.PrintStack()
 		return false, err
 	}
-	log.Println("pollServer Pickup Local result len: ", len(toRemote.Data))
+	//log.Println("pollServer Pickup Local result len: ", len(toRemote.Data))
 
 	// Pickup Remote
 	toLocalRaw, err := transport.RPC(host, "Pickup", pubsrv, peer.LastPollRemote)
@@ -55,7 +55,7 @@ func PollServer(transport api.Transport, node api.Node, host string, pubsrv bc.P
 		log.Printf("pollServer type assertion tolocalRaw failed")
 		return false, err
 	}
-	log.Printf("pollServer Pickup Remote len: %d ", len(toLocal.Data))
+	//log.Printf("pollServer Pickup Remote len: %d ", len(toLocal.Data))
 
 	peer.TotalBytesRX = peer.TotalBytesRX + int64(len(toLocal.Data))
 

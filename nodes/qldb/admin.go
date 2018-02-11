@@ -2,7 +2,6 @@ package qldb
 
 import (
 	"database/sql"
-	"encoding/base64"
 	"errors"
 	"log"
 	"time"
@@ -242,7 +241,7 @@ func (node *Node) GetPeer(name string) (*api.Peer, error) {
 	r := transactQueryRow(c, "SELECT uri,enabled FROM peers WHERE name==$1;", name)
 	var u string
 	var e bool
-	if err := r.Scan(&u, e); err == sql.ErrNoRows {
+	if err := r.Scan(&u, &e); err == sql.ErrNoRows {
 		return nil, nil
 	} else if err != nil {
 		return nil, err
@@ -359,10 +358,82 @@ func (node *Node) send(channelName string, destkey bc.PubKey, msg []byte, c *sql
 	data = append(rxsum, data...)
 
 	ts := time.Now().UnixNano()
-	d := base64.StdEncoding.EncodeToString(data)
+	//d := base64.StdEncoding.EncodeToString(data)
 	transactExec(c, "INSERT INTO outbox(channel, msg, timestamp) VALUES($1,$2, $3);",
-		channelName, d, ts)
+		channelName, data, ts)
 
+	return nil
+}
+
+// SendBulk : Transmit messages to a single key
+func (node *Node) SendBulk(contactName string, data [][]byte, pubkey ...bc.PubKey) error {
+	c := node.db()
+	var r1 *sql.Row
+	var err error
+
+	var destkey bc.PubKey
+	if pubkey != nil && len(pubkey) > 0 && pubkey[0] != nil { // third argument is optional pubkey override
+		destkey = pubkey[0]
+	} else {
+		var s string
+		r1 = transactQueryRow(c, "SELECT cpubkey FROM contacts WHERE name==$1;", contactName)
+		err = r1.Scan(&s)
+		if err == sql.ErrNoRows {
+			return errors.New("Unknown Contact")
+		} else if err != nil {
+			return err
+		}
+		destkey = node.contentKey.GetPubKey().Clone()
+		if err := destkey.FromB64(s); err != nil {
+			return err
+		}
+	}
+
+	return node.sendBulk("", destkey, data, c)
+}
+
+// SendChannelBulk : Transmit messages to a channel
+func (node *Node) SendChannelBulk(channelName string, data [][]byte, pubkey ...bc.PubKey) error {
+	c := node.db()
+	var destkey bc.PubKey
+
+	if pubkey != nil && len(pubkey) > 0 && pubkey[0] != nil { // third argument is optional PubKey override
+		destkey = pubkey[0]
+	} else {
+		key, ok := node.channelKeys[channelName]
+		if !ok {
+			return errors.New("No public key for Channel")
+		}
+		destkey = key.GetPubKey()
+	}
+
+	if destkey == nil {
+		log.Fatal("nil DestKey in SendChannel")
+	}
+
+	return node.sendBulk(channelName, destkey, data, c)
+}
+
+func (node *Node) sendBulk(channelName string, destkey bc.PubKey, msg [][]byte, c *sql.DB) error {
+
+	// prepend a uint16 of channel name length, little-endian
+	t := uint16(len(channelName))
+	rxsum := []byte{byte(t >> 8), byte(t & 0xFF)}
+	rxsum = append(rxsum, []byte(channelName)...)
+
+	//todo: is this passing msg by reference or not???
+	data := make([][]byte, len(msg))
+	for i, _ := range msg {
+		var err error
+		data[i], err = node.contentKey.EncryptMessage(msg[i], destkey)
+		if err != nil {
+			return err
+		}
+		data[i] = append(rxsum, data[i]...)
+	}
+	ts := time.Now().UnixNano()
+	//d := base64.StdEncoding.EncodeToString(data)
+	outboxBulkInsert(c, channelName, ts, data)
 	return nil
 }
 

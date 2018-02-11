@@ -3,7 +3,6 @@ package qldb
 import (
 	"bytes"
 	"database/sql"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"log"
@@ -37,19 +36,18 @@ func (node *Node) Forward(channelName string, message []byte) error {
 	rxsum = append(rxsum, []byte(channelName)...)
 	message = append(rxsum, message...)
 
-	b64msg := base64.StdEncoding.EncodeToString(message)
 	c := node.db()
 
 	// save message in my outbox, if not already present
 	// todo:  do we really still need this check?
-	r1 := transactQueryRow(c, "SELECT channel FROM outbox WHERE channel==$1 AND msg==$2;", channelName, b64msg)
+	r1 := transactQueryRow(c, "SELECT channel FROM outbox WHERE channel==$1 AND msg==$2;", channelName, message)
 	var rc string
 	err := r1.Scan(&rc)
 	if err == sql.ErrNoRows {
 		// we don't have this yet, so add it
 		t := time.Now().UnixNano()
 		transactExec(c, "INSERT INTO outbox(channel,msg,timestamp) VALUES($1,$2,$3);",
-			channelName, b64msg, t)
+			channelName, message, t)
 		return nil
 	}
 	return err

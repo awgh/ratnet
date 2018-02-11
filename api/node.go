@@ -1,6 +1,8 @@
 package api
 
-import "github.com/awgh/bencrypt/bc"
+import (
+	"github.com/awgh/bencrypt/bc"
+)
 
 // Node : abstract base type for RatNet implementations
 type Node interface {
@@ -21,10 +23,10 @@ type Node interface {
 	// RPC Entrypoints
 
 	// AdminRPC :
-	AdminRPC(method string, args ...string) (string, error)
+	AdminRPC(call RemoteCall) (interface{}, error)
 
 	// PublicRPC :
-	PublicRPC(method string, args ...string) (string, error)
+	PublicRPC(call RemoteCall) (interface{}, error)
 
 	// PUBLIC API
 	// Functions that are safe for non-authenticated calls / open Internet

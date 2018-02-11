@@ -5,6 +5,7 @@ import (
 
 	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/ratnet/api"
+	"github.com/awgh/ratnet/nodes"
 	"github.com/awgh/ratnet/router"
 )
 
@@ -107,6 +108,17 @@ func (node *Node) Out() chan api.Msg {
 // Err : Returns the Err channel of this node
 func (node *Node) Err() chan api.Msg {
 	return node.err
+}
+
+// RPC set to default handlers
+// AdminRPC :
+func (node *Node) AdminRPC(call api.RemoteCall) (interface{}, error) {
+	return nodes.AdminRPC(node, call)
+}
+
+// PublicRPC :
+func (node *Node) PublicRPC(call api.RemoteCall) (interface{}, error) {
+	return nodes.PublicRPC(node, call)
 }
 
 // Debug
