@@ -99,7 +99,7 @@ func main() {
 		(in this case, we are using one "server" policy and one "poll" policy on the "udp" transport)
 	*/
 	transport := udp.New(RATNET)
-	RATNET.SetPolicy(policy.NewServer(transport, os.Args[1], false), policy.NewPoll(transport, RATNET))
+	RATNET.SetPolicy(policy.NewServer(transport, os.Args[1], false), policy.NewPoll(transport, RATNET, 500))
 
 	/*
 		- start the read loop
