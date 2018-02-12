@@ -12,7 +12,7 @@ import (
 	"github.com/awgh/ratnet/api"
 	"github.com/awgh/ratnet/nodes/qldb"
 	"github.com/awgh/ratnet/nodes/ram"
-	"github.com/awgh/ratnet/transports/https"
+	"github.com/awgh/ratnet/transports/tls"
 	"github.com/awgh/ratnet/transports/udp"
 
 	_ "github.com/cznic/ql/driver"
@@ -43,8 +43,8 @@ var udpMode bool
 var ramMode bool
 
 func init() {
-	udpMode = false
-	ramMode = false
+	udpMode = true
+	ramMode = true
 }
 
 func initServer1() (api.Transport, api.Transport) {
@@ -66,8 +66,10 @@ func initServer1() (api.Transport, api.Transport) {
 			public1 = udp.New(server1)
 			admin1 = udp.New(server1)
 		} else {
-			public1 = https.New("tmp/cert1.pem", "tmp/key1.pem", server1, true)
-			admin1 = https.New("tmp/cert1.pem", "tmp/key1.pem", server1, true)
+			//public1 = https.New("tmp/cert1.pem", "tmp/key1.pem", server1, true)
+			//admin1 = https.New("tmp/cert1.pem", "tmp/key1.pem", server1, true)
+			public1 = tls.New("tmp/cert1.pem", "tmp/key1.pem", server1, true)
+			admin1 = tls.New("tmp/cert1.pem", "tmp/key1.pem", server1, true)
 		}
 
 		go serve(public1, admin1, server1, "localhost:30001", "localhost:30101")
@@ -93,8 +95,11 @@ func initServer2() (api.Transport, api.Transport) {
 			public2 = udp.New(server2)
 			admin2 = udp.New(server2)
 		} else {
-			public2 = https.New("tmp/cert2.pem", "tmp/key2.pem", server2, true)
-			admin2 = https.New("tmp/cert2.pem", "tmp/key2.pem", server2, true)
+			//public2 = https.New("tmp/cert2.pem", "tmp/key2.pem", server2, true)
+			//admin2 = https.New("tmp/cert2.pem", "tmp/key2.pem", server2, true)
+			public2 = tls.New("tmp/cert2.pem", "tmp/key2.pem", server2, true)
+			admin2 = tls.New("tmp/cert2.pem", "tmp/key2.pem", server2, true)
+
 		}
 		go serve(public2, admin2, server2, "localhost:30002", "localhost:30202")
 		time.Sleep(2 * time.Second)
@@ -118,8 +123,10 @@ func initServer3() (api.Transport, api.Transport) {
 			public3 = udp.New(server3)
 			admin3 = udp.New(server3)
 		} else {
-			public3 = https.New("tmp/cert3.pem", "tmp/key3.pem", server3, true)
-			admin3 = https.New("tmp/cert3.pem", "tmp/key3.pem", server3, true)
+			//public3 = https.New("tmp/cert3.pem", "tmp/key3.pem", server3, true)
+			//admin3 = https.New("tmp/cert3.pem", "tmp/key3.pem", server3, true)
+			public3 = tls.New("tmp/cert3.pem", "tmp/key3.pem", server3, true)
+			admin3 = tls.New("tmp/cert3.pem", "tmp/key3.pem", server3, true)
 		}
 		go serve(public3, admin3, server3, "localhost:30003", "localhost:30303")
 		time.Sleep(2 * time.Second)
@@ -144,8 +151,10 @@ func initP2P1() (api.Transport, api.Transport) {
 			p2p1public = udp.New(p2p1)
 			p2p1admin = udp.New(p2p1)
 		} else {
-			p2p1public = https.New("tmp/cert3.pem", "tmp/key3.pem", p2p1, true)
-			p2p1admin = https.New("tmp/cert3.pem", "tmp/key3.pem", p2p1, true)
+			//p2p1public = https.New("tmp/cert3.pem", "tmp/key3.pem", p2p1, true)
+			//p2p1admin = https.New("tmp/cert3.pem", "tmp/key3.pem", p2p1, true)
+			p2p1public = tls.New("tmp/cert3.pem", "tmp/key3.pem", p2p1, true)
+			p2p1admin = tls.New("tmp/cert3.pem", "tmp/key3.pem", p2p1, true)
 		}
 		go p2p(p2p1public, p2p1admin, p2p1, "localhost:30004", "localhost:30404")
 		time.Sleep(2 * time.Second)
@@ -170,8 +179,10 @@ func initP2P2() (api.Transport, api.Transport) {
 			p2p2public = udp.New(p2p2)
 			p2p2admin = udp.New(p2p2)
 		} else {
-			p2p2public = https.New("tmp/cert3.pem", "tmp/key3.pem", p2p2, true)
-			p2p2admin = https.New("tmp/cert3.pem", "tmp/key3.pem", p2p2, true)
+			//p2p2public = https.New("tmp/cert3.pem", "tmp/key3.pem", p2p2, true)
+			//p2p2admin = https.New("tmp/cert3.pem", "tmp/key3.pem", p2p2, true)
+			p2p2public = tls.New("tmp/cert3.pem", "tmp/key3.pem", p2p2, true)
+			p2p2admin = tls.New("tmp/cert3.pem", "tmp/key3.pem", p2p2, true)
 		}
 		go p2p(p2p2public, p2p2admin, p2p2, "localhost:30005", "localhost:30505")
 		time.Sleep(2 * time.Second)

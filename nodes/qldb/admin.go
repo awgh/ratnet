@@ -423,7 +423,7 @@ func (node *Node) sendBulk(channelName string, destkey bc.PubKey, msg [][]byte, 
 
 	//todo: is this passing msg by reference or not???
 	data := make([][]byte, len(msg))
-	for i, _ := range msg {
+	for i := range msg {
 		var err error
 		data[i], err = node.contentKey.EncryptMessage(msg[i], destkey)
 		if err != nil {

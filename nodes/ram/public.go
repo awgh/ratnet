@@ -1,9 +1,10 @@
 package ram
 
 import (
-	"encoding/base64"
-	"encoding/json"
+	"bytes"
+	"encoding/gob"
 	"errors"
+	"log"
 
 	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/ratnet/api"
@@ -26,46 +27,36 @@ func (node *Node) Dropoff(bundle api.Bundle) error {
 	} else if !tagOK {
 		return errors.New("Luggage Tag Check Failed in Dropoff")
 	}
-	var lines []string
-	if err := json.Unmarshal(data, &lines); err != nil {
+
+	var msgs [][]byte
+
+	//Use default gob decoder
+	reader := bytes.NewReader(data)
+	dec := gob.NewDecoder(reader)
+	if err := dec.Decode(&msgs); err != nil {
+		log.Printf("dropoff gob decode failed, len %d\n", len(data))
 		return err
 	}
-	for i := 0; i < len(lines); i++ {
-		if len(lines[i]) < 16 { // aes.BlockSize == 16
+	for i := 0; i < len(msgs); i++ {
+		if len(msgs[i]) < 16 { // aes.BlockSize == 16
 			continue //todo: remove padding before here?
 		}
-		msg, err := base64.StdEncoding.DecodeString(lines[i])
+		err = node.router.Route(node, msgs[i])
 		if err != nil {
-			continue
-		}
-		err = node.router.Route(node, msg)
-		if err != nil {
-			return err
+			log.Println("error in dropoff: " + err.Error())
+			continue // we don't want to return routing errors back out the remote public interface
 		}
 	}
+
 	node.debugMsg("Dropoff returned")
 	return nil
 }
 
-/* todo: when multiple profiles enabled at once is implemented, switch to the below (or similar):
-profiles, err := node.GetProfiles()
-if err != nil {
-	node.handleErr(err)
-	continue
-}
-for _, profile := range profiles {
-	if profile.Enabled {
-		clearMsg.Name = profile.Name
-		break
-	}
-}
-*/
-
 // Pickup : Get messages from a remote node
-func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, channelNames ...string) (api.Bundle, error) {
+func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, maxBytes int64, channelNames ...string) (api.Bundle, error) {
 	node.debugMsg("Pickup called")
 	var retval api.Bundle
-	var msgs []string
+	var msgs [][]byte
 
 	retval.Time = lastTime
 
@@ -82,7 +73,7 @@ func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, channelNames ...string)
 				pickupMsg = true
 			}
 			if pickupMsg {
-				msgs = append(msgs, mail.msg)
+				msgs = append(msgs, mail.msg) // todo: ramNode ignores maxBytes
 				retval.Time = mail.timeStamp
 			}
 		}
@@ -90,11 +81,14 @@ func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, channelNames ...string)
 
 	// transmit
 	if len(msgs) > 0 {
-		j, err := json.Marshal(msgs)
-		if err != nil {
+
+		//use default gob encoder
+		var buf bytes.Buffer
+		enc := gob.NewEncoder(&buf)
+		if err := enc.Encode(msgs); err != nil {
 			return retval, err
 		}
-		cipher, err := node.routingKey.EncryptMessage(j, rpub)
+		cipher, err := node.routingKey.EncryptMessage(buf.Bytes(), rpub)
 		if err != nil {
 			return retval, err
 		}

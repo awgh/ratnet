@@ -3,6 +3,7 @@ package router
 import (
 	"encoding/json"
 	"errors"
+	"log"
 
 	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
@@ -192,6 +193,10 @@ func (r *DefaultRouter) seenRecently(hdr []byte) bool {
 	_, aok := r.recentPage1[shdr]
 	_, bok := r.recentPage2[shdr]
 	retval := aok || bok
+
+	if retval {
+		log.Println("Seen Recently!")
+	}
 
 	switch r.recentPageIdx {
 	case 1:

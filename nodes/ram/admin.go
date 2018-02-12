@@ -1,7 +1,6 @@
 package ram
 
 import (
-	"encoding/base64"
 	"errors"
 	"log"
 	"time"
@@ -246,7 +245,6 @@ func (node *Node) SendChannel(channelName string, data []byte, pubkey ...bc.PubK
 
 func (node *Node) send(channelName string, destkey bc.PubKey, msg []byte) error {
 
-	//todo: is this passing msg by reference or not???
 	data, err := node.contentKey.EncryptMessage(msg, destkey)
 	if err != nil {
 		return err
@@ -259,12 +257,11 @@ func (node *Node) send(channelName string, destkey bc.PubKey, msg []byte) error 
 	data = append(rxsum, data...)
 
 	ts := time.Now().UnixNano()
-	d := base64.StdEncoding.EncodeToString(data)
 
 	m := new(outboxMsg)
 	m.channel = channelName
 	m.timeStamp = ts
-	m.msg = d
+	m.msg = data
 	node.outbox = append(node.outbox, m)
 	return nil
 }

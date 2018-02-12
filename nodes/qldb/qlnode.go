@@ -141,6 +141,9 @@ func (node *Node) BootstrapDB(database string) func() *sql.DB {
 			timestamp	int64	NOT NULL
 		);
 	`)
+	transactExec(c, `
+			CREATE INDEX IF NOT EXISTS outboxID ON outbox (timestamp);
+	`)
 
 	transactExec(c, `
 		CREATE TABLE IF NOT EXISTS peers (
@@ -213,14 +216,15 @@ func (node *Node) Err() chan api.Msg {
 }
 
 // RPC set to default handlers
+
 // AdminRPC :
-func (node *Node) AdminRPC(call api.RemoteCall) (interface{}, error) {
-	return nodes.AdminRPC(node, call)
+func (node *Node) AdminRPC(transport api.Transport, call api.RemoteCall) (interface{}, error) {
+	return nodes.AdminRPC(transport, node, call)
 }
 
 // PublicRPC :
-func (node *Node) PublicRPC(call api.RemoteCall) (interface{}, error) {
-	return nodes.PublicRPC(node, call)
+func (node *Node) PublicRPC(transport api.Transport, call api.RemoteCall) (interface{}, error) {
+	return nodes.PublicRPC(transport, node, call)
 }
 
 // Debug

@@ -1,16 +1,14 @@
-package https
+package tls
 
 import (
-	"bytes"
+	"bufio"
 	"crypto/tls"
 	"encoding/gob"
 	"encoding/json"
 	"errors"
 	"log"
 	"net"
-	"net/http"
 	"sync"
-	"time"
 
 	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/ratnet"
@@ -18,7 +16,7 @@ import (
 )
 
 func init() {
-	ratnet.Transports["https"] = NewFromMap // register this module by name (for deserialization support)
+	ratnet.Transports["tls"] = NewFromMap // register this module by name (for deserialization support)
 }
 
 // NewFromMap : Makes a new instance of this transport module from a map of arguments (for deserialization support)
@@ -42,29 +40,20 @@ func NewFromMap(node api.Node, t map[string]interface{}) api.Transport {
 // New : Makes a new instance of this transport module
 func New(certfile string, keyfile string, node api.Node, eccMode bool) *Module {
 
-	web := new(Module)
+	tls := new(Module)
 
-	web.Certfile = certfile
-	web.Keyfile = keyfile
-	web.node = node
-	web.EccMode = eccMode
+	tls.Certfile = certfile
+	tls.Keyfile = keyfile
+	tls.node = node
+	tls.EccMode = eccMode
 
-	web.transport = &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-	web.client = &http.Client{
-		Timeout:   time.Second * 10,
-		Transport: web.transport}
+	tls.byteLimit = 125000 // 150000 was unstable
 
-	web.byteLimit = 125000 // 150000 was unstable, 125000 was 100% stable
-
-	return web
+	return tls
 }
 
 // Module : HTTPS Implementation of a Transport module
 type Module struct {
-	transport *http.Transport
-	client    *http.Client
 	node      api.Node
 	isRunning bool
 	wg        sync.WaitGroup
@@ -78,13 +67,13 @@ type Module struct {
 
 // Name : Returns this module's common name, which should be unique
 func (*Module) Name() string {
-	return "https"
+	return "tls"
 }
 
 // MarshalJSON : Create a serialied representation of the config of this module
 func (h *Module) MarshalJSON() (b []byte, e error) {
 	return json.Marshal(map[string]interface{}{
-		"Transport": "https",
+		"Transport": "tls",
 		"Certfile":  h.Certfile,
 		"Keyfile":   h.Keyfile,
 		"EccMode":   h.EccMode})
@@ -112,12 +101,6 @@ func (h *Module) Listen(listen string, adminMode bool) {
 		return
 	}
 
-	// build http handler
-	serveMux := http.NewServeMux()
-	serveMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		h.handleResponse(w, r, h.node, adminMode)
-	})
-
 	// setup Listener
 	listener, err := net.Listen("tcp", listen)
 	if err != nil {
@@ -133,24 +116,34 @@ func (h *Module) Listen(listen string, adminMode bool) {
 
 	// add Listener to the Listener pool
 	h.listeners = append(h.listeners, listener)
+	h.isRunning = true
 
-	// start
 	h.wg.Add(1)
 	go func() {
+		defer tlsListener.Close()
 		defer h.wg.Done()
-		if err := http.Serve(tlsListener, serveMux); err != nil {
-			log.Print(err.Error())
+		for h.isRunning {
+			conn, err := tlsListener.Accept()
+			if err != nil {
+				log.Println(err)
+				continue
+			}
+			go h.handleConnection(conn, h.node, adminMode)
 		}
 	}()
-	h.isRunning = true
+
 }
 
-func (h *Module) handleResponse(w http.ResponseWriter, r *http.Request, node api.Node, adminMode bool) {
-	var a api.RemoteCall
+func (h *Module) handleConnection(conn net.Conn, node api.Node, adminMode bool) {
+	defer conn.Close()
 
-	dec := gob.NewDecoder(r.Body)
+	var a api.RemoteCall
+	reader := bufio.NewReader(conn)
+	writer := bufio.NewWriter(conn)
+	//use default gob encoder
+	dec := gob.NewDecoder(reader)
 	if err := dec.Decode(&a); err != nil {
-		log.Println("https handleResponse gob decode failed: " + err.Error())
+		log.Println("tls handleConnection gob decode failed: " + err.Error())
 		return
 	}
 
@@ -170,11 +163,11 @@ func (h *Module) handleResponse(w http.ResponseWriter, r *http.Request, node api
 	if result != nil { // gob cannot encode typed Nils, only interface{} Nils...wtf?
 		rr.Value = result
 	}
-
-	enc := gob.NewEncoder(w)
+	enc := gob.NewEncoder(writer)
 	if err := enc.Encode(rr); err != nil {
-		log.Println("listen gob encode failed: " + err.Error())
+		log.Println("tls handleConnection gob encode failed: " + err.Error())
 	}
+	writer.Flush()
 }
 
 // RPC : client interface
@@ -183,31 +176,29 @@ func (h *Module) RPC(host string, method string, args ...interface{}) (interface
 	a.Action = method
 	a.Args = args
 
-	var buf bytes.Buffer
-	//use default gob encoder
-	enc := gob.NewEncoder(&buf)
-	if err := enc.Encode(a); err != nil {
-		log.Println("https rpc gob encode failed: " + err.Error())
-		return nil, err
-	}
-
-	req, _ := http.NewRequest("POST", "https://"+host, &buf)
-	//req.Header.Add("Accept", "application/json")
-
-	resp, err := h.client.Do(req)
+	conf := &tls.Config{InsecureSkipVerify: true}
+	conn, err := tls.Dial("tcp", host, conf)
 	if err != nil {
+		log.Println(err)
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer conn.Close()
+	reader := bufio.NewReader(conn)
+	writer := bufio.NewWriter(conn)
 
+	//use default gob encoder
+	enc := gob.NewEncoder(writer)
+	if err := enc.Encode(a); err != nil {
+		log.Println("tls rpc gob encode failed: " + err.Error())
+		return nil, err
+	}
+	writer.Flush()
 	var rr api.RemoteResponse
-	dec := gob.NewDecoder(resp.Body)
+	dec := gob.NewDecoder(reader)
 	if err := dec.Decode(&rr); err != nil {
-		log.Println("https rpc gob decode failed: " + err.Error())
+		log.Println("tls rpc gob decode failed: " + err.Error())
 		return nil, err
 	}
-
-	//log.Printf("https dirty rx in rpc: %+v\n", rr.Value)
 
 	if rr.IsErr() {
 		return nil, errors.New(rr.Error)
@@ -218,7 +209,7 @@ func (h *Module) RPC(host string, method string, args ...interface{}) (interface
 	return rr.Value, nil
 }
 
-// Stop : stops the HTTPS transport from running
+// Stop : stops the TLS transport from running
 func (h *Module) Stop() {
 	h.isRunning = false
 	for _, listener := range h.listeners {

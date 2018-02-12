@@ -5,7 +5,6 @@ import (
 	"encoding/gob"
 	"errors"
 	"log"
-	"runtime"
 	"strconv"
 	"strings"
 
@@ -35,9 +34,9 @@ func (node *Node) Dropoff(bundle api.Bundle) error {
 	//Use default gob decoder
 	reader := bytes.NewReader(data)
 	dec := gob.NewDecoder(reader)
-	if err := dec.Decode(&msgs); err != nil {
+	if erra := dec.Decode(&msgs); erra != nil {
 		log.Printf("dropoff gob decode failed, len %d\n", len(data))
-		return err
+		return erra
 	}
 	for i := 0; i < len(msgs); i++ {
 		if len(msgs[i]) < 16 { // aes.BlockSize == 16
@@ -53,25 +52,14 @@ func (node *Node) Dropoff(bundle api.Bundle) error {
 	return nil
 }
 
-/* todo: when multiple profiles enabled at once is implemented, switch to the below (or similar):
-profiles, err := node.GetProfiles()
-if err != nil {
-	node.handleErr(err)
-	continue
-}
-for _, profile := range profiles {
-	if profile.Enabled {
-		clearMsg.Name = profile.Name
-		break
-	}
-}
-*/
-
 // Pickup : Get messages from a remote node
-func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, channelNames ...string) (api.Bundle, error) {
+func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, maxBytes int64, channelNames ...string) (api.Bundle, error) {
 	node.debugMsg("Pickup called")
 	c := node.db()
 	var retval api.Bundle
+
+	// Build the query
+
 	wildcard := false
 	if len(channelNames) < 1 {
 		wildcard = true // if no channels are given, get everything
@@ -101,28 +89,46 @@ func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, channelNames ...string)
 		}
 		sqlq = sqlq + " )"
 	}
-	// todo:  ORDER BY breaks on android/arm and returns nothing without error, report to cznic
-	sqlq = sqlq + " ORDER BY timestamp ASC LIMIT 250;"
-	//sqlq = sqlq;"
-
-	runtime.GC()
-	r := transactQuery(c, sqlq)
+	sqlq = sqlq + " ORDER BY timestamp ASC LIMIT $1 OFFSET $2;"
 
 	var msgs [][]byte
-	var msg []byte
-	var ts int64
+	var bytesRead int64
 	lastTimeReturned := lastTime
-	for r.Next() {
-		r.Scan(&msg, &ts)
-		if ts > lastTimeReturned { // do this instead of ORDER BY, for android
-			lastTimeReturned = ts
-		} else {
-			log.Printf("Timestamps not increasing - prev: %d  cur: %d\n", lastTimeReturned, ts)
-		}
-		//log.Printf("ts: %d\n", ts)
-		msgs = append(msgs, msg)
+	offset := 0
+	if maxBytes < 1 {
+		maxBytes = 10000000 // todo:  make this a configurable value for each client
 	}
-	r.Close()
+	rowsPerRequest := int((maxBytes / (64 * 1024)) + 1)
+
+	for bytesRead < maxBytes {
+		r := transactQuery(c, sqlq, rowsPerRequest, offset)
+		log.Printf("Rows per request: %d\n", rowsPerRequest)
+		isEmpty := true //todo: must be an official way to do this
+		for r.Next() {
+			isEmpty = false
+			var msg []byte
+			var ts int64
+			r.Scan(&msg, &ts)
+			if bytesRead+int64(len(msg)) >= maxBytes { // no room for next msg
+				isEmpty = true
+				break
+			}
+			if ts > lastTimeReturned {
+				lastTimeReturned = ts
+			} else {
+				log.Printf("Timestamps not increasing - prev: %d  cur: %d\n", lastTimeReturned, ts)
+			}
+			msgs = append(msgs, msg)
+			bytesRead += int64(len(msg))
+		}
+		r.Close()
+		if isEmpty {
+			break
+		}
+		offset += rowsPerRequest
+	}
+
+	// Return things
 
 	//log.Printf("rows returned by Pickup query: %d, lastTime: %d\n", len(msgs), lastTimeReturned)
 	retval.Time = lastTimeReturned

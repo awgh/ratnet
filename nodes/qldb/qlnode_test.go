@@ -58,7 +58,7 @@ func Test_apicall_Pickup_1(t *testing.T) {
 	if err != nil {
 		t.Error(err.Error())
 	}
-	_, err = node.Pickup(rpk, 0)
+	_, err = node.Pickup(rpk, 0, 0)
 	if err != nil {
 		t.Error(err.Error())
 	}

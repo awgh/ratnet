@@ -26,7 +26,7 @@ func outboxBulkInsert(db *sql.DB, channelName string, timestamp int64, msgs [][]
 		}
 		args[idx-1] = v // convert to 0-based index here
 		args[idx] = timestamp
-		timestamp += 1 // increment timestamp by one each message to simplify queueing
+		timestamp++ // increment timestamp by one each message to simplify queueing
 		idx += 2
 	}
 	_, err = tx.Exec(sql, args...)

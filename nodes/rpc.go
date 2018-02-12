@@ -10,7 +10,7 @@ import (
 )
 
 // PublicRPC : Entrypoint for RPC functions that are exposed to the public/Internet
-func PublicRPC(node api.Node, call api.RemoteCall) (interface{}, error) {
+func PublicRPC(transport api.Transport, node api.Node, call api.RemoteCall) (interface{}, error) {
 	switch call.Action {
 	case "ID":
 		var i bc.PubKey
@@ -41,7 +41,7 @@ func PublicRPC(node api.Node, call api.RemoteCall) (interface{}, error) {
 			}
 			xargs = append(xargs, vs)
 		}
-		b, err := node.Pickup(rpk, i, xargs...)
+		b, err := node.Pickup(rpk, i, transport.ByteLimit(), xargs...)
 		if err != nil {
 			return nil, err
 		}
@@ -63,7 +63,7 @@ func PublicRPC(node api.Node, call api.RemoteCall) (interface{}, error) {
 }
 
 // AdminRPC : Entrypoint for administrative RPC functions that should not be exposed to the Internet
-func AdminRPC(node api.Node, call api.RemoteCall) (interface{}, error) {
+func AdminRPC(transport api.Transport, node api.Node, call api.RemoteCall) (interface{}, error) {
 	switch call.Action {
 
 	case "CID":
@@ -322,6 +322,6 @@ func AdminRPC(node api.Node, call api.RemoteCall) (interface{}, error) {
 		return nil, node.SendChannel(channelName, msg)
 
 	default:
-		return node.PublicRPC(call)
+		return node.PublicRPC(transport, call)
 	}
 }

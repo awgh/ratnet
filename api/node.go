@@ -23,10 +23,10 @@ type Node interface {
 	// RPC Entrypoints
 
 	// AdminRPC :
-	AdminRPC(call RemoteCall) (interface{}, error)
+	AdminRPC(transport Transport, call RemoteCall) (interface{}, error)
 
 	// PublicRPC :
-	PublicRPC(call RemoteCall) (interface{}, error)
+	PublicRPC(transport Transport, call RemoteCall) (interface{}, error)
 
 	// PUBLIC API
 	// Functions that are safe for non-authenticated calls / open Internet
@@ -38,7 +38,7 @@ type Node interface {
 	Dropoff(bundle Bundle) error
 
 	// Pickup : Get outgoing messages from this node
-	Pickup(routingPub bc.PubKey, lastTime int64, channelNames ...string) (Bundle, error)
+	Pickup(routingPub bc.PubKey, lastTime int64, maxBytes int64, channelNames ...string) (Bundle, error)
 
 	//
 

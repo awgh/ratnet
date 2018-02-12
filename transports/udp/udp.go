@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log"
 	"sync"
+	"time"
 
 	kcp "github.com/xtaci/kcp-go"
 
@@ -29,6 +30,8 @@ func New(node api.Node) *Module {
 	instance := new(Module)
 	instance.node = node
 
+	instance.byteLimit = 125000
+
 	return instance
 }
 
@@ -37,6 +40,7 @@ type Module struct {
 	node      api.Node
 	isRunning bool
 	wg        sync.WaitGroup
+	byteLimit int64
 }
 
 // Name : Returns name of module
@@ -49,6 +53,12 @@ func (m *Module) MarshalJSON() (b []byte, e error) {
 	return json.Marshal(map[string]interface{}{
 		"Transport": "udp"})
 }
+
+// ByteLimit - get limit on bytes per bundle for this transport
+func (m *Module) ByteLimit() int64 { return m.byteLimit }
+
+// SetByteLimit - set limit on bytes per bundle for this transport
+func (m *Module) SetByteLimit(limit int64) { m.byteLimit = limit }
 
 // Listen : opens a UDP socket and listens
 func (m *Module) Listen(listen string, adminMode bool) {
@@ -90,9 +100,9 @@ func (m *Module) Listen(listen string, adminMode bool) {
 
 			var result interface{}
 			if adminMode {
-				result, err = m.node.AdminRPC(a)
+				result, err = m.node.AdminRPC(m, a)
 			} else {
-				result, err = m.node.PublicRPC(a)
+				result, err = m.node.PublicRPC(m, a)
 			}
 			//log.Printf("result type %T \n", result)
 
@@ -131,8 +141,8 @@ func (m *Module) RPC(host string, method string, args ...interface{}) (interface
 	conn.SetNoDelay(1, 40, 2, 1)
 	conn.SetACKNoDelay(false)
 
-	//conn.SetReadDeadline(time.Now().Add(timeout))
-	//conn.SetWriteDeadline(time.Now().Add(timeout))
+	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 
 	reader := bufio.NewReader(conn)
 	writer := bufio.NewWriter(conn)

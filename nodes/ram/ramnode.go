@@ -11,7 +11,7 @@ import (
 
 type outboxMsg struct {
 	channel   string
-	msg       string
+	msg       []byte
 	timeStamp int64
 }
 
@@ -111,14 +111,15 @@ func (node *Node) Err() chan api.Msg {
 }
 
 // RPC set to default handlers
+
 // AdminRPC :
-func (node *Node) AdminRPC(call api.RemoteCall) (interface{}, error) {
-	return nodes.AdminRPC(node, call)
+func (node *Node) AdminRPC(transport api.Transport, call api.RemoteCall) (interface{}, error) {
+	return nodes.AdminRPC(transport, node, call)
 }
 
 // PublicRPC :
-func (node *Node) PublicRPC(call api.RemoteCall) (interface{}, error) {
-	return nodes.PublicRPC(node, call)
+func (node *Node) PublicRPC(transport api.Transport, call api.RemoteCall) (interface{}, error) {
+	return nodes.PublicRPC(transport, node, call)
 }
 
 // Debug

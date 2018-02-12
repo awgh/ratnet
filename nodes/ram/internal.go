@@ -2,7 +2,6 @@ package ram
 
 import (
 	"bytes"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
@@ -30,9 +29,8 @@ func (node *Node) Forward(channelName string, message []byte) error {
 	rxsum = append(rxsum, []byte(channelName)...)
 	message = append(rxsum, message...)
 
-	b64msg := base64.StdEncoding.EncodeToString(message)
 	for _, mail := range node.outbox {
-		if mail.channel == channelName && mail.msg == b64msg {
+		if mail.channel == channelName && bytes.Equal(mail.msg, message) {
 			return nil // already have a copy... //todo: do we really need this check?
 		}
 	}
@@ -40,7 +38,7 @@ func (node *Node) Forward(channelName string, message []byte) error {
 	m := new(outboxMsg)
 	m.channel = channelName
 	m.timeStamp = time.Now().UnixNano()
-	m.msg = b64msg
+	m.msg = message
 	node.outbox = append(node.outbox, m)
 	return nil
 }

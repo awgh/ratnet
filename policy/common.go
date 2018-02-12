@@ -38,7 +38,7 @@ func PollServer(transport api.Transport, node api.Node, host string, pubsrv bc.P
 	}
 
 	// Pickup Local
-	toRemote, err := node.Pickup(peer.RoutingPub, peer.LastPollLocal)
+	toRemote, err := node.Pickup(peer.RoutingPub, peer.LastPollLocal, transport.ByteLimit())
 	if err != nil {
 		debug.PrintStack()
 		return false, err
@@ -59,18 +59,14 @@ func PollServer(transport api.Transport, node api.Node, host string, pubsrv bc.P
 
 	peer.TotalBytesRX = peer.TotalBytesRX + int64(len(toLocal.Data))
 
-	// only start tracking time once we start receiving data
-	if peer.TotalBytesTX > 0 {
-		peer.LastPollLocal = toRemote.Time
-	}
-	if peer.TotalBytesRX > 0 {
-		peer.LastPollRemote = toLocal.Time
-	}
-
 	// Dropoff Remote
 	if len(toRemote.Data) > 0 {
 		if _, err := transport.RPC(host, "Dropoff", toRemote); err != nil {
 			return false, err
+		}
+		// only start tracking time once we start receiving data
+		if peer.TotalBytesTX > 0 {
+			peer.LastPollLocal = toRemote.Time
 		}
 		peer.TotalBytesTX = peer.TotalBytesTX + int64(len(toRemote.Data))
 	}
@@ -78,6 +74,9 @@ func PollServer(transport api.Transport, node api.Node, host string, pubsrv bc.P
 	if len(toLocal.Data) > 0 {
 		if err := node.Dropoff(toLocal); err != nil {
 			return false, err
+		}
+		if peer.TotalBytesRX > 0 {
+			peer.LastPollRemote = toLocal.Time
 		}
 	}
 	return true, nil
