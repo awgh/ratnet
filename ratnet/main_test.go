@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"os"
+	"strconv"
 	"testing"
 	"time"
 
@@ -12,196 +13,97 @@ import (
 	"github.com/awgh/ratnet/api"
 	"github.com/awgh/ratnet/nodes/qldb"
 	"github.com/awgh/ratnet/nodes/ram"
+	"github.com/awgh/ratnet/transports/https"
 	"github.com/awgh/ratnet/transports/tls"
 	"github.com/awgh/ratnet/transports/udp"
 
 	_ "github.com/cznic/ql/driver"
 )
 
-var (
-	server1 api.Node
-	server2 api.Node
-	server3 api.Node
+type TestNode struct {
+	Node    api.Node
+	Public  api.Transport
+	Admin   api.Transport
+	started bool
+}
 
-	public1 api.Transport
-	public2 api.Transport
-	public3 api.Transport
-
-	admin1 api.Transport
-	admin2 api.Transport
-	admin3 api.Transport
-
-	p2p1       api.Node
-	p2p2       api.Node
-	p2p1public api.Transport
-	p2p1admin  api.Transport
-	p2p2public api.Transport
-	p2p2admin  api.Transport
+const (
+	UDP int = iota
+	TLS
+	HTTPS
+	NumTransports
 )
 
-var udpMode bool
+var (
+	server1 TestNode
+	server2 TestNode
+	server3 TestNode
+
+	p2p1 TestNode
+	p2p2 TestNode
+
+	server6 TestNode
+	server7 TestNode
+	server8 TestNode
+)
+
+func initNode(n int64, testNode TestNode, ramMode bool, transportType int, p2pMode bool) TestNode {
+	num := strconv.FormatInt(n, 10)
+	if !testNode.started {
+		if ramMode {
+			// RamNode Mode:
+			testNode.Node = ram.New(new(ecc.KeyPair), new(ecc.KeyPair))
+		} else {
+			// QLDB Mode
+			s := qldb.New(new(ecc.KeyPair), new(ecc.KeyPair))
+			os.Mkdir("tmp", os.FileMode(int(0755)))
+			s.BootstrapDB("tmp/ratnet_test" + num + ".ql")
+			s.FlushOutbox(0)
+			testNode.Node = s
+		}
+
+		if transportType == UDP {
+			testNode.Public = udp.New(testNode.Node)
+			testNode.Admin = udp.New(testNode.Node)
+		} else if transportType == HTTPS {
+			testNode.Public = tls.New("tmp/cert"+num+".pem", "tmp/key"+num+".pem", testNode.Node, true)
+			testNode.Admin = tls.New("tmp/cert"+num+".pem", "tmp/key"+num+".pem", testNode.Node, true)
+		} else {
+			testNode.Public = https.New("tmp/cert"+num+".pem", "tmp/key"+num+".pem", testNode.Node, true)
+			testNode.Admin = https.New("tmp/cert"+num+".pem", "tmp/key"+num+".pem", testNode.Node, true)
+		}
+		if p2pMode {
+			go p2p(testNode.Public, testNode.Admin, testNode.Node, "localhost:3000"+num, "localhost:30"+num+"0"+num)
+		} else {
+			go serve(testNode.Public, testNode.Admin, testNode.Node, "localhost:3000"+num, "localhost:30"+num+"0"+num)
+		}
+		testNode.started = true
+
+		time.Sleep(2 * time.Second)
+	}
+	return testNode
+}
+
+var transportType int
 var ramMode bool
 
 func init() {
-	udpMode = true
+	transportType = UDP
 	ramMode = true
 }
 
-func initServer1() (api.Transport, api.Transport) {
-	if server1 == nil {
-
-		if ramMode {
-			// RamNode Mode
-			server1 = ram.New(new(ecc.KeyPair), new(ecc.KeyPair))
-		} else {
-			// QLDB Mode
-			s := qldb.New(new(ecc.KeyPair), new(ecc.KeyPair))
-			os.Mkdir("tmp", os.FileMode(int(0755)))
-			s.BootstrapDB("tmp/ratnet_test1.ql")
-			s.FlushOutbox(0)
-			server1 = s
-		}
-
-		if udpMode {
-			public1 = udp.New(server1)
-			admin1 = udp.New(server1)
-		} else {
-			//public1 = https.New("tmp/cert1.pem", "tmp/key1.pem", server1, true)
-			//admin1 = https.New("tmp/cert1.pem", "tmp/key1.pem", server1, true)
-			public1 = tls.New("tmp/cert1.pem", "tmp/key1.pem", server1, true)
-			admin1 = tls.New("tmp/cert1.pem", "tmp/key1.pem", server1, true)
-		}
-
-		go serve(public1, admin1, server1, "localhost:30001", "localhost:30101")
-		time.Sleep(2 * time.Second)
-	}
-	return public1, admin1
-}
-func initServer2() (api.Transport, api.Transport) {
-	if server2 == nil {
-		if ramMode {
-			// RamNode Mode:
-			server2 = ram.New(new(ecc.KeyPair), new(ecc.KeyPair))
-		} else {
-			// QLDB Mode
-			s := qldb.New(new(ecc.KeyPair), new(ecc.KeyPair))
-			os.Mkdir("tmp", os.FileMode(int(0755)))
-			s.BootstrapDB("tmp/ratnet_test1.ql")
-			s.FlushOutbox(0)
-			server2 = s
-		}
-
-		if udpMode {
-			public2 = udp.New(server2)
-			admin2 = udp.New(server2)
-		} else {
-			//public2 = https.New("tmp/cert2.pem", "tmp/key2.pem", server2, true)
-			//admin2 = https.New("tmp/cert2.pem", "tmp/key2.pem", server2, true)
-			public2 = tls.New("tmp/cert2.pem", "tmp/key2.pem", server2, true)
-			admin2 = tls.New("tmp/cert2.pem", "tmp/key2.pem", server2, true)
-
-		}
-		go serve(public2, admin2, server2, "localhost:30002", "localhost:30202")
-		time.Sleep(2 * time.Second)
-	}
-	return public2, admin2
-}
-func initServer3() (api.Transport, api.Transport) {
-	if server3 == nil {
-		if ramMode {
-			// RamNode Mode:
-			server3 = ram.New(new(ecc.KeyPair), new(ecc.KeyPair))
-		} else {
-			// QLDB Mode
-			s := qldb.New(new(ecc.KeyPair), new(ecc.KeyPair))
-			os.Mkdir("tmp", os.FileMode(int(0755)))
-			s.BootstrapDB("tmp/ratnet_test1.ql")
-			s.FlushOutbox(0)
-			server3 = s
-		}
-		if udpMode {
-			public3 = udp.New(server3)
-			admin3 = udp.New(server3)
-		} else {
-			//public3 = https.New("tmp/cert3.pem", "tmp/key3.pem", server3, true)
-			//admin3 = https.New("tmp/cert3.pem", "tmp/key3.pem", server3, true)
-			public3 = tls.New("tmp/cert3.pem", "tmp/key3.pem", server3, true)
-			admin3 = tls.New("tmp/cert3.pem", "tmp/key3.pem", server3, true)
-		}
-		go serve(public3, admin3, server3, "localhost:30003", "localhost:30303")
-		time.Sleep(2 * time.Second)
-	}
-	return public3, admin3
-}
-
-func initP2P1() (api.Transport, api.Transport) {
-	if p2p1 == nil {
-		if ramMode {
-			// RamNode Mode:
-			p2p1 = ram.New(new(ecc.KeyPair), new(ecc.KeyPair))
-		} else {
-			// QLDB Mode
-			s := qldb.New(new(ecc.KeyPair), new(ecc.KeyPair))
-			os.Mkdir("tmp", os.FileMode(int(0755)))
-			s.BootstrapDB("tmp/ratnet_p2p_test1.ql")
-			s.FlushOutbox(0)
-			p2p1 = s
-		}
-		if udpMode {
-			p2p1public = udp.New(p2p1)
-			p2p1admin = udp.New(p2p1)
-		} else {
-			//p2p1public = https.New("tmp/cert3.pem", "tmp/key3.pem", p2p1, true)
-			//p2p1admin = https.New("tmp/cert3.pem", "tmp/key3.pem", p2p1, true)
-			p2p1public = tls.New("tmp/cert3.pem", "tmp/key3.pem", p2p1, true)
-			p2p1admin = tls.New("tmp/cert3.pem", "tmp/key3.pem", p2p1, true)
-		}
-		go p2p(p2p1public, p2p1admin, p2p1, "localhost:30004", "localhost:30404")
-		time.Sleep(2 * time.Second)
-	}
-	return p2p1public, p2p1admin
-}
-
-func initP2P2() (api.Transport, api.Transport) {
-	if p2p2 == nil {
-		if ramMode {
-			// RamNode Mode:
-			p2p2 = ram.New(new(ecc.KeyPair), new(ecc.KeyPair))
-		} else {
-			// QLDB Mode
-			s := qldb.New(new(ecc.KeyPair), new(ecc.KeyPair))
-			os.Mkdir("tmp", os.FileMode(int(0755)))
-			s.BootstrapDB("tmp/ratnet_p2p_test2.ql")
-			s.FlushOutbox(0)
-			p2p2 = s
-		}
-		if udpMode {
-			p2p2public = udp.New(p2p2)
-			p2p2admin = udp.New(p2p2)
-		} else {
-			//p2p2public = https.New("tmp/cert3.pem", "tmp/key3.pem", p2p2, true)
-			//p2p2admin = https.New("tmp/cert3.pem", "tmp/key3.pem", p2p2, true)
-			p2p2public = tls.New("tmp/cert3.pem", "tmp/key3.pem", p2p2, true)
-			p2p2admin = tls.New("tmp/cert3.pem", "tmp/key3.pem", p2p2, true)
-		}
-		go p2p(p2p2public, p2p2admin, p2p2, "localhost:30005", "localhost:30505")
-		time.Sleep(2 * time.Second)
-	}
-	return p2p2public, p2p2admin
-}
-
 func Test_server_ID_1(t *testing.T) {
-	admin1, public1 = initServer1()
+	server1 = initNode(1, server1, true, transportType, false)
 
 	var err error
 	var r1, r2 interface{}
-	if r1, err = public1.RPC("localhost:30001", "ID"); err != nil {
+	if r1, err = server1.Public.RPC("localhost:30001", "ID"); err != nil {
 		t.Error(err.Error())
 	} else {
 		t.Logf("%+v\n", r1)
 	}
 	// should work on both interfaces
-	if r2, err = admin1.RPC("localhost:30101", "ID"); err != nil {
+	if r2, err = server1.Admin.RPC("localhost:30101", "ID"); err != nil {
 		t.Error(err.Error())
 	} else {
 		t.Logf("%+v\n", r2)
@@ -220,32 +122,32 @@ func Test_server_ID_1(t *testing.T) {
 }
 
 func Test_server_CID_1(t *testing.T) {
-	admin1, public1 = initServer1()
+	server1 = initNode(1, server1, true, transportType, false)
 
 	// should not work on public interface
-	_, err := public1.RPC("localhost:30001", "CID")
+	_, err := server1.Public.RPC("localhost:30001", "CID")
 	if err == nil {
 		t.Error(errors.New("CID was accessible on Public network interface"))
 	}
 
-	_, err = admin1.RPC("localhost:30101", "CID")
+	_, err = server1.Admin.RPC("localhost:30101", "CID")
 	if err != nil {
 		t.Error(err.Error())
 	}
 }
 
 func Test_server_AddContact_1(t *testing.T) {
-	admin1, public1 = initServer1()
-	admin2, _ = initServer2()
+	server1 = initNode(1, server1, true, transportType, false)
+	server2 = initNode(2, server2, true, transportType, false)
 
-	p1, err := admin2.RPC("localhost:30202", "CID")
+	p1, err := server2.Admin.RPC("localhost:30202", "CID")
 	if err != nil {
 		t.Error(err.Error())
 	}
 
 	t.Log("Trying AddContact on Public interface")
 	// should not work on public interface
-	if _, erra := public1.RPC("localhost:30001", "AddContact", "destname1", p1); erra == nil {
+	if _, erra := server1.Public.RPC("localhost:30001", "AddContact", "destname1", p1); erra == nil {
 		t.Error(errors.New("AddContact was accessible on Public network interface"))
 	}
 
@@ -253,227 +155,230 @@ func Test_server_AddContact_1(t *testing.T) {
 	//t.Logf("r1: %T %v %v\n", r1, r1, ok)
 
 	t.Log("Trying AddContact on Admin interface")
-	_, errb := admin1.RPC("localhost:30101", "AddContact", "destname1", r1.ToB64())
+	_, errb := server1.Admin.RPC("localhost:30101", "AddContact", "destname1", r1.ToB64())
 	if errb != nil {
 		t.Error(errb.Error())
 	}
 }
 
 func Test_server_GetContact_1(t *testing.T) {
-	admin1, public1 = initServer1()
+	server1 = initNode(1, server1, true, transportType, false)
 
 	t.Log("Trying GetContact on Public interface")
 	// should not work on public interface
-	if _, erra := public1.RPC("localhost:30001", "GetContact", "destname1"); erra == nil {
+	if _, erra := server1.Public.RPC("localhost:30001", "GetContact", "destname1"); erra == nil {
 		t.Error(errors.New("GetContact was accessible on Public network interface"))
 	}
 
 	t.Log("Trying GetContacts on Public interface")
 	// should not work on public interface
-	if _, erra := public1.RPC("localhost:30001", "GetContacts"); erra == nil {
+	if _, erra := server1.Public.RPC("localhost:30001", "GetContacts"); erra == nil {
 		t.Error(errors.New("GetContacts was accessible on Public network interface"))
 	}
 
 	t.Log("Trying GetContact on Admin interface")
-	_, err := admin1.RPC("localhost:30101", "GetContact", "destname1")
+	_, err := server1.Admin.RPC("localhost:30101", "GetContact", "destname1")
 	if err != nil {
 		t.Error(err.Error())
 	}
 	t.Log("Trying GetContacts on Admin interface")
-	_, err = admin1.RPC("localhost:30101", "GetContacts")
+	_, err = server1.Admin.RPC("localhost:30101", "GetContacts")
 	if err != nil {
 		t.Error(err.Error())
 	}
 }
 
 func Test_server_AddChannel_1(t *testing.T) {
-	admin1, public1 = initServer1()
+	server1 = initNode(1, server1, true, transportType, false)
+
 	// todo: add RSA test?
 	chankey := pubprivkeyb64Ecc
 
 	t.Log("Trying AddChannel on Public interface")
 	// should not work on public interface
-	_, err := public1.RPC("localhost:30001", "AddChannel", "channel1", chankey)
+	_, err := server1.Public.RPC("localhost:30001", "AddChannel", "channel1", chankey)
 	if err == nil {
 		t.Error(errors.New("AddChannel was accessible on Public network interface"))
 	}
 
 	t.Log("Trying AddChannel on Admin interface")
-	_, err = admin1.RPC("localhost:30101", "AddChannel", "channel1", chankey)
+	_, err = server1.Admin.RPC("localhost:30101", "AddChannel", "channel1", chankey)
 	if err != nil {
 		t.Error(err.Error())
 	}
 }
 
 func Test_server_GetChannel_1(t *testing.T) {
-	admin1, public1 = initServer1()
+	server1 = initNode(1, server1, true, transportType, false)
 
 	t.Log("Trying GetChannel on Public interface")
 	// should not work on public interface
-	if _, erra := public1.RPC("localhost:30001", "GetChannel", "channel1"); erra == nil {
+	if _, erra := server1.Public.RPC("localhost:30001", "GetChannel", "channel1"); erra == nil {
 		t.Error(errors.New("GetChannel was accessible on Public network interface"))
 	}
 
 	t.Log("Trying GetChannels on Public interface")
 	// should not work on public interface
-	if _, erra := public1.RPC("localhost:30001", "GetChannels"); erra == nil {
+	if _, erra := server1.Public.RPC("localhost:30001", "GetChannels"); erra == nil {
 		t.Error(errors.New("GetChannels was accessible on Public network interface"))
 	}
 
 	t.Log("Trying GetChannel on Admin interface")
-	_, err := admin1.RPC("localhost:30101", "GetChannel", "channel1")
+	_, err := server1.Admin.RPC("localhost:30101", "GetChannel", "channel1")
 	if err != nil {
 		t.Error(err.Error())
 	}
 	t.Log("Trying GetChannels on Admin interface")
-	_, err = admin1.RPC("localhost:30101", "GetChannels")
+	_, err = server1.Admin.RPC("localhost:30101", "GetChannels")
 	if err != nil {
 		t.Error(err.Error())
 	}
 }
 
 func Test_server_AddProfile_1(t *testing.T) {
-	admin1, public1 = initServer1()
+	server1 = initNode(1, server1, true, transportType, false)
 
 	t.Log("Trying AddProfile on Public interface")
 	// should not work on public interface
-	if _, erra := public1.RPC("localhost:30001", "AddProfile", "profile1", "false"); erra == nil {
+	if _, erra := server1.Public.RPC("localhost:30001", "AddProfile", "profile1", "false"); erra == nil {
 		t.Error(errors.New("AddProfile was accessible on Public network interface"))
 	}
 
 	t.Log("Trying AddProfile on Admin interface")
-	_, errb := admin1.RPC("localhost:30101", "AddProfile", "profile1", "false")
+	_, errb := server1.Admin.RPC("localhost:30101", "AddProfile", "profile1", "false")
 	if errb != nil {
 		t.Error(errb.Error())
 	}
 }
 
 func Test_server_GetProfile_1(t *testing.T) {
-	admin1, public1 = initServer1()
+	server1 = initNode(1, server1, true, transportType, false)
 
 	t.Log("Trying GetProfile on Public interface")
 	// should not work on public interface
-	if _, erra := public1.RPC("localhost:30001", "GetProfile", "profile1"); erra == nil {
+	if _, erra := server1.Public.RPC("localhost:30001", "GetProfile", "profile1"); erra == nil {
 		t.Error(errors.New("GetProfile was accessible on Public network interface"))
 	}
 
 	t.Log("Trying GetProfiles on Public interface")
 	// should not work on public interface
-	if _, erra := public1.RPC("localhost:30001", "GetProfiles"); erra == nil {
+	if _, erra := server1.Public.RPC("localhost:30001", "GetProfiles"); erra == nil {
 		t.Error(errors.New("GetProfiles was accessible on Public network interface"))
 	}
 
 	t.Log("Trying GetProfile on Admin interface")
-	_, err := admin1.RPC("localhost:30101", "GetProfile", "profile1")
+	_, err := server1.Admin.RPC("localhost:30101", "GetProfile", "profile1")
 	if err != nil {
 		t.Error(err.Error())
 	}
 	t.Log("Trying GetProfiles on Admin interface")
-	_, err = admin1.RPC("localhost:30101", "GetProfiles")
+	_, err = server1.Admin.RPC("localhost:30101", "GetProfiles")
 	if err != nil {
 		t.Error(err.Error())
 	}
 }
 
 func Test_server_AddPeer_1(t *testing.T) {
-	admin1, public1 = initServer1()
+	server1 = initNode(1, server1, true, transportType, false)
 
 	t.Log("Trying AddPeer on Public interface")
 	// should not work on public interface
-	if _, erra := public1.RPC("localhost:30001", "AddPeer", "peer1", "false", "https://1.2.3.4:443"); erra == nil {
+	if _, erra := server1.Public.RPC("localhost:30001", "AddPeer", "peer1", "false", "https://1.2.3.4:443"); erra == nil {
 		t.Error(errors.New("AddPeer was accessible on Public network interface"))
 	}
 
 	t.Log("Trying AddPeer on Admin interface")
-	_, errb := admin1.RPC("localhost:30101", "AddPeer", "peer1", "false", "https://1.2.3.4:443")
+	_, errb := server1.Admin.RPC("localhost:30101", "AddPeer", "peer1", "false", "https://1.2.3.4:443")
 	if errb != nil {
 		t.Error(errb.Error())
 	}
 }
 
 func Test_server_GetPeer_1(t *testing.T) {
-	admin1, public1 = initServer1()
+	server1 = initNode(1, server1, true, transportType, false)
 
 	t.Log("Trying GetPeer on Public interface")
 	// should not work on public interface
-	if _, erra := public1.RPC("localhost:30001", "GetPeer", "peer1"); erra == nil {
+	if _, erra := server1.Public.RPC("localhost:30001", "GetPeer", "peer1"); erra == nil {
 		t.Error(errors.New("GetPeer was accessible on Public network interface"))
 	}
 
 	t.Log("Trying GetPeers on Public interface")
 	// should not work on public interface
-	if _, erra := public1.RPC("localhost:30001", "GetPeers"); erra == nil {
+	if _, erra := server1.Public.RPC("localhost:30001", "GetPeers"); erra == nil {
 		t.Error(errors.New("GetPeers was accessible on Public network interface"))
 	}
 
 	t.Log("Trying GetPeer on Admin interface")
-	_, err := admin1.RPC("localhost:30101", "GetPeer", "peer1")
+	_, err := server1.Admin.RPC("localhost:30101", "GetPeer", "peer1")
 	if err != nil {
 		t.Error(err.Error())
 	}
 	t.Log("Trying GetPeers on Admin interface")
-	_, err = admin1.RPC("localhost:30101", "GetPeers")
+	_, err = server1.Admin.RPC("localhost:30101", "GetPeers")
 	if err != nil {
 		t.Error(err.Error())
 	}
 }
 
 func Test_server_Send_1(t *testing.T) {
-	admin1, public1 = initServer1()
+	server1 = initNode(1, server1, true, transportType, false)
 
 	// should not work on public interface
-	_, err := public1.RPC("localhost:30001", "Send", "destname1", []byte(testMessage1))
+	_, err := server1.Public.RPC("localhost:30001", "Send", "destname1", []byte(testMessage1))
 	if err == nil {
 		t.Error(errors.New("Send was accessible on Public network interface"))
 	}
 
-	_, err = admin1.RPC("localhost:30101", "Send", "destname1", []byte(testMessage1))
+	_, err = server1.Admin.RPC("localhost:30101", "Send", "destname1", []byte(testMessage1))
 	if err != nil {
 		t.Error(err.Error())
 	}
 }
 
 func Test_server_SendChannel_1(t *testing.T) {
-	admin1, public1 = initServer1()
+	server1 = initNode(1, server1, true, transportType, false)
 
 	// should not work on public interface
-	_, err := public1.RPC("localhost:30001", "SendChannel", "channel1", []byte(testMessage2))
+	_, err := server1.Public.RPC("localhost:30001", "SendChannel", "channel1", []byte(testMessage2))
 	if err == nil {
 		t.Error(errors.New("SendChannel was accessible on Public network interface"))
 	}
 
-	_, err = admin1.RPC("localhost:30101", "SendChannel", "channel1", []byte(testMessage2))
+	_, err = server1.Admin.RPC("localhost:30101", "SendChannel", "channel1", []byte(testMessage2))
 	if err != nil {
 		t.Error(err.Error())
 	}
 }
 
 func Test_server_PickupDropoff_1(t *testing.T) {
-	_, public1 := initServer1()
+	server1 = initNode(1, server1, true, transportType, false)
+	server2 = initNode(2, server2, true, transportType, false)
+
 	go func() {
-		msg := <-server2.Out()
+		msg := <-server2.Node.Out()
 		t.Log("server2.Out Got: ")
 		t.Log(msg)
 	}()
 
 	chankey := pubprivkeyb64Ecc
 	t.Log("Trying AddChannel on server2 Admin interface")
-	_, err := admin2.RPC("localhost:30202", "AddChannel", "channel1", chankey)
+	_, err := server2.Admin.RPC("localhost:30202", "AddChannel", "channel1", chankey)
 	if err != nil {
 		t.Error(err.Error())
 	}
 
-	pubsrv, err := public1.RPC("localhost:30002", "ID")
+	pubsrv, err := server1.Public.RPC("localhost:30002", "ID")
 	if err != nil {
 		t.Error("XXX:" + err.Error())
 	}
 	//p1 := pubsrv.(bc.PubKey)
-	bundle, err := public1.RPC("localhost:30001", "Pickup", pubsrv, int64(31536000)) // 31536000 seconds in a year
+	bundle, err := server1.Public.RPC("localhost:30001", "Pickup", pubsrv, int64(31536000)) // 31536000 seconds in a year
 	if err != nil {
 		t.Error("YYY:" + err.Error())
 	}
 
-	_, err = public1.RPC("localhost:30002", "Dropoff", bundle)
+	_, err = server1.Public.RPC("localhost:30002", "Dropoff", bundle)
 	if err != nil {
 		t.Error("ZZZ:" + err.Error())
 	}
@@ -481,34 +386,35 @@ func Test_server_PickupDropoff_1(t *testing.T) {
 }
 
 func Test_server_PickupDropoff_2(t *testing.T) {
-	_, public1 := initServer1()
-	admin3, _ := initServer3()
+	server1 = initNode(1, server1, true, transportType, false)
+	server3 = initNode(3, server3, true, transportType, false)
+
 	chankey := pubprivkeyb64Ecc
 
 	go func() {
-		msg := <-server3.Out()
+		msg := <-server3.Node.Out()
 		t.Log("server3.Out Got: ")
 		t.Log(msg)
 	}()
 
 	t.Log("Trying AddChannel on server3 Admin interface")
-	_, err := admin3.RPC("localhost:30303", "AddChannel", "channel1", chankey)
+	_, err := server3.Admin.RPC("localhost:30303", "AddChannel", "channel1", chankey)
 	if err != nil {
 		t.Error(err.Error())
 	}
-	pubsrv, err := public1.RPC("localhost:30003", "ID")
+	pubsrv, err := server1.Public.RPC("localhost:30003", "ID")
 	if err != nil {
 		t.Error(err.Error())
 	}
-	_, err = admin1.RPC("localhost:30101", "SendChannel", "channel1", []byte(testMessage2))
+	_, err = server1.Admin.RPC("localhost:30101", "SendChannel", "channel1", []byte(testMessage2))
 	if err != nil {
 		t.Error(err.Error())
 	}
-	result, err := public1.RPC("localhost:30001", "Pickup", pubsrv, int64(31536000), "channel1") // seconds in a year
+	result, err := server1.Public.RPC("localhost:30001", "Pickup", pubsrv, int64(31536000), "channel1") // seconds in a year
 	if err != nil {
 		t.Error(err.Error())
 	}
-	_, err = public1.RPC("localhost:30003", "Dropoff", result)
+	_, err = server1.Public.RPC("localhost:30003", "Dropoff", result)
 	if err != nil {
 		t.Error(err.Error())
 	}
@@ -516,27 +422,27 @@ func Test_server_PickupDropoff_2(t *testing.T) {
 
 func Test_p2p_Basic_1(t *testing.T) {
 
-	initP2P1()
-	initP2P2()
+	p2p1 = initNode(4, p2p1, true, transportType, true)
+	p2p2 = initNode(5, p2p2, true, transportType, true)
 
-	for p2p1 == nil || p2p2 == nil {
+	for p2p1.Node == nil || p2p2.Node == nil {
 		time.Sleep(1 * time.Second)
 	}
 
 	go func() {
-		msg := <-p2p2.Out()
+		msg := <-p2p2.Node.Out()
 		t.Log("p2p2.Out Got: ")
 		t.Log(msg)
 	}()
 
-	if err := p2p1.AddChannel("test1", pubprivkeyb64Ecc); err != nil {
+	if err := p2p1.Node.AddChannel("test1", pubprivkeyb64Ecc); err != nil {
 		t.Error(err.Error())
 	}
-	if err := p2p2.AddChannel("test1", pubprivkeyb64Ecc); err != nil {
+	if err := p2p2.Node.AddChannel("test1", pubprivkeyb64Ecc); err != nil {
 		t.Error(err.Error())
 	}
 
-	if err := p2p1.SendChannel("test1", []byte(testMessage1)); err != nil {
+	if err := p2p1.Node.SendChannel("test1", []byte(testMessage1)); err != nil {
 		t.Error(err.Error())
 	}
 }
