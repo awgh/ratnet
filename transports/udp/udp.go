@@ -152,8 +152,6 @@ func (m *Module) RPC(host string, method string, args ...interface{}) (interface
 	conn.SetReadDeadline(time.Now().Add(35 * time.Second))
 	conn.SetWriteDeadline(time.Now().Add(35 * time.Second))
 
-	//	defer conn.Close()
-
 	reader := bufio.NewReader(conn)
 	writer := bufio.NewWriter(conn)
 
@@ -165,6 +163,8 @@ func (m *Module) RPC(host string, method string, args ...interface{}) (interface
 	enc := gob.NewEncoder(writer)
 	if err := enc.Encode(a); err != nil {
 		//log.Println("rpc gob encode failed: " + err.Error())
+		delete(cachedSessions, host) // something's wrong, make a new session next attempt
+		_ = conn.Close()
 		return nil, err
 	}
 	writer.Flush()
@@ -173,6 +173,8 @@ func (m *Module) RPC(host string, method string, args ...interface{}) (interface
 	dec := gob.NewDecoder(reader)
 	if err := dec.Decode(&rr); err != nil {
 		//log.Println("rpc gob decode failed: " + err.Error())
+		delete(cachedSessions, host) // something's wrong, make a new session next attempt
+		_ = conn.Close()
 		return nil, err
 	}
 
@@ -190,6 +192,9 @@ func (m *Module) RPC(host string, method string, args ...interface{}) (interface
 // Stop : Stops module
 func (m *Module) Stop() {
 	m.isRunning = false
-
 	m.wg.Wait()
+
+	for _, v := range cachedSessions {
+		_ = v.Close()
+	}
 }

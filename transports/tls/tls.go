@@ -15,8 +15,12 @@ import (
 	"github.com/awgh/ratnet/api"
 )
 
+var cachedSessions map[string]*tls.Conn
+
 func init() {
 	ratnet.Transports["tls"] = NewFromMap // register this module by name (for deserialization support)
+
+	cachedSessions = make(map[string]*tls.Conn)
 }
 
 // NewFromMap : Makes a new instance of this transport module from a map of arguments (for deserialization support)
@@ -47,7 +51,7 @@ func New(certfile string, keyfile string, node api.Node, eccMode bool) *Module {
 	tls.node = node
 	tls.EccMode = eccMode
 
-	tls.byteLimit = 125000 // 150000 was unstable
+	tls.byteLimit = 8000 * 1024 //125000 stable, 150000 was unstable
 
 	return tls
 }
@@ -85,7 +89,6 @@ func (h *Module) ByteLimit() int64 { return h.byteLimit }
 // SetByteLimit - set limit on bytes per bundle for this transport
 func (h *Module) SetByteLimit(limit int64) {
 	h.byteLimit = limit
-	ratnet.Transports["tls"].byteLimit = limit
 }
 
 // Listen : Server interface
@@ -143,63 +146,75 @@ func (h *Module) handleConnection(conn net.Conn, node api.Node, adminMode bool) 
 	var a api.RemoteCall
 	reader := bufio.NewReader(conn)
 	writer := bufio.NewWriter(conn)
-	//use default gob encoder
-	dec := gob.NewDecoder(reader)
-	if err := dec.Decode(&a); err != nil {
-		log.Println("tls handleConnection gob decode failed: " + err.Error())
-		return
-	}
 
-	var err error
-	var result interface{}
-	if adminMode {
-		result, err = node.AdminRPC(h, a)
-	} else {
-		result, err = node.PublicRPC(h, a)
-	}
-	//log.Printf("result type %T \n", result)
+	for h.isRunning { // read multiple messages on the same connection
+		//use default gob encoder
+		dec := gob.NewDecoder(reader)
+		if err := dec.Decode(&a); err != nil {
+			//log.Println("tls handleConnection gob decode failed: " + err.Error())
+			break
+		}
 
-	rr := api.RemoteResponse{}
-	if err != nil {
-		rr.Error = err.Error()
+		var err error
+		var result interface{}
+		if adminMode {
+			result, err = node.AdminRPC(h, a)
+		} else {
+			result, err = node.PublicRPC(h, a)
+		}
+		//log.Printf("result type %T \n", result)
+
+		rr := api.RemoteResponse{}
+		if err != nil {
+			rr.Error = err.Error()
+		}
+		if result != nil { // gob cannot encode typed Nils, only interface{} Nils...wtf?
+			rr.Value = result
+		}
+		enc := gob.NewEncoder(writer)
+		if err := enc.Encode(rr); err != nil {
+			//log.Println("tls handleConnection gob encode failed: " + err.Error())
+			break
+		}
+		writer.Flush()
 	}
-	if result != nil { // gob cannot encode typed Nils, only interface{} Nils...wtf?
-		rr.Value = result
-	}
-	enc := gob.NewEncoder(writer)
-	if err := enc.Encode(rr); err != nil {
-		log.Println("tls handleConnection gob encode failed: " + err.Error())
-	}
-	writer.Flush()
 }
 
 // RPC : client interface
 func (h *Module) RPC(host string, method string, args ...interface{}) (interface{}, error) {
+	conn, ok := cachedSessions[host]
+	if !ok {
+		var err error
+		conf := &tls.Config{InsecureSkipVerify: true}
+		conn, err = tls.Dial("tcp", host, conf)
+		if err != nil {
+			log.Println(err)
+			return nil, err
+		}
+		cachedSessions[host] = conn
+	}
+	reader := bufio.NewReader(conn)
+	writer := bufio.NewWriter(conn)
+
 	var a api.RemoteCall
 	a.Action = method
 	a.Args = args
 
-	conf := &tls.Config{InsecureSkipVerify: true}
-	conn, err := tls.Dial("tcp", host, conf)
-	if err != nil {
-		log.Println(err)
-		return nil, err
-	}
-	defer conn.Close()
-	reader := bufio.NewReader(conn)
-	writer := bufio.NewWriter(conn)
-
 	//use default gob encoder
 	enc := gob.NewEncoder(writer)
 	if err := enc.Encode(a); err != nil {
-		log.Println("tls rpc gob encode failed: " + err.Error())
+		//log.Println("tls rpc gob encode failed: " + err.Error())
+		delete(cachedSessions, host) // something's wrong, make a new session next attempt
+		_ = conn.Close()
 		return nil, err
 	}
 	writer.Flush()
 	var rr api.RemoteResponse
 	dec := gob.NewDecoder(reader)
 	if err := dec.Decode(&rr); err != nil {
-		log.Println("tls rpc gob decode failed: " + err.Error())
+		//log.Println("tls rpc gob decode failed: " + err.Error())
+		delete(cachedSessions, host) // something's wrong, make a new session next attempt
+		_ = conn.Close()
 		return nil, err
 	}
 
@@ -219,4 +234,7 @@ func (h *Module) Stop() {
 		listener.Close()
 	}
 	h.wg.Wait()
+	for _, v := range cachedSessions {
+		_ = v.Close()
+	}
 }
