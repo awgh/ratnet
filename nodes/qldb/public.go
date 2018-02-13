@@ -96,9 +96,9 @@ func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, maxBytes int64, channel
 	lastTimeReturned := lastTime
 	offset := 0
 	if maxBytes < 1 {
-		maxBytes = 10000000 // todo:  make this a configurable value for each client
+		maxBytes = 10000000 // todo:  make a global maximum for all transports
 	}
-	rowsPerRequest := int((maxBytes / (64 * 1024)) + 1)
+	rowsPerRequest := int((maxBytes / (64 * 1024)) + 1) // this is QL-specific, based on row-size limits
 
 	for bytesRead < maxBytes {
 		r := transactQuery(c, sqlq, rowsPerRequest, offset)
@@ -127,7 +127,7 @@ func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, maxBytes int64, channel
 		}
 		offset += rowsPerRequest
 	}
-
+	log.Printf("maxBytes = %d, bytesRead = %d\n", maxBytes, bytesRead)
 	// Return things
 
 	//log.Printf("rows returned by Pickup query: %d, lastTime: %d\n", len(msgs), lastTimeReturned)

@@ -48,6 +48,7 @@ func PollServer(transport api.Transport, node api.Node, host string, pubsrv bc.P
 	// Pickup Remote
 	toLocalRaw, err := transport.RPC(host, "Pickup", pubsrv, peer.LastPollRemote)
 	if err != nil {
+		log.Println("remote pickup error: " + err.Error())
 		return false, err
 	}
 	toLocal, ok := toLocalRaw.(api.Bundle)
@@ -62,6 +63,7 @@ func PollServer(transport api.Transport, node api.Node, host string, pubsrv bc.P
 	// Dropoff Remote
 	if len(toRemote.Data) > 0 {
 		if _, err := transport.RPC(host, "Dropoff", toRemote); err != nil {
+			log.Println("remote dropoff error: " + err.Error())
 			return false, err
 		}
 		// only start tracking time once we start receiving data

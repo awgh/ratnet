@@ -83,7 +83,10 @@ func (h *Module) MarshalJSON() (b []byte, e error) {
 func (h *Module) ByteLimit() int64 { return h.byteLimit }
 
 // SetByteLimit - set limit on bytes per bundle for this transport
-func (h *Module) SetByteLimit(limit int64) { h.byteLimit = limit }
+func (h *Module) SetByteLimit(limit int64) {
+	h.byteLimit = limit
+	ratnet.Transports["tls"].byteLimit = limit
+}
 
 // Listen : Server interface
 func (h *Module) Listen(listen string, adminMode bool) {
