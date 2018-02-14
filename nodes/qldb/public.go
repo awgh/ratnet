@@ -102,7 +102,7 @@ func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, maxBytes int64, channel
 
 	for bytesRead < maxBytes {
 		r := transactQuery(c, sqlq, rowsPerRequest, offset)
-		log.Printf("Rows per request: %d\n", rowsPerRequest)
+		//log.Printf("Rows per request: %d\n", rowsPerRequest)
 		isEmpty := true //todo: must be an official way to do this
 		for r.Next() {
 			isEmpty = false
@@ -127,7 +127,7 @@ func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, maxBytes int64, channel
 		}
 		offset += rowsPerRequest
 	}
-	log.Printf("maxBytes = %d, bytesRead = %d\n", maxBytes, bytesRead)
+	//log.Printf("maxBytes = %d, bytesRead = %d\n", maxBytes, bytesRead)
 	// Return things
 
 	//log.Printf("rows returned by Pickup query: %d, lastTime: %d\n", len(msgs), lastTimeReturned)

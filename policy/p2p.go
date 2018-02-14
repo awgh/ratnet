@@ -239,15 +239,15 @@ func (s *P2P) mdnsListen() error {
 				peerlist[target] = trans
 				go func() {
 					for s.IsListening {
-						st := time.Now()
+						//st := time.Now()
 						if happy, err := PollServer(trans, s.Node, target[len(u.Scheme)+3:], pubsrv); !happy {
 							log.Println(err.Error())
 						}
-						st2 := time.Now()
-						log.Printf("p2p PollServer took: %s\n", st2.Sub(st).String())
+						//st2 := time.Now()
+						//log.Printf("p2p PollServer took: %s\n", st2.Sub(st).String())
 						runtime.GC()
-						st3 := time.Now()
-						log.Printf("p2p GC took: %s\n", st3.Sub(st2).String())
+						//st3 := time.Now()
+						//log.Printf("p2p GC took: %s\n", st3.Sub(st2).String())
 						time.Sleep(time.Duration(s.ListenInterval) * time.Millisecond) // update interval
 					}
 				}()
