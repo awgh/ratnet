@@ -162,7 +162,7 @@ func (m *Module) RPC(host string, method string, args ...interface{}) (interface
 	//use default gob encoder
 	enc := gob.NewEncoder(writer)
 	if err := enc.Encode(a); err != nil {
-		//log.Println("rpc gob encode failed: " + err.Error())
+		log.Println("rpc gob encode failed: " + err.Error())
 		delete(cachedSessions, host) // something's wrong, make a new session next attempt
 		_ = conn.Close()
 		return nil, err
@@ -172,7 +172,7 @@ func (m *Module) RPC(host string, method string, args ...interface{}) (interface
 	var rr api.RemoteResponse
 	dec := gob.NewDecoder(reader)
 	if err := dec.Decode(&rr); err != nil {
-		//log.Println("rpc gob decode failed: " + err.Error())
+		log.Println("rpc gob decode failed: " + err.Error())
 		delete(cachedSessions, host) // something's wrong, make a new session next attempt
 		_ = conn.Close()
 		return nil, err
@@ -194,7 +194,8 @@ func (m *Module) Stop() {
 	m.isRunning = false
 	m.wg.Wait()
 
-	for _, v := range cachedSessions {
+	for k, v := range cachedSessions {
+		delete(cachedSessions, k)
 		_ = v.Close()
 	}
 }
