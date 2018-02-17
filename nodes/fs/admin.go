@@ -1,8 +1,11 @@
-package ram
+package fs
 
 import (
+	"bufio"
 	"errors"
 	"log"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/awgh/bencrypt/bc"
@@ -229,9 +232,11 @@ func (node *Node) Send(contactName string, data []byte, pubkey ...bc.PubKey) err
 // SendChannelBulk : Transmit messages to a channel
 func (node *Node) SendChannelBulk(channelName string, data [][]byte, pubkey ...bc.PubKey) error {
 	for i := range data {
+		time.Sleep(10 * time.Millisecond)
 		if err := node.SendChannel(channelName, data[i], pubkey...); err != nil {
 			return err
 		}
+		time.Sleep(10 * time.Millisecond)
 	}
 	return nil
 }
@@ -266,13 +271,19 @@ func (node *Node) send(channelName string, destkey bc.PubKey, msg []byte) error 
 	rxsum = append(rxsum, []byte(channelName)...)
 	data = append(rxsum, data...)
 
-	ts := time.Now().UnixNano()
+	// create channel dir if not exist
+	chanDir := filepath.Join(node.basePath, channelName)
+	os.Mkdir(chanDir, os.FileMode(int(0700)))
+	f, err := os.Create(filepath.Join(chanDir, hex(node.outboxIndex)))
+	if err != nil {
+		return err
+	}
+	node.outboxIndex += 1
+	defer f.Close()
+	w := bufio.NewWriter(f)
+	w.Write(data)
+	w.Flush()
 
-	m := new(outboxMsg)
-	m.channel = channelName
-	m.timeStamp = ts
-	m.msg = data
-	node.outbox = append(node.outbox, m)
 	return nil
 }
 

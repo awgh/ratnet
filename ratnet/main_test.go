@@ -11,6 +11,7 @@ import (
 	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/bencrypt/ecc"
 	"github.com/awgh/ratnet/api"
+	"github.com/awgh/ratnet/nodes/fs"
 	"github.com/awgh/ratnet/nodes/qldb"
 	"github.com/awgh/ratnet/nodes/ram"
 	"github.com/awgh/ratnet/transports/https"
@@ -34,6 +35,13 @@ const (
 	NumTransports
 )
 
+const (
+	RAM int = iota
+	QL
+	FS
+	NumNodes
+)
+
 var (
 	server1 TestNode
 	server2 TestNode
@@ -47,19 +55,21 @@ var (
 	server8 TestNode
 )
 
-func initNode(n int64, testNode TestNode, ramMode bool, transportType int, p2pMode bool) TestNode {
+func initNode(n int64, testNode TestNode, nodeType int, transportType int, p2pMode bool) TestNode {
 	num := strconv.FormatInt(n, 10)
 	if !testNode.started {
-		if ramMode {
+		if transportType == RAM {
 			// RamNode Mode:
 			testNode.Node = ram.New(new(ecc.KeyPair), new(ecc.KeyPair))
-		} else {
+		} else if transportType == QL {
 			// QLDB Mode
 			s := qldb.New(new(ecc.KeyPair), new(ecc.KeyPair))
 			os.Mkdir("tmp", os.FileMode(int(0755)))
 			s.BootstrapDB("tmp/ratnet_test" + num + ".ql")
 			s.FlushOutbox(0)
 			testNode.Node = s
+		} else if transportType == FS {
+			testNode.Node = fs.New(new(ecc.KeyPair), new(ecc.KeyPair), "queue")
 		}
 
 		if transportType == UDP {
@@ -85,15 +95,15 @@ func initNode(n int64, testNode TestNode, ramMode bool, transportType int, p2pMo
 }
 
 var transportType int
-var ramMode bool
+var nodeType int
 
 func init() {
 	transportType = UDP
-	ramMode = true
+	nodeType = FS
 }
 
 func Test_server_ID_1(t *testing.T) {
-	server1 = initNode(1, server1, true, transportType, false)
+	server1 = initNode(1, server1, nodeType, transportType, false)
 
 	var err error
 	var r1, r2 interface{}
@@ -122,7 +132,7 @@ func Test_server_ID_1(t *testing.T) {
 }
 
 func Test_server_CID_1(t *testing.T) {
-	server1 = initNode(1, server1, true, transportType, false)
+	server1 = initNode(1, server1, nodeType, transportType, false)
 
 	// should not work on public interface
 	_, err := server1.Public.RPC("localhost:30001", "CID")
@@ -137,8 +147,8 @@ func Test_server_CID_1(t *testing.T) {
 }
 
 func Test_server_AddContact_1(t *testing.T) {
-	server1 = initNode(1, server1, true, transportType, false)
-	server2 = initNode(2, server2, true, transportType, false)
+	server1 = initNode(1, server1, nodeType, transportType, false)
+	server2 = initNode(2, server2, nodeType, transportType, false)
 
 	p1, err := server2.Admin.RPC("localhost:30202", "CID")
 	if err != nil {
@@ -162,7 +172,7 @@ func Test_server_AddContact_1(t *testing.T) {
 }
 
 func Test_server_GetContact_1(t *testing.T) {
-	server1 = initNode(1, server1, true, transportType, false)
+	server1 = initNode(1, server1, nodeType, transportType, false)
 
 	t.Log("Trying GetContact on Public interface")
 	// should not work on public interface
@@ -189,7 +199,7 @@ func Test_server_GetContact_1(t *testing.T) {
 }
 
 func Test_server_AddChannel_1(t *testing.T) {
-	server1 = initNode(1, server1, true, transportType, false)
+	server1 = initNode(1, server1, nodeType, transportType, false)
 
 	// todo: add RSA test?
 	chankey := pubprivkeyb64Ecc
@@ -209,7 +219,7 @@ func Test_server_AddChannel_1(t *testing.T) {
 }
 
 func Test_server_GetChannel_1(t *testing.T) {
-	server1 = initNode(1, server1, true, transportType, false)
+	server1 = initNode(1, server1, nodeType, transportType, false)
 
 	t.Log("Trying GetChannel on Public interface")
 	// should not work on public interface
@@ -236,7 +246,7 @@ func Test_server_GetChannel_1(t *testing.T) {
 }
 
 func Test_server_AddProfile_1(t *testing.T) {
-	server1 = initNode(1, server1, true, transportType, false)
+	server1 = initNode(1, server1, nodeType, transportType, false)
 
 	t.Log("Trying AddProfile on Public interface")
 	// should not work on public interface
@@ -252,7 +262,7 @@ func Test_server_AddProfile_1(t *testing.T) {
 }
 
 func Test_server_GetProfile_1(t *testing.T) {
-	server1 = initNode(1, server1, true, transportType, false)
+	server1 = initNode(1, server1, nodeType, transportType, false)
 
 	t.Log("Trying GetProfile on Public interface")
 	// should not work on public interface
@@ -279,7 +289,7 @@ func Test_server_GetProfile_1(t *testing.T) {
 }
 
 func Test_server_AddPeer_1(t *testing.T) {
-	server1 = initNode(1, server1, true, transportType, false)
+	server1 = initNode(1, server1, nodeType, transportType, false)
 
 	t.Log("Trying AddPeer on Public interface")
 	// should not work on public interface
@@ -295,7 +305,7 @@ func Test_server_AddPeer_1(t *testing.T) {
 }
 
 func Test_server_GetPeer_1(t *testing.T) {
-	server1 = initNode(1, server1, true, transportType, false)
+	server1 = initNode(1, server1, nodeType, transportType, false)
 
 	t.Log("Trying GetPeer on Public interface")
 	// should not work on public interface
@@ -322,7 +332,7 @@ func Test_server_GetPeer_1(t *testing.T) {
 }
 
 func Test_server_Send_1(t *testing.T) {
-	server1 = initNode(1, server1, true, transportType, false)
+	server1 = initNode(1, server1, nodeType, transportType, false)
 
 	// should not work on public interface
 	_, err := server1.Public.RPC("localhost:30001", "Send", "destname1", []byte(testMessage1))
@@ -337,7 +347,7 @@ func Test_server_Send_1(t *testing.T) {
 }
 
 func Test_server_SendChannel_1(t *testing.T) {
-	server1 = initNode(1, server1, true, transportType, false)
+	server1 = initNode(1, server1, nodeType, transportType, false)
 
 	// should not work on public interface
 	_, err := server1.Public.RPC("localhost:30001", "SendChannel", "channel1", []byte(testMessage2))
@@ -352,8 +362,8 @@ func Test_server_SendChannel_1(t *testing.T) {
 }
 
 func Test_server_PickupDropoff_1(t *testing.T) {
-	server1 = initNode(1, server1, true, transportType, false)
-	server2 = initNode(2, server2, true, transportType, false)
+	server1 = initNode(1, server1, nodeType, transportType, false)
+	server2 = initNode(2, server2, nodeType, transportType, false)
 
 	go func() {
 		msg := <-server2.Node.Out()
@@ -386,8 +396,8 @@ func Test_server_PickupDropoff_1(t *testing.T) {
 }
 
 func Test_server_PickupDropoff_2(t *testing.T) {
-	server1 = initNode(1, server1, true, transportType, false)
-	server3 = initNode(3, server3, true, transportType, false)
+	server1 = initNode(1, server1, nodeType, transportType, false)
+	server3 = initNode(3, server3, nodeType, transportType, false)
 
 	chankey := pubprivkeyb64Ecc
 
@@ -422,8 +432,8 @@ func Test_server_PickupDropoff_2(t *testing.T) {
 
 func Test_p2p_Basic_1(t *testing.T) {
 
-	p2p1 = initNode(4, p2p1, true, transportType, true)
-	p2p2 = initNode(5, p2p2, true, transportType, true)
+	p2p1 = initNode(4, p2p1, nodeType, transportType, true)
+	p2p2 = initNode(5, p2p2, nodeType, transportType, true)
 
 	for p2p1.Node == nil || p2p2.Node == nil {
 		time.Sleep(1 * time.Second)
