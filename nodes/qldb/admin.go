@@ -214,8 +214,6 @@ func (node *Node) DeletePeer(name string) error {
 
 // Send : Transmit a message to a single key
 func (node *Node) Send(contactName string, data []byte, pubkey ...bc.PubKey) error {
-	c := node.db()
-
 	var destkey bc.PubKey
 	if pubkey != nil && len(pubkey) > 0 && pubkey[0] != nil { // third argument is optional pubkey override
 		destkey = pubkey[0]
@@ -232,12 +230,11 @@ func (node *Node) Send(contactName string, data []byte, pubkey ...bc.PubKey) err
 		}
 	}
 
-	return node.send("", destkey, data, c)
+	return node.send("", destkey, data)
 }
 
 // SendChannel : Transmit a message to a channel
 func (node *Node) SendChannel(channelName string, data []byte, pubkey ...bc.PubKey) error {
-	c := node.db()
 	var destkey bc.PubKey
 
 	if pubkey != nil && len(pubkey) > 0 && pubkey[0] != nil { // third argument is optional PubKey override
@@ -254,10 +251,10 @@ func (node *Node) SendChannel(channelName string, data []byte, pubkey ...bc.PubK
 		log.Fatal("nil DestKey in SendChannel")
 	}
 
-	return node.send(channelName, destkey, data, c)
+	return node.send(channelName, destkey, data)
 }
 
-func (node *Node) send(channelName string, destkey bc.PubKey, msg []byte, c *sql.DB) error {
+func (node *Node) send(channelName string, destkey bc.PubKey, msg []byte) error {
 
 	data, err := node.contentKey.EncryptMessage(msg, destkey)
 	if err != nil {
