@@ -17,13 +17,11 @@ func (node *Node) CID() (bc.PubKey, error) {
 
 // GetContact : Return a list of  keys
 func (node *Node) GetContact(name string) (*api.Contact, error) {
-	c := node.db()
-	r := transactQueryRow(c, "SELECT cpubkey FROM contacts WHERE name==$1;", name)
-	var pubs string
-	if err := r.Scan(&pubs); err == sql.ErrNoRows {
-		return nil, nil
-	} else if err != nil {
+	pubs, err := node.qlGetContactPubKey(name)
+	if err != nil {
 		return nil, err
+	} else if pubs == "" {
+		return nil, nil
 	}
 	contact := new(api.Contact)
 	contact.Name = name
@@ -33,17 +31,7 @@ func (node *Node) GetContact(name string) (*api.Contact, error) {
 
 // GetContacts : Return a list of  keys
 func (node *Node) GetContacts() ([]api.Contact, error) {
-	c := node.db()
-	s := transactQuery(c, "SELECT name,cpubkey FROM contacts;")
-	var contacts []api.Contact
-	for s.Next() {
-		var d api.Contact
-		if err := s.Scan(&d.Name, &d.Pubkey); err != nil {
-			return nil, err
-		}
-		contacts = append(contacts, d)
-	}
-	return contacts, nil
+	return node.qlGetContacts()
 }
 
 // AddContact : Add or Update a contact key to this node's database
@@ -54,15 +42,18 @@ func (node *Node) AddContact(name string, key string) error {
 	}
 	if tx, err := c.Begin(); err != nil {
 		node.errMsg(err, true)
+		return err
 	} else {
 		_, _ = tx.Exec("DELETE FROM contacts WHERE name==$1;", name)
-		_, err = tx.Exec("INSERT INTO contacts VALUES( $1, $2 )", name, key)
+		_, err = tx.Exec("INSERT INTO contacts VALUES( $1, $2 );", name, key)
 		if err != nil {
 			node.errMsg(err, true)
+			return err
 		}
 		err = tx.Commit()
 		if err != nil {
 			node.errMsg(err, true)
+			return err
 		}
 	}
 	return nil
@@ -77,42 +68,23 @@ func (node *Node) DeleteContact(name string) error {
 
 // GetChannel : Return a channel by name
 func (node *Node) GetChannel(name string) (*api.Channel, error) {
-	c := node.db()
-	r := transactQueryRow(c, "SELECT privkey FROM channels WHERE name==$1;", name)
-	var privkey string
-	if err := r.Scan(&privkey); err == sql.ErrNoRows {
-		return nil, nil
-	} else if err != nil {
+	privkey, err := node.qlGetChannelPrivKey(name)
+	if err != nil {
 		return nil, err
-	} else {
-		prv := node.contentKey.Clone()
-		if err := prv.FromB64(privkey); err != nil {
-			return nil, err
-		}
-		channel := new(api.Channel)
-		channel.Name = name
-		channel.Pubkey = prv.GetPubKey().ToB64()
-		return channel, nil
 	}
+	prv := node.contentKey.Clone()
+	if err := prv.FromB64(privkey); err != nil {
+		return nil, err
+	}
+	channel := new(api.Channel)
+	channel.Name = name
+	channel.Pubkey = prv.GetPubKey().ToB64()
+	return channel, nil
 }
 
 // GetChannels : Return list of channels known to this node
 func (node *Node) GetChannels() ([]api.Channel, error) {
-	c := node.db()
-	r := transactQuery(c, "SELECT name,privkey FROM channels;")
-	var channels []api.Channel
-	for r.Next() {
-		var n, p string
-		if err := r.Scan(&n, &p); err != nil {
-			return nil, err
-		}
-		prv := node.contentKey.Clone()
-		if err := prv.FromB64(p); err != nil {
-			return nil, err
-		}
-		channels = append(channels, api.Channel{Name: n, Pubkey: prv.GetPubKey().ToB64()})
-	}
-	return channels, nil
+	return node.qlGetChannels()
 }
 
 // AddChannel : Add a channel to this node's database
@@ -132,7 +104,7 @@ func (node *Node) AddChannel(name string, privkey string) error {
 	if err := tx.Commit(); err != nil {
 		return err
 	}
-	node.refreshChannels(c)
+	node.refreshChannels()
 	return nil
 }
 
@@ -145,45 +117,12 @@ func (node *Node) DeleteChannel(name string) error {
 
 // GetProfile : Retrieve a profiles
 func (node *Node) GetProfile(name string) (*api.Profile, error) {
-	c := node.db()
-	r := transactQueryRow(c, "SELECT enabled,privkey FROM profiles WHERE name==$1;", name)
-	var e bool
-	var prv string
-	if err := r.Scan(&e, &prv); err == sql.ErrNoRows {
-		return nil, nil
-	} else if err != nil {
-		return nil, err
-	}
-	profile := new(api.Profile)
-	profile.Enabled = e
-	profile.Name = name
-	pk := node.contentKey.Clone()
-	if err := pk.FromB64(prv); err != nil {
-		return nil, err
-	}
-	profile.Pubkey = pk.GetPubKey().ToB64()
-	return profile, nil
+	return node.qlGetProfile(name)
 }
 
 // GetProfiles : Retrieve the list of profiles for this node
 func (node *Node) GetProfiles() ([]api.Profile, error) {
-	c := node.db()
-	r := transactQuery(c, "SELECT name,enabled,privkey FROM profiles;")
-	var profiles []api.Profile
-	for r.Next() {
-		var p api.Profile
-		var prv string
-		if err := r.Scan(&p.Name, &p.Enabled, &prv); err != nil {
-			return nil, err
-		}
-		pk := node.contentKey.Clone()
-		if err := pk.FromB64(prv); err != nil {
-			return nil, err
-		}
-		p.Pubkey = pk.GetPubKey().ToB64()
-		profiles = append(profiles, p)
-	}
-	return profiles, nil
+	return node.qlGetProfiles()
 }
 
 // AddProfile : Add or Update a profile to this node's database
@@ -237,35 +176,12 @@ func (node *Node) LoadProfile(name string) (bc.PubKey, error) {
 
 // GetPeer : Retrieve a peer by name
 func (node *Node) GetPeer(name string) (*api.Peer, error) {
-	c := node.db()
-	r := transactQueryRow(c, "SELECT uri,enabled FROM peers WHERE name==$1;", name)
-	var u string
-	var e bool
-	if err := r.Scan(&u, &e); err == sql.ErrNoRows {
-		return nil, nil
-	} else if err != nil {
-		return nil, err
-	}
-	peer := new(api.Peer)
-	peer.Name = name
-	peer.Enabled = e
-	peer.URI = u
-	return peer, nil
+	return node.qlGetPeer(name)
 }
 
 // GetPeers : Retrieve a list of peers in this node's database
 func (node *Node) GetPeers() ([]api.Peer, error) {
-	c := node.db()
-	r := transactQuery(c, "SELECT name,uri,enabled FROM peers;")
-	var peers []api.Peer
-	for r.Next() {
-		var s api.Peer
-		if err := r.Scan(&s.Name, &s.URI, &s.Enabled); err != nil {
-			return nil, err
-		}
-		peers = append(peers, s)
-	}
-	return peers, nil
+	return node.qlGetPeers()
 }
 
 // AddPeer : Add or Update a peer configuration
@@ -297,20 +213,16 @@ func (node *Node) DeletePeer(name string) error {
 // Send : Transmit a message to a single key
 func (node *Node) Send(contactName string, data []byte, pubkey ...bc.PubKey) error {
 	c := node.db()
-	var r1 *sql.Row
-	var err error
 
 	var destkey bc.PubKey
 	if pubkey != nil && len(pubkey) > 0 && pubkey[0] != nil { // third argument is optional pubkey override
 		destkey = pubkey[0]
 	} else {
-		var s string
-		r1 = transactQueryRow(c, "SELECT cpubkey FROM contacts WHERE name==$1;", contactName)
-		err = r1.Scan(&s)
-		if err == sql.ErrNoRows {
-			return errors.New("Unknown Contact")
-		} else if err != nil {
+		s, err := node.qlGetContactPubKey(contactName)
+		if err != nil {
 			return err
+		} else if s == "" {
+			return errors.New("Unknown Contact")
 		}
 		destkey = node.contentKey.GetPubKey().Clone()
 		if err := destkey.FromB64(s); err != nil {

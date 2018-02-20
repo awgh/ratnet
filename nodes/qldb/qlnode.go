@@ -97,7 +97,7 @@ func (node *Node) BootstrapDB(database string) func() *sql.DB {
 	}
 
 	node.db = func() *sql.DB {
-		//log.Println("db: " + database)  //todo: why does this trigger so much?
+		//log.Println("db: " + database) //todo: why does this trigger so much?
 		c, err := sql.Open("ql", database)
 		if err != nil {
 			node.errMsg(errors.New("DB Error Opening: "+database+" => "+err.Error()), true)
@@ -107,7 +107,7 @@ func (node *Node) BootstrapDB(database string) func() *sql.DB {
 
 	// One-time Initialization
 	c := node.db()
-	defer c.Close()
+	//defer c.Close()
 
 	transactExec(c, `
 		CREATE TABLE IF NOT EXISTS contacts (
@@ -194,7 +194,7 @@ func (node *Node) BootstrapDB(database string) func() *sql.DB {
 			node.errMsg(err, true)
 		}
 	}
-	node.refreshChannels(c)
+	node.refreshChannels()
 	return node.db
 }
 

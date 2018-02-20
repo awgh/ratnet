@@ -2,6 +2,7 @@ package qldb
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/gob"
 	"errors"
 	"log"
@@ -101,7 +102,10 @@ func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, maxBytes int64, channel
 	rowsPerRequest := int((maxBytes / (64 * 1024)) + 1) // this is QL-specific, based on row-size limits
 
 	for bytesRead < maxBytes {
-		r := transactQuery(c, sqlq, rowsPerRequest, offset)
+		r, err := c.Query(sqlq, rowsPerRequest, offset)
+		if err != nil && err != sql.ErrNoRows {
+			return retval, err
+		}
 		//log.Printf("Rows per request: %d\n", rowsPerRequest)
 		isEmpty := true //todo: must be an official way to do this
 		for r.Next() {

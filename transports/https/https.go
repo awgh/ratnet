@@ -173,7 +173,7 @@ func (h *Module) handleResponse(w http.ResponseWriter, r *http.Request, node api
 
 	enc := gob.NewEncoder(w)
 	if err := enc.Encode(rr); err != nil {
-		log.Println("listen gob encode failed: " + err.Error())
+		log.Println("https listen gob encode failed: " + err.Error())
 	}
 }
 

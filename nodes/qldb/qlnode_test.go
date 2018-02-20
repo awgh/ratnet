@@ -18,8 +18,9 @@ var (
 
 func Test_init(t *testing.T) {
 	node = New(new(ecc.KeyPair), new(ecc.KeyPair))
-	os.Mkdir("tmp", os.FileMode(int(0755)))
-	node.BootstrapDB("tmp/ratnet_test.ql")
+	os.RemoveAll("qltmp")
+	os.Mkdir("qltmp", os.FileMode(int(0755)))
+	node.BootstrapDB("qltmp/ratnet_test.ql")
 	node.FlushOutbox(0)
 	if err := node.routingKey.FromB64(pubprivkeyb64Ecc); err != nil {
 		log.Fatal(err)
@@ -42,7 +43,14 @@ func Test_apicall_AddContact_1(t *testing.T) {
 	if err := node.AddContact("destname1", p1); err != nil {
 		t.Error(err.Error())
 	}
-	t.Log("API AddContact RESULT: OK")
+	contact, err := node.GetContact("destname1")
+	if err != nil {
+		t.Error(err.Error())
+	}
+	t.Logf("API AddContact RESULT: %+v\n", contact)
+	if contact == nil {
+		t.Fail()
+	}
 }
 
 func Test_apicall_Send_1(t *testing.T) {

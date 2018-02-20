@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"runtime/debug"
@@ -87,18 +86,11 @@ func (node *Node) Handle(channelName string, message []byte) (bool, error) {
 	return tagOK, nil
 }
 
-func (node *Node) refreshChannels(c *sql.DB) { // todo: this could be selective or somehow less heavy
+func (node *Node) refreshChannels() { // todo: this could be selective or somehow less heavy
 	// refresh the channelKeys map
-	rc := transactQuery(c, "SELECT name,privkey FROM channels;")
-	for rc.Next() {
-		var n, s string
-		if err := rc.Scan(&n, &s); err != nil {
-			log.Fatal(err)
-		}
-		cc := node.contentKey.Clone()
-		if err := cc.FromB64(s); err == nil {
-			node.channelKeys[n] = cc
-		}
+	channels, _ := node.qlGetChannelPrivs()
+	for _, element := range channels {
+		node.channelKeys[element.Name] = element.Privkey
 	}
 }
 

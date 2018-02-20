@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"log"
 	"os"
 	"strconv"
 	"testing"
@@ -42,6 +43,14 @@ const (
 	NumNodes
 )
 
+var nodeType int
+var transportType int
+
+func init() {
+	nodeType = QL
+	transportType = TLS
+}
+
 var (
 	server1 TestNode
 	server2 TestNode
@@ -57,25 +66,31 @@ var (
 
 func initNode(n int64, testNode TestNode, nodeType int, transportType int, p2pMode bool) TestNode {
 	num := strconv.FormatInt(n, 10)
+
 	if !testNode.started {
-		if transportType == RAM {
+		testNode.started = true
+		if nodeType == RAM {
 			// RamNode Mode:
 			testNode.Node = ram.New(new(ecc.KeyPair), new(ecc.KeyPair))
-		} else if transportType == QL {
+		} else if nodeType == QL {
 			// QLDB Mode
 			s := qldb.New(new(ecc.KeyPair), new(ecc.KeyPair))
-			os.Mkdir("tmp", os.FileMode(int(0755)))
-			s.BootstrapDB("tmp/ratnet_test" + num + ".ql")
+			if err := os.RemoveAll("qltmp" + num); err != nil {
+				log.Printf("error removing directory %s: %s\n", "qltmp"+num, err.Error())
+			}
+			os.Mkdir("qltmp"+num, os.FileMode(int(0755)))
+			dbfile := "qltmp" + num + "/ratnet_test" + num + ".ql"
+			s.BootstrapDB(dbfile)
 			s.FlushOutbox(0)
 			testNode.Node = s
-		} else if transportType == FS {
+		} else if nodeType == FS {
 			testNode.Node = fs.New(new(ecc.KeyPair), new(ecc.KeyPair), "queue")
 		}
 
 		if transportType == UDP {
 			testNode.Public = udp.New(testNode.Node)
 			testNode.Admin = udp.New(testNode.Node)
-		} else if transportType == HTTPS {
+		} else if transportType == TLS {
 			testNode.Public = tls.New("tmp/cert"+num+".pem", "tmp/key"+num+".pem", testNode.Node, true)
 			testNode.Admin = tls.New("tmp/cert"+num+".pem", "tmp/key"+num+".pem", testNode.Node, true)
 		} else {
@@ -87,19 +102,10 @@ func initNode(n int64, testNode TestNode, nodeType int, transportType int, p2pMo
 		} else {
 			go serve(testNode.Public, testNode.Admin, testNode.Node, "localhost:3000"+num, "localhost:30"+num+"0"+num)
 		}
-		testNode.started = true
 
 		time.Sleep(2 * time.Second)
 	}
 	return testNode
-}
-
-var transportType int
-var nodeType int
-
-func init() {
-	transportType = UDP
-	nodeType = FS
 }
 
 func Test_server_ID_1(t *testing.T) {
@@ -154,20 +160,26 @@ func Test_server_AddContact_1(t *testing.T) {
 	if err != nil {
 		t.Error(err.Error())
 	}
+	t.Logf("Got CID: %+v\n", p1)
+	r1 := p1.(bc.PubKey)
+	t.Logf("CID cast to PubKey: %+v -> %s\n", r1, r1.ToB64())
 
 	t.Log("Trying AddContact on Public interface")
 	// should not work on public interface
-	if _, erra := server1.Public.RPC("localhost:30001", "AddContact", "destname1", p1); erra == nil {
+	if _, erra := server1.Public.RPC("localhost:30001", "AddContact", "destname1", r1.ToB64()); erra == nil {
 		t.Error(errors.New("AddContact was accessible on Public network interface"))
 	}
 
-	r1 := p1.(bc.PubKey)
 	//t.Logf("r1: %T %v %v\n", r1, r1, ok)
 
 	t.Log("Trying AddContact on Admin interface")
 	_, errb := server1.Admin.RPC("localhost:30101", "AddContact", "destname1", r1.ToB64())
 	if errb != nil {
 		t.Error(errb.Error())
+	}
+	t.Log("Trying AddContact on local interface")
+	if errc := server1.Node.AddContact("destname1", r1.ToB64()); errc != nil {
+		t.Error(errc.Error())
 	}
 }
 
@@ -187,14 +199,21 @@ func Test_server_GetContact_1(t *testing.T) {
 	}
 
 	t.Log("Trying GetContact on Admin interface")
-	_, err := server1.Admin.RPC("localhost:30101", "GetContact", "destname1")
+	contact, err := server1.Admin.RPC("localhost:30101", "GetContact", "destname1")
 	if err != nil {
 		t.Error(err.Error())
 	}
+	t.Logf("Got Contact: %+v\n", contact)
+
 	t.Log("Trying GetContacts on Admin interface")
-	_, err = server1.Admin.RPC("localhost:30101", "GetContacts")
+	contactsRaw, err := server1.Admin.RPC("localhost:30101", "GetContacts")
 	if err != nil {
 		t.Error(err.Error())
+	}
+	contacts := contactsRaw.([]api.Contact)
+	t.Logf("Got Contacts: %+v\n", contacts)
+	if len(contacts) < 1 {
+		t.Fail()
 	}
 }
 
@@ -234,14 +253,24 @@ func Test_server_GetChannel_1(t *testing.T) {
 	}
 
 	t.Log("Trying GetChannel on Admin interface")
-	_, err := server1.Admin.RPC("localhost:30101", "GetChannel", "channel1")
+	channel, err := server1.Admin.RPC("localhost:30101", "GetChannel", "channel1")
 	if err != nil {
 		t.Error(err.Error())
 	}
+	t.Logf("Got Channel: %+v\n", channel)
+	if channel == nil {
+		t.Fail()
+	}
+
 	t.Log("Trying GetChannels on Admin interface")
-	_, err = server1.Admin.RPC("localhost:30101", "GetChannels")
+	channelsRaw, err := server1.Admin.RPC("localhost:30101", "GetChannels")
 	if err != nil {
 		t.Error(err.Error())
+	}
+	channels := channelsRaw.([]api.Channel)
+	t.Logf("Got Channels: %+v\n", channels)
+	if len(channels) < 1 {
+		t.Fail()
 	}
 }
 
@@ -277,14 +306,24 @@ func Test_server_GetProfile_1(t *testing.T) {
 	}
 
 	t.Log("Trying GetProfile on Admin interface")
-	_, err := server1.Admin.RPC("localhost:30101", "GetProfile", "profile1")
+	profile, err := server1.Admin.RPC("localhost:30101", "GetProfile", "profile1")
 	if err != nil {
 		t.Error(err.Error())
 	}
+	t.Logf("Got Profile: %+v\n", profile)
+	if profile == nil {
+		t.Fail()
+	}
+
 	t.Log("Trying GetProfiles on Admin interface")
-	_, err = server1.Admin.RPC("localhost:30101", "GetProfiles")
+	profilesRaw, err := server1.Admin.RPC("localhost:30101", "GetProfiles")
 	if err != nil {
 		t.Error(err.Error())
+	}
+	profiles := profilesRaw.([]api.Profile)
+	t.Logf("Got Profiles: %+v\n", profiles)
+	if len(profiles) < 1 {
+		t.Fail()
 	}
 }
 
@@ -320,15 +359,26 @@ func Test_server_GetPeer_1(t *testing.T) {
 	}
 
 	t.Log("Trying GetPeer on Admin interface")
-	_, err := server1.Admin.RPC("localhost:30101", "GetPeer", "peer1")
+	peer, err := server1.Admin.RPC("localhost:30101", "GetPeer", "peer1")
 	if err != nil {
 		t.Error(err.Error())
 	}
+	t.Logf("Got Peer: %+v\n", peer)
+	if peer == nil {
+		t.Fail()
+	}
+
 	t.Log("Trying GetPeers on Admin interface")
-	_, err = server1.Admin.RPC("localhost:30101", "GetPeers")
+	peersRaw, err := server1.Admin.RPC("localhost:30101", "GetPeers")
 	if err != nil {
 		t.Error(err.Error())
 	}
+	peers := peersRaw.([]api.Peer)
+	t.Logf("Got Peers: %+v\n", peers)
+	if len(peers) < 1 {
+		t.Fail()
+	}
+
 }
 
 func Test_server_Send_1(t *testing.T) {

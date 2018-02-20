@@ -39,7 +39,14 @@ func Test_apicall_AddContact_1(t *testing.T) {
 	if err := node.AddContact("destname1", p1); err != nil {
 		t.Error(err.Error())
 	}
-	t.Log("API AddContact RESULT: OK")
+	contact, err := node.GetContact("destname1")
+	if err != nil {
+		t.Error(err.Error())
+	}
+	t.Logf("API AddContact RESULT: %+v\n", contact)
+	if contact == nil {
+		t.Fail()
+	}
 }
 
 func Test_apicall_Send_1(t *testing.T) {

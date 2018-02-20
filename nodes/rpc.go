@@ -83,9 +83,10 @@ func AdminRPC(transport api.Transport, node api.Node, call api.RemoteCall) (inte
 		}
 		if peer, err := node.GetContact(contactName); err != nil {
 			return nil, err
-		} else {
+		} else if peer != nil {
 			return peer, nil
 		}
+		return nil, nil
 
 	case "GetContacts":
 		if peers, err := node.GetContacts(); err != nil {
@@ -128,9 +129,10 @@ func AdminRPC(transport api.Transport, node api.Node, call api.RemoteCall) (inte
 		}
 		if c, err := node.GetChannel(channelName); err != nil {
 			return nil, err
-		} else {
+		} else if c != nil {
 			return c, nil
 		}
+		return nil, nil
 
 	case "GetChannels":
 		if chans, err := node.GetChannels(); err != nil {
@@ -173,9 +175,10 @@ func AdminRPC(transport api.Transport, node api.Node, call api.RemoteCall) (inte
 		}
 		if profile, err := node.GetProfile(profileName); err != nil {
 			return nil, err
-		} else {
+		} else if profile != nil {
 			return profile, nil
 		}
+		return nil, nil
 
 	case "GetProfiles":
 		if profiles, err := node.GetProfiles(); err != nil {
@@ -222,9 +225,10 @@ func AdminRPC(transport api.Transport, node api.Node, call api.RemoteCall) (inte
 		}
 		if p, err := node.LoadProfile(profileName); err != nil {
 			return nil, err
-		} else {
+		} else if p != nil {
 			return p, nil
 		}
+		return nil, nil
 
 	case "GetPeer":
 		if len(call.Args) < 1 {
@@ -236,9 +240,10 @@ func AdminRPC(transport api.Transport, node api.Node, call api.RemoteCall) (inte
 		}
 		if peer, err := node.GetPeer(peerName); err != nil {
 			return nil, err
-		} else {
+		} else if peer != nil {
 			return peer, nil
 		}
+		return nil, nil
 
 	case "GetPeers":
 		if peers, err := node.GetPeers(); err != nil {
