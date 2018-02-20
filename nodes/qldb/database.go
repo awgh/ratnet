@@ -265,8 +265,9 @@ func (node *Node) qlGetPeers() ([]api.Peer, error) {
 	return peers, nil
 }
 
-func outboxBulkInsert(db *sql.DB, channelName string, timestamp int64, msgs [][]byte) {
-	tx, err := db.Begin()
+func (node *Node) outboxBulkInsert(channelName string, timestamp int64, msgs [][]byte) {
+	c := node.db()
+	tx, err := c.Begin()
 	if err != nil {
 		log.Fatal(err.Error())
 	}

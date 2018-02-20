@@ -128,7 +128,9 @@ func (node *Node) GetProfiles() ([]api.Profile, error) {
 // AddProfile : Add or Update a profile to this node's database
 func (node *Node) AddProfile(name string, enabled bool) error {
 	c := node.db()
-	r := transactQueryRow(c, "SELECT * FROM profiles WHERE name==$1;", name)
+
+	r := c.QueryRow("SELECT * FROM profiles WHERE name==$1;", name)
+
 	var n, key, al string
 	if err := r.Scan(&n, &key, &al); err == sql.ErrNoRows {
 		// generate new profile keypair
@@ -159,7 +161,7 @@ func (node *Node) DeleteProfile(name string) error {
 // LoadProfile : Load a profile key from the database as the content key
 func (node *Node) LoadProfile(name string) (bc.PubKey, error) {
 	c := node.db()
-	row := transactQueryRow(c, "SELECT privkey FROM profiles WHERE name==$1;", name)
+	row := c.QueryRow("SELECT privkey FROM profiles WHERE name==$1;", name)
 	var pk string
 	if err := row.Scan(&pk); err != nil {
 		return nil, err
@@ -187,7 +189,7 @@ func (node *Node) GetPeers() ([]api.Peer, error) {
 // AddPeer : Add or Update a peer configuration
 func (node *Node) AddPeer(name string, enabled bool, uri string) error {
 	c := node.db()
-	r := transactQueryRow(c, "SELECT name FROM peers WHERE name==$1;", name)
+	r := c.QueryRow("SELECT name FROM peers WHERE name==$1;", name)
 	var n string
 	if err := r.Scan(&n); err == sql.ErrNoRows {
 		node.debugMsg("New Server")
@@ -279,21 +281,17 @@ func (node *Node) send(channelName string, destkey bc.PubKey, msg []byte, c *sql
 
 // SendBulk : Transmit messages to a single key
 func (node *Node) SendBulk(contactName string, data [][]byte, pubkey ...bc.PubKey) error {
-	c := node.db()
-	var r1 *sql.Row
-	var err error
-
 	var destkey bc.PubKey
+
 	if pubkey != nil && len(pubkey) > 0 && pubkey[0] != nil { // third argument is optional pubkey override
 		destkey = pubkey[0]
 	} else {
-		var s string
-		r1 = transactQueryRow(c, "SELECT cpubkey FROM contacts WHERE name==$1;", contactName)
-		err = r1.Scan(&s)
-		if err == sql.ErrNoRows {
-			return errors.New("Unknown Contact")
-		} else if err != nil {
+		s, err := node.qlGetContactPubKey(contactName)
+		if err != nil {
 			return err
+		}
+		if s == "" {
+			return errors.New("Unknown Contact")
 		}
 		destkey = node.contentKey.GetPubKey().Clone()
 		if err := destkey.FromB64(s); err != nil {
@@ -301,12 +299,11 @@ func (node *Node) SendBulk(contactName string, data [][]byte, pubkey ...bc.PubKe
 		}
 	}
 
-	return node.sendBulk("", destkey, data, c)
+	return node.sendBulk("", destkey, data)
 }
 
 // SendChannelBulk : Transmit messages to a channel
 func (node *Node) SendChannelBulk(channelName string, data [][]byte, pubkey ...bc.PubKey) error {
-	c := node.db()
 	var destkey bc.PubKey
 
 	if pubkey != nil && len(pubkey) > 0 && pubkey[0] != nil { // third argument is optional PubKey override
@@ -323,10 +320,10 @@ func (node *Node) SendChannelBulk(channelName string, data [][]byte, pubkey ...b
 		log.Fatal("nil DestKey in SendChannel")
 	}
 
-	return node.sendBulk(channelName, destkey, data, c)
+	return node.sendBulk(channelName, destkey, data)
 }
 
-func (node *Node) sendBulk(channelName string, destkey bc.PubKey, msg [][]byte, c *sql.DB) error {
+func (node *Node) sendBulk(channelName string, destkey bc.PubKey, msg [][]byte) error {
 
 	// prepend a uint16 of channel name length, little-endian
 	t := uint16(len(channelName))
@@ -344,8 +341,7 @@ func (node *Node) sendBulk(channelName string, destkey bc.PubKey, msg [][]byte, 
 		data[i] = append(rxsum, data[i]...)
 	}
 	ts := time.Now().UnixNano()
-	//d := base64.StdEncoding.EncodeToString(data)
-	outboxBulkInsert(c, channelName, ts, data)
+	node.outboxBulkInsert(channelName, ts, data)
 	return nil
 }
 
