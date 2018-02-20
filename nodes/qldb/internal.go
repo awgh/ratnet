@@ -2,7 +2,6 @@ package qldb
 
 import (
 	"bytes"
-	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -15,16 +14,7 @@ import (
 
 // GetChannelPrivKey : Return the private key of a given channel
 func (node *Node) GetChannelPrivKey(name string) (string, error) {
-	c := node.db()
-	r := transactQueryRow(c, "SELECT privkey FROM channels WHERE name==$1;", name)
-	var privkey string
-	if err := r.Scan(&privkey); err == sql.ErrNoRows {
-		return "", nil
-	} else if err != nil {
-		return "", err
-	} else {
-		return privkey, nil
-	}
+	return node.qlGetChannelPrivKey(name)
 }
 
 // Forward - Add an already-encrypted message to the outbound message queue (forward it along)
@@ -35,21 +25,7 @@ func (node *Node) Forward(channelName string, message []byte) error {
 	rxsum = append(rxsum, []byte(channelName)...)
 	message = append(rxsum, message...)
 
-	c := node.db()
-
-	// save message in my outbox, if not already present
-	// todo:  do we really still need this check?
-	r1 := transactQueryRow(c, "SELECT channel FROM outbox WHERE channel==$1 AND msg==$2;", channelName, message)
-	var rc string
-	err := r1.Scan(&rc)
-	if err == sql.ErrNoRows {
-		// we don't have this yet, so add it
-		t := time.Now().UnixNano()
-		transactExec(c, "INSERT INTO outbox(channel,msg,timestamp) VALUES($1,$2,$3);",
-			channelName, message, t)
-		return nil
-	}
-	return err
+	return node.qlOutboxEnqueue(channelName, message, time.Now().UnixNano(), true)
 }
 
 // Handle - Decrypt and handle an encrypted message

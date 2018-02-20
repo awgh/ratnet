@@ -265,6 +265,30 @@ func (node *Node) qlGetPeers() ([]api.Peer, error) {
 	return peers, nil
 }
 
+func (node *Node) qlOutboxEnqueue(channelName string, msg []byte, ts int64, checkExists bool) error {
+	c := node.db()
+
+	doInsert := !checkExists
+
+	if checkExists {
+		// save message in my outbox, if not already present
+		r1 := c.QueryRow("SELECT channel FROM outbox WHERE channel==$1 AND msg==$2;", channelName, msg)
+		var rc string
+		err := r1.Scan(&rc)
+		if err == sql.ErrNoRows {
+			// we don't have this yet, so add it
+			doInsert = true
+		} else if err != nil {
+			return err
+		}
+	}
+	if doInsert {
+		transactExec(c, "INSERT INTO outbox(channel,msg,timestamp) VALUES($1,$2,$3);",
+			channelName, msg, ts)
+	}
+	return nil
+}
+
 func (node *Node) outboxBulkInsert(channelName string, timestamp int64, msgs [][]byte) {
 	c := node.db()
 	tx, err := c.Begin()

@@ -259,7 +259,6 @@ func (node *Node) SendChannel(channelName string, data []byte, pubkey ...bc.PubK
 
 func (node *Node) send(channelName string, destkey bc.PubKey, msg []byte, c *sql.DB) error {
 
-	//todo: is this passing msg by reference or not???
 	data, err := node.contentKey.EncryptMessage(msg, destkey)
 	if err != nil {
 		return err
@@ -272,10 +271,10 @@ func (node *Node) send(channelName string, destkey bc.PubKey, msg []byte, c *sql
 	data = append(rxsum, data...)
 
 	ts := time.Now().UnixNano()
-	//d := base64.StdEncoding.EncodeToString(data)
-	transactExec(c, "INSERT INTO outbox(channel, msg, timestamp) VALUES($1,$2, $3);",
-		channelName, data, ts)
-
+	err = node.qlOutboxEnqueue(channelName, data, ts, false) // todo: not checking if exists here?
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
