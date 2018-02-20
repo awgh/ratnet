@@ -1,7 +1,6 @@
 package qldb
 
 import (
-	"database/sql"
 	"errors"
 	"log"
 	"time"
@@ -36,33 +35,12 @@ func (node *Node) GetContacts() ([]api.Contact, error) {
 
 // AddContact : Add or Update a contact key to this node's database
 func (node *Node) AddContact(name string, key string) error {
-	c := node.db()
-	if !node.contentKey.ValidatePubKey(key) {
-		return errors.New("Invalid Public Key in AddContact")
-	}
-	if tx, err := c.Begin(); err != nil {
-		node.errMsg(err, true)
-		return err
-	} else {
-		_, _ = tx.Exec("DELETE FROM contacts WHERE name==$1;", name)
-		_, err = tx.Exec("INSERT INTO contacts VALUES( $1, $2 );", name, key)
-		if err != nil {
-			node.errMsg(err, true)
-			return err
-		}
-		err = tx.Commit()
-		if err != nil {
-			node.errMsg(err, true)
-			return err
-		}
-	}
-	return nil
+	return node.qlAddContact(name, key)
 }
 
 // DeleteContact : Remove a contact from this node's database
 func (node *Node) DeleteContact(name string) error {
-	c := node.db()
-	transactExec(c, "DELETE FROM contacts WHERE name==$1;", name)
+	node.qlDeleteContact(name)
 	return nil
 }
 
@@ -89,19 +67,7 @@ func (node *Node) GetChannels() ([]api.Channel, error) {
 
 // AddChannel : Add a channel to this node's database
 func (node *Node) AddChannel(name string, privkey string) error {
-	c := node.db()
-	// todo: sanity check key via bencrypt
-	tx, err := c.Begin()
-	if err != nil {
-		return err
-	}
-	if _, err := tx.Exec("DELETE FROM channels WHERE name==$1;", name); err != nil {
-		return err
-	}
-	if _, err := tx.Exec("INSERT INTO channels VALUES( $1, $2 )", name, privkey); err != nil {
-		return err
-	}
-	if err := tx.Commit(); err != nil {
+	if err := node.qlAddChannel(name, privkey); err != nil {
 		return err
 	}
 	node.refreshChannels()
@@ -110,8 +76,7 @@ func (node *Node) AddChannel(name string, privkey string) error {
 
 // DeleteChannel : Remove a channel from this node's database
 func (node *Node) DeleteChannel(name string) error {
-	c := node.db()
-	transactExec(c, "DELETE FROM channels WHERE name==$1;", name)
+	node.qlDeleteChannel(name)
 	return nil
 }
 
@@ -127,45 +92,18 @@ func (node *Node) GetProfiles() ([]api.Profile, error) {
 
 // AddProfile : Add or Update a profile to this node's database
 func (node *Node) AddProfile(name string, enabled bool) error {
-	c := node.db()
-
-	r := c.QueryRow("SELECT * FROM profiles WHERE name==$1;", name)
-
-	var n, key, al string
-	if err := r.Scan(&n, &key, &al); err == sql.ErrNoRows {
-		// generate new profile keypair
-		profileKey := node.contentKey.Clone()
-		profileKey.GenerateKey()
-
-		// insert new profile
-		transactExec(c, "INSERT INTO profiles VALUES( $1, $2, $3 )",
-			name, profileKey.ToB64(), enabled)
-
-	} else if err == nil {
-		// update profile
-		transactExec(c, "UPDATE profiles SET enabled=$1 WHERE name==$2;",
-			enabled, name)
-	} else {
-		return err
-	}
-	return nil
+	return node.qlAddProfile(name, enabled)
 }
 
 // DeleteProfile : Remove a profile from this node's database
 func (node *Node) DeleteProfile(name string) error {
-	c := node.db()
-	transactExec(c, "DELETE FROM profiles WHERE name==$1;", name)
+	node.qlDeleteProfile(name)
 	return nil
 }
 
 // LoadProfile : Load a profile key from the database as the content key
 func (node *Node) LoadProfile(name string) (bc.PubKey, error) {
-	c := node.db()
-	row := c.QueryRow("SELECT privkey FROM profiles WHERE name==$1;", name)
-	var pk string
-	if err := row.Scan(&pk); err != nil {
-		return nil, err
-	}
+	pk := node.qlGetProfilePrivateKey(name)
 	profileKey := node.contentKey.Clone()
 	if err := profileKey.FromB64(pk); err != nil {
 		node.errMsg(err, false)
@@ -188,27 +126,12 @@ func (node *Node) GetPeers() ([]api.Peer, error) {
 
 // AddPeer : Add or Update a peer configuration
 func (node *Node) AddPeer(name string, enabled bool, uri string) error {
-	c := node.db()
-	r := c.QueryRow("SELECT name FROM peers WHERE name==$1;", name)
-	var n string
-	if err := r.Scan(&n); err == sql.ErrNoRows {
-		node.debugMsg("New Server")
-		transactExec(c, "INSERT INTO peers (name,uri,enabled) VALUES( $1, $2, $3 );",
-			name, uri, enabled)
-	} else if err == nil {
-		node.debugMsg("Update Server")
-		transactExec(c, "UPDATE peers SET enabled=$1,uri=$2 WHERE name==$3;",
-			enabled, uri, name)
-	} else {
-		return err
-	}
-	return nil
+	return node.qlAddPeer(name, enabled, uri)
 }
 
 // DeletePeer : Remove a peer from this node's database
 func (node *Node) DeletePeer(name string) error {
-	c := node.db()
-	transactExec(c, "DELETE FROM peers WHERE name==$1;", name)
+	node.qlDeletePeer(name)
 	return nil
 }
 
