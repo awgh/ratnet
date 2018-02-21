@@ -191,11 +191,7 @@ func (node *Node) send(channelName string, destkey bc.PubKey, msg []byte) error 
 	data = append(rxsum, data...)
 
 	ts := time.Now().UnixNano()
-	err = node.qlOutboxEnqueue(channelName, data, ts, false) // todo: not checking if exists here?
-	if err != nil {
-		return err
-	}
-	return nil
+	return node.qlOutboxEnqueue(channelName, data, ts, false) // todo: not checking if exists here?
 }
 
 // SendBulk : Transmit messages to a single key

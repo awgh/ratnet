@@ -3,7 +3,6 @@ package router
 import (
 	"encoding/json"
 	"errors"
-	"log"
 
 	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
@@ -15,8 +14,8 @@ import (
 type DefaultRouter struct {
 	// Internal
 	recentPageIdx int
-	recentPage1   map[string]byte
-	recentPage2   map[string]byte
+	recentPage1   map[[16]byte]byte
+	recentPage2   map[[16]byte]byte
 
 	Patches []api.Patch
 
@@ -66,8 +65,8 @@ func NewDefaultRouter() *DefaultRouter {
 	r.ForwardConsumedChannels = true
 	r.ForwardConsumedProfiles = false
 	// init page maps
-	r.recentPage1 = make(map[string]byte)
-	r.recentPage2 = make(map[string]byte)
+	r.recentPage1 = make(map[[16]byte]byte)
+	r.recentPage2 = make(map[[16]byte]byte)
 	return r
 }
 
@@ -188,35 +187,40 @@ func (r *DefaultRouter) Route(node api.Node, message []byte) error {
 	return nil
 }
 
+// seenRecently : Returns whether this message should be filtered out by loop detection
 func (r *DefaultRouter) seenRecently(hdr []byte) bool {
-	shdr := string(hdr)
+
+	halfCacheSize := 50
+
+	var shdr [16]byte // todo: truncating half of shared key
+	copy(shdr[:], hdr[:16])
 	_, aok := r.recentPage1[shdr]
 	_, bok := r.recentPage2[shdr]
 	retval := aok || bok
 
-	if retval {
-		log.Println("Seen Recently!")
-	}
+	//log.Printf("seen: %+v len1: %d len2: %d\n", shdr, len(r.recentPage1), len(r.recentPage2))
 
 	switch r.recentPageIdx {
-	case 1:
-		if len(r.recentPage1) >= 50 {
-			if len(r.recentPage2) >= 50 {
+	default:
+		fallthrough
+	case 0:
+		if len(r.recentPage1) >= halfCacheSize {
+			if len(r.recentPage2) >= halfCacheSize {
 				r.recentPage2 = nil
-				r.recentPage2 = make(map[string]byte)
+				r.recentPage2 = make(map[[16]byte]byte)
 			}
-			r.recentPageIdx = 2
+			r.recentPageIdx = 1
 			r.recentPage2[shdr] = 1
 		} else {
 			r.recentPage1[shdr] = 1
 		}
-	case 2:
-		if len(r.recentPage2) >= 50 {
-			if len(r.recentPage1) >= 50 {
+	case 1:
+		if len(r.recentPage2) >= halfCacheSize {
+			if len(r.recentPage1) >= halfCacheSize {
 				r.recentPage1 = nil
-				r.recentPage1 = make(map[string]byte)
+				r.recentPage1 = make(map[[16]byte]byte)
 			}
-			r.recentPageIdx = 1
+			r.recentPageIdx = 0
 			r.recentPage1[shdr] = 1
 		} else {
 			r.recentPage2[shdr] = 1

@@ -2,12 +2,9 @@ package qldb
 
 import (
 	"bytes"
-	"database/sql"
 	"encoding/gob"
 	"errors"
 	"log"
-	"strconv"
-	"strings"
 
 	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/ratnet/api"
@@ -56,82 +53,14 @@ func (node *Node) Dropoff(bundle api.Bundle) error {
 // Pickup : Get messages from a remote node
 func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, maxBytes int64, channelNames ...string) (api.Bundle, error) {
 	node.debugMsg("Pickup called")
-	c := node.db()
 	var retval api.Bundle
 
-	// Build the query
-
-	wildcard := false
-	if len(channelNames) < 1 {
-		wildcard = true // if no channels are given, get everything
-	} else {
-		for _, cname := range channelNames {
-			for _, char := range cname {
-				if !strings.Contains("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0987654321", string(char)) {
-					return retval, errors.New("Invalid character in channel name")
-				}
-			}
-		}
-	}
-	sqlq := "SELECT msg, timestamp FROM outbox"
-	if lastTime != 0 {
-		sqlq += " WHERE (int64(" + strconv.FormatInt(lastTime, 10) +
-			") < timestamp)"
-	}
-	if !wildcard && len(channelNames) > 0 { // QL is broken?  couldn't make it work with prepared stmts
-		if lastTime != 0 {
-			sqlq += " AND"
-		} else {
-			sqlq += " WHERE"
-		}
-		sqlq = sqlq + " channel IN( \"" + channelNames[0] + "\""
-		for i := 1; i < len(channelNames); i++ {
-			sqlq = sqlq + ",\"" + channelNames[i] + "\""
-		}
-		sqlq = sqlq + " )"
-	}
-	sqlq = sqlq + " ORDER BY timestamp ASC LIMIT $1 OFFSET $2;"
-
-	var msgs [][]byte
-	var bytesRead int64
-	lastTimeReturned := lastTime
-	offset := 0
-	if maxBytes < 1 {
-		maxBytes = 10000000 // todo:  make a global maximum for all transports
-	}
-	rowsPerRequest := int((maxBytes / (64 * 1024)) + 1) // this is QL-specific, based on row-size limits
-
-	for bytesRead < maxBytes {
-		r, err := c.Query(sqlq, rowsPerRequest, offset)
-		if err != nil && err != sql.ErrNoRows {
-			return retval, err
-		}
-		//log.Printf("Rows per request: %d\n", rowsPerRequest)
-		isEmpty := true //todo: must be an official way to do this
-		for r.Next() {
-			isEmpty = false
-			var msg []byte
-			var ts int64
-			r.Scan(&msg, &ts)
-			if bytesRead+int64(len(msg)) >= maxBytes { // no room for next msg
-				isEmpty = true
-				break
-			}
-			if ts > lastTimeReturned {
-				lastTimeReturned = ts
-			} else {
-				log.Printf("Timestamps not increasing - prev: %d  cur: %d\n", lastTimeReturned, ts)
-			}
-			msgs = append(msgs, msg)
-			bytesRead += int64(len(msg))
-		}
-		r.Close()
-		if isEmpty {
-			break
-		}
-		offset += rowsPerRequest
+	msgs, lastTimeReturned, err := node.qlGetMessages(lastTime, maxBytes, channelNames...)
+	if err != nil {
+		return retval, err
 	}
 	//log.Printf("maxBytes = %d, bytesRead = %d\n", maxBytes, bytesRead)
+
 	// Return things
 
 	//log.Printf("rows returned by Pickup query: %d, lastTime: %d\n", len(msgs), lastTimeReturned)

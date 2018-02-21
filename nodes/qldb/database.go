@@ -2,8 +2,11 @@ package qldb
 
 import (
 	"database/sql"
+	"errors"
 	"log"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/awgh/ratnet/api"
 )
@@ -13,8 +16,6 @@ var sqlDebug = false
 // THIS SHOULD BE THE ONLY FILE THAT INCLUDES database/sql !!!
 //		(ok, and qlnode, but only for the Node.db var declaration)
 
-//var mutex = &sync.Mutex{}
-
 func closeDB(db *sql.DB) {
 	_ = db.Close()
 }
@@ -23,8 +24,13 @@ func closeDB(db *sql.DB) {
 // Generic Database Functions
 //
 
-func transactExec(db *sql.DB, sql string, params ...interface{}) {
-	tx, err := db.Begin()
+func (node *Node) transactExec(sql string, params ...interface{}) {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
+	c := node.db()
+	defer closeDB(c)
+
+	tx, err := c.Begin()
 	if err != nil {
 		log.Fatal(err.Error())
 	}
@@ -41,8 +47,14 @@ func transactExec(db *sql.DB, sql string, params ...interface{}) {
 	}
 }
 
-func transactQuery(db *sql.DB, sql string, params ...interface{}) *sql.Rows {
-	tx, err := db.Begin()
+/*
+func (node *Node) transactQuery(sql string, params ...interface{}) *sql.Rows {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
+	c := node.db()
+	defer closeDB(c)
+
+	tx, err := c.Begin()
 	if err != nil {
 		log.Fatal(err.Error())
 	}
@@ -59,23 +71,33 @@ func transactQuery(db *sql.DB, sql string, params ...interface{}) *sql.Rows {
 	}
 	return r
 }
-
-func transactQueryRow(db *sql.DB, sql string, params ...interface{}) *sql.Row {
-	tx, err := db.Begin()
+*/
+/*
+func (node *Node) transactQueryRow(sqlq string, params ...interface{}) *sql.Row {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
+	c := node.db()
+	defer closeDB(c)
+	tx, err := c.Begin()
 	if err != nil {
-		log.Fatal(err.Error())
+		log.Fatal("transactQueryRow begin fatal: " + err.Error())
 	}
 	if sqlDebug {
-		log.Println(sql, params)
+		log.Println(sqlq, params)
 	}
-	r := tx.QueryRow(sql, params...)
+	var r *sql.Row
+	if params == nil {
+		r = tx.QueryRow(sqlq)
+	} else {
+		r = tx.QueryRow(sqlq, params...)
+	}
 	err = tx.Commit()
 	if err != nil {
-		log.Fatal(err.Error())
+		log.Fatal("transactQueryRow commit fatal: " + err.Error())
 	}
 	return r
 }
-
+*/
 //
 // End Generic Database Functions
 //
@@ -85,13 +107,14 @@ func transactQueryRow(db *sql.DB, sql string, params ...interface{}) *sql.Row {
 //
 
 func (node *Node) qlGetContactPubKey(name string) (string, error) {
-	//mutex.Lock()
-	//defer mutex.Unlock()
 	c := node.db()
 	defer closeDB(c)
 
-	r := c.QueryRow("SELECT cpubkey FROM contacts WHERE name==$1;", name)
-	//r := transactQueryRow(c, "SELECT cpubkey FROM contacts WHERE name==$1;", name)
+	sqlq := "SELECT cpubkey FROM contacts WHERE name==$1;"
+	r := c.QueryRow(sqlq, name)
+	if sqlDebug {
+		log.Println(sqlq, name)
+	}
 	var pubs string
 	if err := r.Scan(&pubs); err == sql.ErrNoRows {
 		return "", nil
@@ -105,16 +128,20 @@ func (node *Node) qlGetContactPubKey(name string) (string, error) {
 func (node *Node) qlGetContacts() ([]api.Contact, error) {
 	c := node.db()
 	defer closeDB(c)
-	s, err := c.Query("SELECT name,cpubkey FROM contacts;")
-	if err == sql.ErrNoRows {
-		return nil, nil
-	} else if err != nil {
+	sqlq := "SELECT name,cpubkey FROM contacts;"
+	if sqlDebug {
+		log.Println(sqlq)
+	}
+	r, err := c.Query(sqlq)
+	if r == nil || err != nil {
 		return nil, err
 	}
+	defer r.Close()
+
 	var contacts []api.Contact
-	for s.Next() {
+	for r.Next() {
 		var d api.Contact
-		if err := s.Scan(&d.Name, &d.Pubkey); err != nil {
+		if err := r.Scan(&d.Name, &d.Pubkey); err != nil {
 			return nil, err
 		}
 		contacts = append(contacts, d)
@@ -130,8 +157,16 @@ func (node *Node) qlAddContact(name, pubkey string) error {
 	if err != nil {
 		return err
 	}
-	_, _ = tx.Exec("DELETE FROM contacts WHERE name==$1;", name)
-	_, err = tx.Exec("INSERT INTO contacts VALUES( $1, $2 )", name, pubkey)
+	sqlq := "DELETE FROM contacts WHERE name==$1;"
+	_, _ = tx.Exec(sqlq, name)
+	if sqlDebug {
+		log.Println(sqlq)
+	}
+	sqlq = "INSERT INTO contacts VALUES( $1, $2 );"
+	_, err = tx.Exec(sqlq, name, pubkey)
+	if sqlDebug {
+		log.Println(sqlq)
+	}
 	if err != nil {
 		node.errMsg(err, true)
 		return err
@@ -145,15 +180,17 @@ func (node *Node) qlAddContact(name, pubkey string) error {
 }
 
 func (node *Node) qlDeleteContact(name string) {
-	c := node.db()
-	defer closeDB(c)
-	transactExec(c, "DELETE FROM contacts WHERE name==$1;", name)
+	node.transactExec("DELETE FROM contacts WHERE name==$1;", name)
 }
 
 func (node *Node) qlGetChannelPrivKey(name string) (string, error) {
 	c := node.db()
 	defer closeDB(c)
-	r := c.QueryRow("SELECT privkey FROM channels WHERE name==$1;", name)
+	sqlq := "SELECT privkey FROM channels WHERE name==$1;"
+	if sqlDebug {
+		log.Println(sqlq, name)
+	}
+	r := c.QueryRow(sqlq, name)
 	var privkey string
 	if err := r.Scan(&privkey); err == sql.ErrNoRows {
 		return "", nil
@@ -167,12 +204,15 @@ func (node *Node) qlGetChannelPrivKey(name string) (string, error) {
 func (node *Node) qlGetChannels() ([]api.Channel, error) {
 	c := node.db()
 	defer closeDB(c)
-	r, err := c.Query("SELECT name,privkey FROM channels;")
-	if err == sql.ErrNoRows {
-		return nil, nil
-	} else if err != nil {
+	sqlq := "SELECT name,privkey FROM channels;"
+	if sqlDebug {
+		log.Println(sqlq)
+	}
+	r, err := c.Query(sqlq)
+	if r == nil || err != nil {
 		return nil, err
 	}
+	//defer r.Close()
 	var channels []api.Channel
 	for r.Next() {
 		var n, p string
@@ -192,12 +232,15 @@ func (node *Node) qlGetChannels() ([]api.Channel, error) {
 func (node *Node) qlGetChannelPrivs() ([]api.ChannelPriv, error) {
 	c := node.db()
 	defer closeDB(c)
-	r, err := c.Query("SELECT name,privkey FROM channels;")
-	if err == sql.ErrNoRows {
-		return nil, nil
-	} else if err != nil {
+	sqlq := "SELECT name,privkey FROM channels;"
+	if sqlDebug {
+		log.Println(sqlq)
+	}
+	r, err := c.Query(sqlq)
+	if r == nil || err != nil {
 		return nil, err
 	}
+	defer r.Close()
 	var channels []api.ChannelPriv
 	for r.Next() {
 		var n, p string
@@ -223,8 +266,17 @@ func (node *Node) qlAddChannel(name, privkey string) error {
 	if err != nil {
 		return err
 	}
-	_, _ = tx.Exec("DELETE FROM channels WHERE name==$1;", name)
-	if _, err := tx.Exec("INSERT INTO channels VALUES( $1, $2 )", name, privkey); err != nil {
+	sqlq := "DELETE FROM channels WHERE name==$1;"
+	if sqlDebug {
+		log.Println(sqlq, name)
+	}
+	_, _ = tx.Exec(sqlq, name)
+
+	sqlq = "INSERT INTO channels VALUES( $1, $2 );"
+	if sqlDebug {
+		log.Println(sqlq, name, privkey)
+	}
+	if _, err := tx.Exec(sqlq, name, privkey); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
@@ -234,15 +286,17 @@ func (node *Node) qlAddChannel(name, privkey string) error {
 }
 
 func (node *Node) qlDeleteChannel(name string) {
-	c := node.db()
-	defer closeDB(c)
-	transactExec(c, "DELETE FROM channels WHERE name==$1;", name)
+	node.transactExec("DELETE FROM channels WHERE name==$1;", name)
 }
 
 func (node *Node) qlGetProfile(name string) (*api.Profile, error) {
 	c := node.db()
 	defer closeDB(c)
-	r := c.QueryRow("SELECT enabled,privkey FROM profiles WHERE name==$1;", name)
+	sqlq := "SELECT enabled,privkey FROM profiles WHERE name==$1;"
+	if sqlDebug {
+		log.Println(sqlq, name)
+	}
+	r := c.QueryRow(sqlq, name)
 	var e bool
 	var prv string
 	if err := r.Scan(&e, &prv); err == sql.ErrNoRows {
@@ -264,12 +318,15 @@ func (node *Node) qlGetProfile(name string) (*api.Profile, error) {
 func (node *Node) qlGetProfiles() ([]api.Profile, error) {
 	c := node.db()
 	defer closeDB(c)
-	r, err := c.Query("SELECT name,enabled,privkey FROM profiles;")
-	if err == sql.ErrNoRows {
-		return nil, nil
-	} else if err != nil {
+	sqlq := "SELECT name,enabled,privkey FROM profiles;"
+	if sqlDebug {
+		log.Println(sqlq)
+	}
+	r, err := c.Query(sqlq)
+	if r == nil || err != nil {
 		return nil, err
 	}
+	defer r.Close()
 	var profiles []api.Profile
 	for r.Next() {
 		var p api.Profile
@@ -290,7 +347,11 @@ func (node *Node) qlGetProfiles() ([]api.Profile, error) {
 func (node *Node) qlAddProfile(name string, enabled bool) error {
 	c := node.db()
 	defer closeDB(c)
-	r := c.QueryRow("SELECT * FROM profiles WHERE name==$1;", name)
+	sqlq := "SELECT * FROM profiles WHERE name==$1;"
+	if sqlDebug {
+		log.Println(sqlq, name)
+	}
+	r := c.QueryRow(sqlq, name)
 	var n, key, al string
 	if err := r.Scan(&n, &key, &al); err == sql.ErrNoRows {
 		// generate new profile keypair
@@ -298,12 +359,12 @@ func (node *Node) qlAddProfile(name string, enabled bool) error {
 		profileKey.GenerateKey()
 
 		// insert new profile
-		transactExec(c, "INSERT INTO profiles VALUES( $1, $2, $3 )",
+		node.transactExec("INSERT INTO profiles VALUES( $1, $2, $3 )",
 			name, profileKey.ToB64(), enabled)
 
 	} else if err == nil {
 		// update profile
-		transactExec(c, "UPDATE profiles SET enabled=$1 WHERE name==$2;",
+		node.transactExec("UPDATE profiles SET enabled=$1 WHERE name==$2;",
 			enabled, name)
 	} else {
 		return err
@@ -312,15 +373,17 @@ func (node *Node) qlAddProfile(name string, enabled bool) error {
 }
 
 func (node *Node) qlDeleteProfile(name string) {
-	c := node.db()
-	defer closeDB(c)
-	transactExec(c, "DELETE FROM profiles WHERE name==$1;", name)
+	node.transactExec("DELETE FROM profiles WHERE name==$1;", name)
 }
 
 func (node *Node) qlGetProfilePrivateKey(name string) string {
 	c := node.db()
 	defer closeDB(c)
-	row := c.QueryRow("SELECT privkey FROM profiles WHERE name==$1;", name)
+	sqlq := "SELECT privkey FROM profiles WHERE name==$1;"
+	if sqlDebug {
+		log.Println(sqlq, name)
+	}
+	row := c.QueryRow(sqlq, name)
 	var pk string
 	if err := row.Scan(&pk); err != nil {
 		return ""
@@ -331,7 +394,11 @@ func (node *Node) qlGetProfilePrivateKey(name string) string {
 func (node *Node) qlGetPeer(name string) (*api.Peer, error) {
 	c := node.db()
 	defer closeDB(c)
-	r := c.QueryRow("SELECT uri,enabled FROM peers WHERE name==$1;", name)
+	sqlq := "SELECT uri,enabled FROM peers WHERE name==$1;"
+	if sqlDebug {
+		log.Println(sqlq, name)
+	}
+	r := c.QueryRow(sqlq, name)
 	var u string
 	var e bool
 	if err := r.Scan(&u, &e); err == sql.ErrNoRows {
@@ -349,12 +416,15 @@ func (node *Node) qlGetPeer(name string) (*api.Peer, error) {
 func (node *Node) qlGetPeers() ([]api.Peer, error) {
 	c := node.db()
 	defer closeDB(c)
-	r, err := c.Query("SELECT name,uri,enabled FROM peers;")
-	if err == sql.ErrNoRows {
-		return nil, nil
-	} else if err != nil {
+	sqlq := "SELECT name,uri,enabled FROM peers;"
+	if sqlDebug {
+		log.Println(sqlq)
+	}
+	r, err := c.Query(sqlq)
+	if r == nil || err != nil {
 		return nil, err
 	}
+	defer r.Close()
 	var peers []api.Peer
 	for r.Next() {
 		var s api.Peer
@@ -369,15 +439,19 @@ func (node *Node) qlGetPeers() ([]api.Peer, error) {
 func (node *Node) qlAddPeer(name string, enabled bool, uri string) error {
 	c := node.db()
 	defer closeDB(c)
-	r := c.QueryRow("SELECT name FROM peers WHERE name==$1;", name)
+	sqlq := "SELECT name FROM peers WHERE name==$1;"
+	if sqlDebug {
+		log.Println(sqlq, name)
+	}
+	r := c.QueryRow(sqlq, name)
 	var n string
 	if err := r.Scan(&n); err == sql.ErrNoRows {
 		node.debugMsg("New Server")
-		transactExec(c, "INSERT INTO peers (name,uri,enabled) VALUES( $1, $2, $3 );",
+		node.transactExec("INSERT INTO peers (name,uri,enabled) VALUES( $1, $2, $3 );",
 			name, uri, enabled)
 	} else if err == nil {
 		node.debugMsg("Update Server")
-		transactExec(c, "UPDATE peers SET enabled=$1,uri=$2 WHERE name==$3;",
+		node.transactExec("UPDATE peers SET enabled=$1,uri=$2 WHERE name==$3;",
 			enabled, uri, name)
 	} else {
 		return err
@@ -386,19 +460,22 @@ func (node *Node) qlAddPeer(name string, enabled bool, uri string) error {
 }
 
 func (node *Node) qlDeletePeer(name string) {
-	c := node.db()
-	defer closeDB(c)
-	transactExec(c, "DELETE FROM peers WHERE name==$1;", name)
+	node.transactExec("DELETE FROM peers WHERE name==$1;", name)
 }
 
 func (node *Node) qlOutboxEnqueue(channelName string, msg []byte, ts int64, checkExists bool) error {
-	c := node.db()
-	defer closeDB(c)
+
 	doInsert := !checkExists
 
 	if checkExists {
+		c := node.db()
+		defer closeDB(c)
 		// save message in my outbox, if not already present
-		r1 := c.QueryRow("SELECT channel FROM outbox WHERE channel==$1 AND msg==$2;", channelName, msg)
+		sqlq := "SELECT channel FROM outbox WHERE channel==$1 AND msg==$2;"
+		if sqlDebug {
+			log.Println(sqlq, channelName, msg)
+		}
+		r1 := c.QueryRow(sqlq, channelName, msg)
 		var rc string
 		err := r1.Scan(&rc)
 		if err == sql.ErrNoRows {
@@ -409,7 +486,7 @@ func (node *Node) qlOutboxEnqueue(channelName string, msg []byte, ts int64, chec
 		}
 	}
 	if doInsert {
-		transactExec(c, "INSERT INTO outbox(channel,msg,timestamp) VALUES($1,$2,$3);",
+		node.transactExec("INSERT INTO outbox(channel,msg,timestamp) VALUES($1,$2,$3);",
 			channelName, msg, ts)
 	}
 	return nil
@@ -440,6 +517,9 @@ func (node *Node) outboxBulkInsert(channelName string, timestamp int64, msgs [][
 		timestamp++ // increment timestamp by one each message to simplify queueing
 		idx += 2
 	}
+	if sqlDebug {
+		log.Println(sql, args)
+	}
 	_, err = tx.Exec(sql, args...)
 	if err != nil {
 		log.Fatal(err.Error())
@@ -448,4 +528,207 @@ func (node *Node) outboxBulkInsert(channelName string, timestamp int64, msgs [][
 	if err != nil {
 		log.Fatal(err.Error())
 	}
+}
+
+func (node *Node) qlGetMessages(lastTime, maxBytes int64, channelNames ...string) ([][]byte, int64, error) {
+	c := node.db()
+	defer closeDB(c)
+	lastTimeReturned := lastTime
+
+	// Build the query
+
+	wildcard := false
+	if len(channelNames) < 1 {
+		wildcard = true // if no channels are given, get everything
+	} else {
+		for _, cname := range channelNames {
+			for _, char := range cname {
+				if !strings.Contains("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0987654321", string(char)) {
+					return nil, lastTimeReturned, errors.New("Invalid character in channel name")
+				}
+			}
+		}
+	}
+	sqlq := "SELECT msg, timestamp FROM outbox"
+	if lastTime != 0 {
+		sqlq += " WHERE (int64(" + strconv.FormatInt(lastTime, 10) +
+			") < timestamp)"
+	}
+	if !wildcard && len(channelNames) > 0 { // QL is broken?  couldn't make it work with prepared stmts
+		if lastTime != 0 {
+			sqlq += " AND"
+		} else {
+			sqlq += " WHERE"
+		}
+		sqlq = sqlq + " channel IN( \"" + channelNames[0] + "\""
+		for i := 1; i < len(channelNames); i++ {
+			sqlq = sqlq + ",\"" + channelNames[i] + "\""
+		}
+		sqlq = sqlq + " )"
+	}
+	sqlq = sqlq + " ORDER BY timestamp ASC LIMIT $1 OFFSET $2;"
+
+	var msgs [][]byte
+	var bytesRead int64
+
+	offset := 0
+	if maxBytes < 1 {
+		maxBytes = 10000000 // todo:  make a global maximum for all transports
+	}
+	rowsPerRequest := int((maxBytes / (64 * 1024)) + 1) // this is QL-specific, based on row-size limits
+
+	for bytesRead < maxBytes {
+		r, err := c.Query(sqlq, rowsPerRequest, offset)
+		if r == nil || err != nil {
+			return nil, lastTimeReturned, err
+		}
+		defer r.Close()
+
+		//log.Printf("Rows per request: %d\n", rowsPerRequest)
+		isEmpty := true //todo: must be an official way to do this
+		for r.Next() {
+			isEmpty = false
+			var msg []byte
+			var ts int64
+			r.Scan(&msg, &ts)
+			if bytesRead+int64(len(msg)) >= maxBytes { // no room for next msg
+				isEmpty = true
+				break
+			}
+			if ts > lastTimeReturned {
+				lastTimeReturned = ts
+			} else {
+				log.Printf("Timestamps not increasing - prev: %d  cur: %d\n", lastTimeReturned, ts)
+			}
+			msgs = append(msgs, msg)
+			bytesRead += int64(len(msg))
+		}
+		if isEmpty {
+			break
+		}
+		offset += rowsPerRequest
+	}
+	return msgs, lastTimeReturned, nil
+}
+
+// FlushOutbox : Deletes outbound messages older than maxAgeSeconds seconds
+func (node *Node) FlushOutbox(maxAgeSeconds int64) {
+	ts := time.Now().UnixNano()
+	ts = ts - (maxAgeSeconds * 1000000000)
+	sql := "DELETE FROM outbox WHERE timestamp < ($1);"
+
+	// todo: below does not work on android/arm, investigate
+	//sql := "DELETE FROM outbox WHERE since(timestamp) > duration(\"" +
+	//	strconv.FormatInt(maxAgeSeconds, 10) + "s\");"
+	//log.Println("Flushed Database (seconds): ", maxAgeSeconds)
+
+	node.transactExec(sql, ts)
+}
+
+// BootstrapDB - Initialize or open a database file
+func (node *Node) BootstrapDB(database string) func() *sql.DB {
+
+	if node.db != nil {
+		return node.db
+	}
+
+	node.db = func() *sql.DB {
+		//log.Println("db: " + database) //todo: why does this trigger so much?
+		c, err := sql.Open("ql", database)
+		if err != nil {
+			node.errMsg(errors.New("DB Error Opening: "+database+" => "+err.Error()), true)
+		}
+		return c
+	}
+
+	// One-time Initialization
+	node.transactExec(`
+		CREATE TABLE IF NOT EXISTS contacts (
+			name	string	NOT NULL,
+			cpubkey	string	NOT NULL
+		);		
+	`)
+	//CREATE UNIQUE INDEX IF NOT EXISTS contactid ON contacts (id());
+
+	node.transactExec(`
+		CREATE TABLE IF NOT EXISTS channels ( 			
+			name	string	NOT NULL,
+			privkey	string	NOT NULL
+		);
+	`)
+
+	node.transactExec(`
+		CREATE TABLE IF NOT EXISTS config ( 
+			name	string	NOT NULL,
+			value	string	NOT NULL
+		);
+	`)
+
+	/*  timestamp field must stay int64 and not time type,
+	due to a unknown bug only on android/arm in cznic/ql via sql driver
+	*/
+	node.transactExec(`
+		CREATE TABLE IF NOT EXISTS outbox (
+			channel		string	DEFAULT "",
+			msg			blob	NOT NULL,
+			timestamp	int64	NOT NULL
+		);
+	`)
+	node.transactExec(`
+			CREATE INDEX IF NOT EXISTS outboxID ON outbox (timestamp);
+	`)
+
+	node.transactExec(`
+		CREATE TABLE IF NOT EXISTS peers (
+			name	string	NOT NULL,  
+			uri		string	NOT NULL,
+			enabled	bool	NOT NULL,
+			pubkey	string	DEFAULT NULL
+		);
+	`)
+
+	node.transactExec(`
+		CREATE TABLE IF NOT EXISTS profiles (
+			name	string	NOT NULL,
+			privkey	string	NOT NULL,
+			enabled	bool	NOT NULL
+		);
+	`)
+
+	var n, s string
+	c := node.db()
+	defer closeDB(c)
+
+	// Content Key Setup
+	// todo: content key needs to go away and be replaced by vectorized enabled profiles.
+	r1 := c.QueryRow("SELECT * FROM config WHERE name == `contentkey`;")
+	err := r1.Scan(&n, &s)
+	if err == sql.ErrNoRows {
+		node.contentKey.GenerateKey()
+		bs := node.contentKey.ToB64()
+		node.transactExec("INSERT INTO config VALUES( `contentkey`, $1 );", bs)
+	} else if err != nil {
+		node.errMsg(err, true)
+	} else {
+		err = node.contentKey.FromB64(s)
+		if err != nil {
+			node.errMsg(err, true)
+		}
+	}
+	// Routing Key Setup
+	r2 := c.QueryRow("SELECT * FROM config WHERE name == `routingkey`;")
+	if err := r2.Scan(&n, &s); err == sql.ErrNoRows {
+		node.routingKey.GenerateKey()
+		bs := node.routingKey.ToB64()
+		node.transactExec("INSERT INTO config VALUES( `routingkey`, $1 );", bs)
+	} else if err != nil {
+		node.errMsg(err, true)
+	} else {
+		err = node.routingKey.FromB64(s)
+		if err != nil {
+			node.errMsg(err, true)
+		}
+	}
+	node.refreshChannels()
+	return node.db
 }

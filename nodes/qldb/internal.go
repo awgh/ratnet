@@ -25,7 +25,7 @@ func (node *Node) Forward(channelName string, message []byte) error {
 	rxsum = append(rxsum, []byte(channelName)...)
 	message = append(rxsum, message...)
 
-	return node.qlOutboxEnqueue(channelName, message, time.Now().UnixNano(), true)
+	return node.qlOutboxEnqueue(channelName, message, time.Now().UnixNano(), false) //true
 }
 
 // Handle - Decrypt and handle an encrypted message
