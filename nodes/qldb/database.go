@@ -32,18 +32,18 @@ func (node *Node) transactExec(sql string, params ...interface{}) {
 
 	tx, err := c.Begin()
 	if err != nil {
-		log.Fatal(err.Error())
+		log.Fatal(sql, params, err.Error())
 	}
 	if sqlDebug {
 		log.Println(sql, params)
 	}
 	_, err = tx.Exec(sql, params...)
 	if err != nil {
-		log.Fatal(err.Error())
+		log.Fatal(sql, params, err.Error())
 	}
 	err = tx.Commit()
 	if err != nil {
-		log.Fatal(err.Error())
+		log.Fatal(sql, params, err.Error())
 	}
 }
 

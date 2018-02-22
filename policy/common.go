@@ -2,7 +2,6 @@ package policy
 
 import (
 	"log"
-	"runtime/debug"
 
 	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/ratnet/api"
@@ -40,7 +39,7 @@ func PollServer(transport api.Transport, node api.Node, host string, pubsrv bc.P
 	// Pickup Local
 	toRemote, err := node.Pickup(peer.RoutingPub, peer.LastPollLocal, transport.ByteLimit())
 	if err != nil {
-		debug.PrintStack()
+		log.Println("local pickup error: " + err.Error())
 		return false, err
 	}
 	//log.Println("pollServer Pickup Local result len: ", len(toRemote.Data))
