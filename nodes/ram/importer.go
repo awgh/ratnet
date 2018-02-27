@@ -95,6 +95,11 @@ func (node *Node) Import(jsonConfig []byte) error {
 			return err
 		}
 	}
+	for i := 0; i < len(nj.Peers); i++ {
+		if err := node.AddPeer(nj.Peers[i].Name, nj.Peers[i].Enabled, nj.Peers[i].URI); err != nil {
+			return err
+		}
+	}
 	for i := 0; i < len(nj.Profiles); i++ {
 		cp := new(api.ProfilePriv)
 		cp.Privkey = node.contentKey.Clone()
