@@ -33,7 +33,7 @@ func init() {
 // NewPollFromMap : Makes a new instance of this transport module from a map of arguments (for deserialization support)
 func NewPollFromMap(transport api.Transport, node api.Node,
 	t map[string]interface{}) api.Policy {
-	interval := t["Interval"].(int)
+	interval := int(t["Interval"].(float64))
 	return NewPoll(transport, node, interval)
 }
 
