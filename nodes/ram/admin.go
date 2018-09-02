@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/awgh/bencrypt/bc"
+	"github.com/awgh/bencrypt/ecc"
 	"github.com/awgh/ratnet/api"
 )
 
@@ -284,8 +285,14 @@ func (node *Node) Start() error {
 	}
 
 	// init crypto keys
-	node.contentKey.GenerateKey()
-	node.routingKey.GenerateKey()
+	if node.contentKey == nil {
+		node.contentKey = new(ecc.KeyPair)
+		node.contentKey.GenerateKey()
+	}
+	if node.routingKey == nil {
+		node.routingKey = new(ecc.KeyPair)
+		node.routingKey.GenerateKey()
+	}
 
 	// start the signal monitor
 	node.signalMonitor()

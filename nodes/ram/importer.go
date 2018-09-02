@@ -64,23 +64,22 @@ func (node *Node) Import(jsonConfig []byte) error {
 		return err
 	}
 	// setup content and routing keys
-	v, ok := bencrypt.KeypairTypes[nj.ContentType]
-	if !ok {
-		return errors.New("Unknown Content Keypair Type in Import")
-	}
-	node.contentKey = v()
-	v, ok = bencrypt.KeypairTypes[nj.RoutingType]
-	if !ok {
-		return errors.New("Unknown Routing Keypair Type in Import")
-	}
-	node.routingKey = v()
-
 	if len(nj.ContentKey) > 0 {
+		v, ok := bencrypt.KeypairTypes[nj.ContentType]
+		if !ok {
+			return errors.New("Unknown Content Keypair Type in Import")
+		}
+		node.contentKey = v()
 		if err := node.contentKey.FromB64(nj.ContentKey); err != nil {
 			return err
 		}
 	}
 	if len(nj.RoutingKey) > 0 {
+		v, ok := bencrypt.KeypairTypes[nj.RoutingType]
+		if !ok {
+			return errors.New("Unknown Routing Keypair Type in Import")
+		}
+		node.routingKey = v()
 		if err := node.routingKey.FromB64(nj.RoutingKey); err != nil {
 			return err
 		}
@@ -112,7 +111,10 @@ func (node *Node) Import(jsonConfig []byte) error {
 		node.profiles[cp.Name] = cp
 	}
 
-	node.SetRouter(ratnet.NewRouterFromMap(nj.Router))
+	if len(nj.Router) < 0 {
+		node.SetRouter(ratnet.NewRouterFromMap(nj.Router))
+	}
+
 	for _, p := range nj.Policies {
 		// extract the inner Transport first
 		t := p["Transport"].(map[string]interface{})
