@@ -3,6 +3,8 @@ package ram
 import (
 	"time"
 
+	"github.com/awgh/bencrypt/ecc"
+
 	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/ratnet/api"
 	"github.com/awgh/ratnet/nodes"
@@ -54,6 +56,14 @@ func New(contentKey, routingKey bc.KeyPair) *Node {
 	node.profiles = make(map[string]*api.ProfilePriv)
 
 	// set crypto modes
+	if contentKey == nil {
+		contentKey = new(ecc.KeyPair)
+		contentKey.GenerateKey()
+	}
+	if routingKey == nil {
+		routingKey = new(ecc.KeyPair)
+		routingKey.GenerateKey()
+	}
 	node.contentKey = contentKey
 	node.routingKey = routingKey
 
