@@ -41,9 +41,6 @@ func (node *Node) AddContact(name string, key string) error {
 	if !node.contentKey.ValidatePubKey(key) {
 		return errors.New("Invalid Public Key in AddContact")
 	}
-	if _, ok := node.contacts[name]; ok {
-		return errors.New("Contact already exists")
-	}
 	c := new(api.Contact)
 	c.Name = name
 	c.Pubkey = key
@@ -84,9 +81,6 @@ func (node *Node) GetChannels() ([]api.Channel, error) {
 
 // AddChannel : Add a channel to this node's database
 func (node *Node) AddChannel(name string, privkey string) error {
-	if _, ok := node.channels[name]; ok {
-		return errors.New("Channel already exists")
-	}
 	pk := node.contentKey.Clone()
 	if err := pk.FromB64(privkey); err != nil {
 		return errors.New("Invalid channel key")
