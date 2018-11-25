@@ -61,6 +61,11 @@ func New(contentKey, routingKey bc.KeyPair) *Node {
 	return node
 }
 
+// GetPolicies : returns the array of Policy objects for this Node
+func (node *Node) GetPolicies() []api.Policy {
+	return node.policies
+}
+
 // SetPolicy : set the array of Policy objects for this Node
 func (node *Node) SetPolicy(policies ...api.Policy) {
 	node.policies = policies

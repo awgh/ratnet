@@ -10,6 +10,7 @@ type Node interface {
 	// Local Access Only (Not Exposed Through RPC API)
 	Start() error
 	Stop()
+	GetPolicies() []Policy
 	SetPolicy(policies ...Policy)
 	Router() Router
 	SetRouter(router Router)

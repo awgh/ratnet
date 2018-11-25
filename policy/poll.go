@@ -114,3 +114,9 @@ func (p *Poll) Stop() {
 	p.wg.Wait()
 	p.Transport.Stop()
 }
+
+// GetTransport : Returns the transports associated with this policy
+//
+func (p *Poll) GetTransport() api.Transport {
+	return p.Transport
+}
