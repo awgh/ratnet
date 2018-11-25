@@ -73,8 +73,23 @@ func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, maxBytes int64, channel
 				pickupMsg = true
 			}
 			if pickupMsg {
-				msgs = append(msgs, mail.msg) // todo: ramNode ignores maxBytes
+				msgsSize := 0
+				for i := range msgs {
+					msgsSize += len(msgs[i])
+				}
+
+				proposedSize := len(mail.msg) + msgsSize
+
+				if int64(proposedSize) > maxBytes {
+
+					if msgsSize == 0 {
+						log.Fatal("Bailing with zero return results!", proposedSize, len(mail.msg), msgsSize, maxBytes)
+					}
+
+					break
+				}
 				retval.Time = mail.timeStamp
+				msgs = append(msgs, mail.msg)
 			}
 		}
 	}

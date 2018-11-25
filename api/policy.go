@@ -7,6 +7,7 @@ type Policy interface {
 	RunPolicy() error
 	Stop()
 	MarshalJSON() (b []byte, e error)
+	GetTransport() Transport
 }
 
 // PeerInfo - last contact info for peers

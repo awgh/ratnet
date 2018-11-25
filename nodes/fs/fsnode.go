@@ -80,6 +80,11 @@ func hex(n uint32) string {
 	return fmt.Sprintf("%08x", n)
 }
 
+// GetPolicies : returns the array of Policy objects for this Node
+func (node *Node) GetPolicies() []api.Policy {
+	return node.policies
+}
+
 // SetPolicy : set the array of Policy objects for this Node
 func (node *Node) SetPolicy(policies ...api.Policy) {
 	node.policies = policies

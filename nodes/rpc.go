@@ -18,6 +18,8 @@ func PublicRPC(transport api.Transport, node api.Node, call api.RemoteCall) (int
 		log.Printf("PublicRPC got %+v : %+v\n", i, err)
 		if err != nil {
 			return nil, err
+		} else if i == i.Nil() {
+			return nil, errors.New("Node has no routing key set")
 		}
 		return i, nil
 
