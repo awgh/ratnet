@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"net"
 	"sync"
 	"time"
 
@@ -85,48 +86,53 @@ func (m *Module) Listen(listen string, adminMode bool) {
 
 		// read from socket
 		for m.isRunning {
-			conn, err := lis.Accept()
+			c, err := lis.Accept()
 			if err != nil {
 				log.Println(err)
 				continue
 			}
 
-			reader := bufio.NewReader(conn)
-			writer := bufio.NewWriter(conn)
+			//log.Println("UDP accepted new connection")
 
-			for m.isRunning { // read multiple messages on the same connection
+			c.SetReadDeadline(time.Now().Add(35 * time.Second))
+			c.SetWriteDeadline(time.Now().Add(35 * time.Second))
 
-				var a api.RemoteCall
-				//Use default gob decoder
-				dec := gob.NewDecoder(reader)
-				if err = dec.Decode(&a); err != nil {
-					log.Println("listen gob decode failed: " + err.Error())
-					break
-				}
+			go func(conn net.Conn) {
+				reader := bufio.NewReader(conn)
+				writer := bufio.NewWriter(conn)
 
-				var result interface{}
-				if adminMode {
-					result, err = m.node.AdminRPC(m, a)
-				} else {
-					result, err = m.node.PublicRPC(m, a)
-				}
-				//log.Printf("result type %T \n", result)
+				for m.isRunning { // read multiple messages on the same connection
+					var a api.RemoteCall
+					//Use default gob decoder
+					dec := gob.NewDecoder(reader)
+					if err = dec.Decode(&a); err != nil {
+						log.Println("listen gob decode failed: " + err.Error())
+						break
+					}
+					var result interface{}
+					if adminMode {
+						result, err = m.node.AdminRPC(m, a)
+					} else {
+						result, err = m.node.PublicRPC(m, a)
+					}
+					//log.Printf("result type %T \n", result)
+					log.Print("loop3")
+					rr := api.RemoteResponse{}
+					if err != nil {
+						rr.Error = err.Error()
+					}
+					if result != nil { // gob cannot encode typed Nils, only interface{} Nils...wtf?
+						rr.Value = result
+					}
 
-				rr := api.RemoteResponse{}
-				if err != nil {
-					rr.Error = err.Error()
+					enc := gob.NewEncoder(writer)
+					if err := enc.Encode(rr); err != nil {
+						log.Println("listen gob encode failed: " + err.Error())
+						break
+					}
+					_ = writer.Flush()
 				}
-				if result != nil { // gob cannot encode typed Nils, only interface{} Nils...wtf?
-					rr.Value = result
-				}
-
-				enc := gob.NewEncoder(writer)
-				if err := enc.Encode(rr); err != nil {
-					log.Println("listen gob encode failed: " + err.Error())
-					break
-				}
-				_ = writer.Flush()
-			}
+			}(c)
 		}
 	}()
 }
@@ -134,18 +140,21 @@ func (m *Module) Listen(listen string, adminMode bool) {
 // RPC : transmit data via UDP
 func (m *Module) RPC(host string, method string, args ...interface{}) (interface{}, error) {
 
+	//log.Printf("\n***\n***RPC %s called: %s  with: %v\n***\n", method, host, args)
+
 	conn, ok := cachedSessions[host]
 	if !ok {
 		// open client socket
 		var err error
 		conn, err = kcp.DialWithOptions(host, nil, 10, 0) // disabled FEC
 		if err != nil {
+			log.Println("kcp dial error in udp:", err)
 			return nil, err
 		}
 		conn.SetStreamMode(false)
 		conn.SetWindowSize(512, 512)
-		conn.SetNoDelay(1, 40, 2, 1)
-		conn.SetACKNoDelay(false)
+		conn.SetNoDelay(1, 20, 2, 1)
+		conn.SetACKNoDelay(true)
 
 		cachedSessions[host] = conn
 	}
@@ -177,8 +186,6 @@ func (m *Module) RPC(host string, method string, args ...interface{}) (interface
 		_ = conn.Close()
 		return nil, err
 	}
-
-	//log.Printf("dirty rx in rpc: %+v\n", rr.Value)
 
 	if rr.IsErr() {
 		return nil, errors.New(rr.Error)
