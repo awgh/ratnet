@@ -116,7 +116,6 @@ func (m *Module) Listen(listen string, adminMode bool) {
 						result, err = m.node.PublicRPC(m, a)
 					}
 					//log.Printf("result type %T \n", result)
-					log.Print("loop3")
 					rr := api.RemoteResponse{}
 					if err != nil {
 						rr.Error = err.Error()

@@ -26,11 +26,11 @@ func main() {
 	}
 
 	checkIfArgsAreOK := func(min, max int, args []string) bool {
-		if len(args) < min {
+		if min >= 0 && len(args) < min {
 			checkIfErr(errors.New("Not enough arguments"))
 			return false
 		}
-		if len(args) > max {
+		if max >= 0 && len(args) > max {
 			checkIfErr(errors.New("Too many arguments"))
 			return false
 		}
@@ -229,11 +229,11 @@ func main() {
 		Help: "Add a peer (name string, enabled bool, uri string)",
 		Func: func(args []string) {
 			if checkIfArgsAreOK(3, 3, args) {
-				arg2 := false
-				if strings.Contains(strings.ToLower(args[0]), "y") {
-					arg2 = true
+				enabled := false
+				if strings.Contains(strings.ToLower(args[1]), "true") {
+					enabled = true
 				}
-				checkIfErr(node.AddPeer(args[0], arg2, args[2]))
+				checkIfErr(node.AddPeer(args[0], enabled, args[2]))
 			}
 		},
 	})
@@ -272,10 +272,11 @@ func main() {
 		Name: "SendMsg",
 		Help: "Sends a message to a node (contact, message string)",
 		Func: func(args []string) {
-			if checkIfArgsAreOK(2, 2, args) {
+			if checkIfArgsAreOK(2, -1, args) {
+				msg := strings.Join(args[1:], " ")
 				contact, err := node.GetContact(args[0])
 				if checkIfErr(err) {
-					checkIfErr(node.Send(contact.Name, []byte(args[1]), nil))
+					checkIfErr(node.Send(contact.Name, []byte(msg)))
 				}
 			}
 		},
@@ -286,10 +287,11 @@ func main() {
 		Name: "SendChanMsg",
 		Help: "Sends a message to a channel (channel, message string)",
 		Func: func(args []string) {
-			if checkIfArgsAreOK(2, 2, args) {
+			if checkIfArgsAreOK(2, -1, args) {
+				msg := strings.Join(args[1:], " ")
 				channel, err := node.GetChannel(args[0])
 				if checkIfErr(err) {
-					checkIfErr(node.SendChannel(channel.Name, []byte(args[1]), nil))
+					checkIfErr(node.SendChannel(channel.Name, []byte(msg)))
 				}
 			}
 		},

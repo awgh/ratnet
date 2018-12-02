@@ -29,7 +29,7 @@ AddPeer Bob True 127.0.0.1:8000
 Then, Bob tells his node to display his content key so that she can share it with Alice.
 
 ```
->>> ID
+>>> CID
 SqRHK39CyU3P7q8nBGQyPaMS2d65FkWKFC9rY4LjjSI=
 ```
 
@@ -46,9 +46,9 @@ Start
 
 At this point, Alice can send Bob messages.
 
---- Bob's screen ---
-send Alice this is a test message
-
 --- Alice's screen ---
-[content] this is a test
+SendMsg Bob this is a test
+
+--- Bob's screen ---
+[RX From [content] ]: this is a test
 ```
