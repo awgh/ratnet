@@ -332,8 +332,8 @@ func main() {
 
 	// start UDP server transport
 	cli.AddCommand(command.Command{
-		Name: "SetServerTransport (uri string)",
-		Help: "Enable a server policy, UDP transport within this node",
+		Name: "SetServerTransport",
+		Help: "Enable a server policy, UDP transport within this node (uri string)",
 		Func: func(args []string) {
 			if checkIfArgsAreOK(1, 1, args) {
 				node.SetPolicy(policy.NewServer(udp.New(node), args[0], false))
