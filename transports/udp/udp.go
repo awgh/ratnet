@@ -106,7 +106,11 @@ func (m *Module) Listen(listen string, adminMode bool) {
 					//Use default gob decoder
 					dec := gob.NewDecoder(reader)
 					if err = dec.Decode(&a); err != nil {
-						log.Println("listen gob decode failed: " + err.Error())
+						if err, ok := err.(net.Error); ok && err.Timeout() {
+							// it's a timeout, which is the normal way for UDP "sessions" to die.  don't spew log here.
+						} else {
+							log.Println("listen gob decode failed: " + err.Error())
+						}
 						break
 					}
 					var result interface{}
