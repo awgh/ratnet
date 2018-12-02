@@ -5,10 +5,10 @@ Ratnet is completely modular, meaning that the interactions of all significant c
 
 The Ratnet library provides two working implementations for each of these interfaces:
 
-- Network Transports:  [HTTPS](https://godoc.org/github.com/awgh/ratnet/transports/https) and [UDP](https://godoc.org/github.com/awgh/ratnet/transports/udp) are provided
+- Network Transports:  [HTTPS](https://godoc.org/github.com/awgh/ratnet/transports/https), [TLS](https://godoc.org/github.com/awgh/ratnet/transports/tls), and [UDP](https://godoc.org/github.com/awgh/ratnet/transports/udp) are provided
 - Cryptosystems: [ECC](https://godoc.org/github.com/awgh/bencrypt/ecc) and [RSA](https://godoc.org/github.com/awgh/bencrypt/ecc) implementations are provided
-- Connection Policies: [Server](https://godoc.org/github.com/awgh/ratnet/policy#Server) and [Polling](https://godoc.org/github.com/awgh/ratnet/policy#Poll) are provided
-- Nodes: [QL Database-Backed Node](https://godoc.org/github.com/awgh/ratnet/nodes/qldb) and a [RAM-only Node](https://godoc.org/github.com/awgh/ratnet/nodes/ram) are provided
+- Connection Policies: [Server](https://godoc.org/github.com/awgh/ratnet/policy#Server), [Polling](https://godoc.org/github.com/awgh/ratnet/policy#Poll), and [P2P](https://godoc.org/github.com/awgh/ratnet/policy#P2P) are provided
+- Nodes: [QL Database-Backed Node](https://godoc.org/github.com/awgh/ratnet/nodes/qldb), a [RAM-only Node](https://godoc.org/github.com/awgh/ratnet/nodes/ram), and a [FS-backed Node](https://godoc.org/github.com/awgh/ratnet/nodes/fs) are provided.
 
 It's also easy to implement your own replacement for any or all of these components.  Multiple transport modules can be used at once, and different cryptosystems can be used for the Onion-routing and for the content encryption, if desired.
 
@@ -98,7 +98,7 @@ Blocking Send:
 Non-Blocking Send:
 ```go
         select {
-		case node.Out() <- message:
+		case node.In() <- message:
 			//fmt.Println("sent message", msg)
 		default:
 			//fmt.Println("no message sent")
