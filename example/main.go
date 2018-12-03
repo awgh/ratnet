@@ -171,11 +171,11 @@ func main() {
 		Help: "Add a profile (Name string, Enabled bool)",
 		Func: func(args []string) {
 			if checkIfArgsAreOK(2, 2, args) {
-				arg2 := false
-				if strings.Contains(strings.ToLower(args[0]), "y") {
-					arg2 = true
+				enabled := false
+				if strings.Contains(strings.ToLower(args[0]), "true") {
+					enabled = true
 				}
-				checkIfErr(node.AddProfile(args[0], arg2))
+				checkIfErr(node.AddProfile(args[0], enabled))
 			}
 		},
 	})
@@ -201,7 +201,7 @@ func main() {
 				enabled := "False"
 				for index, profile := range profiles {
 					if profile.Enabled {
-						enabled = "atrue"
+						enabled = "True"
 					}
 					fmt.Printf("%d) %s\t\t%s\t%s\n", index, profile.Name, profile.Pubkey, enabled)
 				}
@@ -259,7 +259,7 @@ func main() {
 				enabled := "False"
 				for index, peer := range peers {
 					if peer.Enabled {
-						enabled = "atrue"
+						enabled = "True"
 					}
 					fmt.Printf("%d) %s\t\t%s\t%s\n", index, peer.Name, peer.URI, enabled)
 				}
