@@ -1,4 +1,4 @@
-#Ratnet API Example Utility
+# Ratnet API Example Utility
 This application's purpose is to showcase the capabilities of the ratnet network in a format that is simple for developers to understand so that they may easily use ratnet to develop their own applications. Each example usecase is coupled with the exact functions that an application would need to call to perform the same actions shown here.
 ## getting started
 To get started, simply compile the example application found within this folder
