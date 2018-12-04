@@ -7,7 +7,7 @@ cd $GOPATH/src/github.com/awgh/ratnet/example
 go build
 ```
 
-##peer to peer messaging
+## peer to peer messaging
 First, Bob sets his node to utilize the UDP transport with a policy of "server".
 
 ```
