@@ -25,7 +25,7 @@ func (node *Node) Dropoff(bundle api.Bundle) error {
 	if err != nil {
 		return err
 	} else if !tagOK {
-		return errors.New("Luggage Tag Check Failed in Dropoff")
+		return errors.New("Luggage Tag Check Failed in QLNode Dropoff")
 	}
 	var msgs [][]byte
 

@@ -44,6 +44,7 @@ func (node *Node) Forward(channelName string, message []byte) error {
 }
 
 // Handle - Decrypt and handle an encrypted message
+// 			returns TagOK, which is true if the message is intended for a key we have
 func (node *Node) Handle(channelName string, message []byte) (bool, error) {
 	var clear []byte
 	var err error
@@ -62,11 +63,11 @@ func (node *Node) Handle(channelName string, message []byte) (bool, error) {
 		clearMsg = api.Msg{Name: "[content]", IsChan: false}
 		tagOK, clear, err = node.contentKey.DecryptMessage(message)
 	}
-	if err != nil {
+	// DecryptMessage will return !tagOK if the quick-check fails, which is common
+	if !tagOK || err != nil {
 		return tagOK, err
-	} else if !tagOK {
-		return false, errors.New("Luggage Tag Check Failed in Dropoff")
 	}
+
 	clearMsg.Content = bytes.NewBuffer(clear)
 
 	select {
