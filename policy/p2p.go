@@ -295,3 +295,8 @@ func (s *P2P) mdnsAdvertise() error {
 func (s *P2P) GetTransport() api.Transport {
 	return s.Transport
 }
+
+// get the user-assigned name for this policy
+func (s *P2P) GetName() string {
+	return "test" // TODO
+}

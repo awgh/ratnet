@@ -120,3 +120,8 @@ func (p *Poll) Stop() {
 func (p *Poll) GetTransport() api.Transport {
 	return p.Transport
 }
+
+// get the user-assigned name for this policy
+func (p *Poll) GetName() string {
+	return "test" // TODO
+}
