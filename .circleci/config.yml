@@ -26,6 +26,11 @@ jobs:
       - run: rm -f ratnet/tmp/ratnet_p2p_test2.ql
       - run: rm -f ratnet/tmp/ratnet_test1.ql
       - run: rm -rf nodes/fs/tmp
+
+      - run: mkdir nodes/fs/tmp
+      - run: mkdir nodes/qldb/tmp
+      - run: mkdir ratnet/tmp
+
       #- run: go test -v ./...
       - run: go test -v github.com/awgh/ratnet/nodes/qldb
       - run: go test -v github.com/awgh/ratnet/nodes/ram
