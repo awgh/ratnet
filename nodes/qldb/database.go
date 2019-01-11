@@ -394,15 +394,14 @@ func (node *Node) qlGetProfilePrivateKey(name string) string {
 func (node *Node) qlGetPeer(name string) (*api.Peer, error) {
 	c := node.db()
 	defer closeDB(c)
-	sqlq := "SELECT uri,enabled,policy FROM peers WHERE name==$1;"
+	sqlq := "SELECT uri,enabled FROM peers WHERE name==$1;"
 	if sqlDebug {
 		log.Println(sqlq, name)
 	}
 	r := c.QueryRow(sqlq, name)
 	var u string
 	var e bool
-	var policy string
-	if err := r.Scan(&u, &e, &policy); err == sql.ErrNoRows {
+	if err := r.Scan(&u, &e); err == sql.ErrNoRows {
 		return nil, nil
 	} else if err != nil {
 		return nil, err
@@ -411,25 +410,17 @@ func (node *Node) qlGetPeer(name string) (*api.Peer, error) {
 	peer.Name = name
 	peer.Enabled = e
 	peer.URI = u
-	peer.Policy = policy
 	return peer, nil
 }
 
-func (node *Node) qlGetPeers(policy ...string) ([]api.Peer, error) {
+func (node *Node) qlGetPeers() ([]api.Peer, error) {
 	c := node.db()
 	defer closeDB(c)
-	policyString := ""
-	var sqlq string
-	if policy != nil && len(policy) > 0 && policy[0] != "" {
-		policyString = policy[0]
-		sqlq = "SELECT name,uri,enabled,policy FROM peers WHERE policy==$1;"
-	} else {
-		sqlq = "SELECT name,uri,enabled,policy FROM peers;"
-	}
+	sqlq := "SELECT name,uri,enabled FROM peers;"
 	if sqlDebug {
 		log.Println(sqlq)
 	}
-	r, err := c.Query(sqlq, policyString)
+	r, err := c.Query(sqlq)
 	if r == nil || err != nil {
 		return nil, err
 	}
@@ -437,7 +428,7 @@ func (node *Node) qlGetPeers(policy ...string) ([]api.Peer, error) {
 	var peers []api.Peer
 	for r.Next() {
 		var s api.Peer
-		if err := r.Scan(&s.Name, &s.URI, &s.Enabled, &s.Policy); err != nil {
+		if err := r.Scan(&s.Name, &s.URI, &s.Enabled); err != nil {
 			return nil, err
 		}
 		peers = append(peers, s)
@@ -445,14 +436,7 @@ func (node *Node) qlGetPeers(policy ...string) ([]api.Peer, error) {
 	return peers, nil
 }
 
-func (node *Node) qlAddPeer(name string, enabled bool, uri string, policy ...string) error {
-	// if we don't have a specified policy, it's "", otherwise make it not a slice
-	var policyString string
-	if len(policy) > 0 {
-		policyString = policy[0]
-	} else {
-		policyString = ""
-	}
+func (node *Node) qlAddPeer(name string, enabled bool, uri string) error {
 	c := node.db()
 	defer closeDB(c)
 	sqlq := "SELECT name FROM peers WHERE name==$1;"
@@ -463,12 +447,12 @@ func (node *Node) qlAddPeer(name string, enabled bool, uri string, policy ...str
 	var n string
 	if err := r.Scan(&n); err == sql.ErrNoRows {
 		node.debugMsg("New Server")
-		node.transactExec("INSERT INTO peers (name,uri,enabled,policy) VALUES( $1, $2, $3, $4 );",
-			name, uri, enabled, policyString)
+		node.transactExec("INSERT INTO peers (name,uri,enabled) VALUES( $1, $2, $3 );",
+			name, uri, enabled)
 	} else if err == nil {
 		node.debugMsg("Update Server")
-		node.transactExec("UPDATE peers SET enabled=$1,uri=$2,policy=$3 WHERE name==$3;",
-			enabled, uri, name, policyString)
+		node.transactExec("UPDATE peers SET enabled=$1,uri=$2 WHERE name==$3;",
+			enabled, uri, name)
 	} else {
 		return err
 	}
@@ -696,11 +680,10 @@ func (node *Node) BootstrapDB(database string) func() *sql.DB {
 
 	node.transactExec(`
 		CREATE TABLE IF NOT EXISTS peers (
-			name	string	NOT NULL,
+			name	string	NOT NULL,  
 			uri		string	NOT NULL,
-			enabled	 bool	NOT NULL,
-			pubkey	string	DEFAULT NULL,
-			policy	string	DEFAULT NULL
+			enabled	bool	NOT NULL,
+			pubkey	string	DEFAULT NULL
 		);
 	`)
 

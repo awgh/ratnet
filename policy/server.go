@@ -63,8 +63,3 @@ func (s *Server) Stop() {
 func (s *Server) GetTransport() api.Transport {
 	return s.Transport
 }
-
-// get the user-assigned name for this policy
-func (s *Server) GetName() string {
-	return "test" // TODO
-}

@@ -95,9 +95,6 @@ func (node *Node) Import(jsonConfig []byte) error {
 		}
 	}
 	for i := 0; i < len(nj.Peers); i++ {
-		if err := node.AddPeer(nj.Peers[i].Name, nj.Peers[i].Enabled, nj.Peers[i].URI, nj.Peers[i].Policy); err != nil {
-			return err
-		}
 		if err := node.AddPeer(nj.Peers[i].Name, nj.Peers[i].Enabled, nj.Peers[i].URI); err != nil {
 			return err
 		}

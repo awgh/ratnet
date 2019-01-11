@@ -120,15 +120,12 @@ func (node *Node) GetPeer(name string) (*api.Peer, error) {
 }
 
 // GetPeers : Retrieve a list of peers in this node's database
-func (node *Node) GetPeers(policy ...string) ([]api.Peer, error) {
-	return node.qlGetPeers(policy...)
+func (node *Node) GetPeers() ([]api.Peer, error) {
+	return node.qlGetPeers()
 }
 
 // AddPeer : Add or Update a peer configuration
-func (node *Node) AddPeer(name string, enabled bool, uri string, policy ...string) error {
-	if len(policy) > 0 {
-		return node.qlAddPeer(name, enabled, uri, policy[0])
-	}
+func (node *Node) AddPeer(name string, enabled bool, uri string) error {
 	return node.qlAddPeer(name, enabled, uri)
 }
 

@@ -184,37 +184,20 @@ func (node *Node) GetPeer(name string) (*api.Peer, error) {
 }
 
 // GetPeers : Retrieve a list of peers in this node's database
-func (node *Node) GetPeers(policy ...string) ([]api.Peer, error) {
-	var policyString string
+func (node *Node) GetPeers() ([]api.Peer, error) {
 	var peers []api.Peer
-
-	if len(policy) > 0 {
-		policyString = policy[0]
-	} else {
-		// policy was unspecified
-		policyString = ""
-	}
 	for _, v := range node.peers {
-		if v.Policy == policyString || v.Policy == "" {
-			peers = append(peers, api.Peer{Name: v.Name, Enabled: v.Enabled, URI: v.URI, Policy: v.Policy})
-		}
+		peers = append(peers, api.Peer{Name: v.Name, Enabled: v.Enabled, URI: v.URI})
 	}
 	return peers, nil
 }
 
 // AddPeer : Add or Update a peer configuration
-func (node *Node) AddPeer(name string, enabled bool, uri string, policy ...string) error {
-	var policyString string
-	if len(policy) > 0 {
-		policyString = policy[0]
-	} else {
-		policyString = ""
-	}
+func (node *Node) AddPeer(name string, enabled bool, uri string) error {
 	peer := new(api.Peer)
 	peer.Name = name
 	peer.Enabled = enabled
 	peer.URI = uri
-	peer.Policy = policyString
 	node.peers[name] = peer
 	return nil
 }
