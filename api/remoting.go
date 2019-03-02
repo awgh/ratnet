@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
+	"errors"
 )
 
 // API Call ID numbers
@@ -171,20 +172,22 @@ func ArgsToBytes(args []interface{}) []byte {
 	w := bufio.NewWriter(b)
 	for _, i := range args {
 		switch i.(type) {
-		case int64:
+		case uint64:
+			a := i.(uint64)
 			binary.Write(w, binary.BigEndian, APITypeInt64) //type
 			binary.Write(w, binary.BigEndian, uint16(8))    //length
-			binary.Write(w, binary.BigEndian, i)            //value
+			binary.Write(w, binary.BigEndian, a)            //value
+			//w.Write(ba) //value
 		case string:
 			s := i.(string)
 			binary.Write(w, binary.BigEndian, APITypeString)  //type
 			binary.Write(w, binary.BigEndian, uint16(len(s))) //length
-			binary.Write(w, binary.BigEndian, i)              //value
+			w.Write([]byte(s))                                //value
 		case []byte:
 			ba := i.([]byte)
 			binary.Write(w, binary.BigEndian, APITypeBytes)    //type
 			binary.Write(w, binary.BigEndian, uint16(len(ba))) //length
-			binary.Write(w, binary.BigEndian, i)               //value
+			w.Write(ba)                                        //value
 		default:
 			//return nil, errors.New("Only []byte, string, and int64 can be serialized")
 		}
@@ -201,23 +204,28 @@ func ArgsFromBytes(args []byte) ([]interface{}, error) {
 	for i := 0; i < len(args); i++ {
 		// read a TLV field, add it to output array
 		var t byte
-		binary.Read(r, binary.BigEndian, &t)
+		if err := binary.Read(r, binary.BigEndian, &t); err != nil {
+			return nil, err
+		}
+		i++
 		var l uint16
-		binary.Read(r, binary.BigEndian, &l)
+		if err := binary.Read(r, binary.BigEndian, &l); err != nil {
+			return nil, err
+		}
+		i += 2
 		v := make([]byte, l)
-		binary.Read(r, binary.BigEndian, &v)
+		if err := binary.Read(r, binary.BigEndian, &v); err != nil {
+			return nil, err
+		}
+		i += int(l)
 		switch t {
 		case APITypeInt64:
-			var vint uint64
-			binary.Read(r, binary.BigEndian, &vint)
+			vint := binary.BigEndian.Uint64(v)
 			output = append(output, vint)
-			i += 8
 		case APITypeString:
 			output = append(output, string(v))
-			i += len(v)
 		case APITypeBytes:
 			output = append(output, v)
-			i += len(v)
 		}
 	}
 	return output, nil
@@ -239,6 +247,9 @@ func RemoteCallToBytes(call *RemoteCall) []byte {
 
 // RemoteCallFromBytes - converts a RemoteCall from a byte array
 func RemoteCallFromBytes(input []byte) (*RemoteCall, error) {
+	if len(input) < 2 {
+		return nil, errors.New("Input array too short")
+	}
 	call := new(RemoteCall)
 	action := binary.BigEndian.Uint16(input[:2])
 	call.Action = ActionFromUint16(action)
@@ -248,4 +259,80 @@ func RemoteCallFromBytes(input []byte) (*RemoteCall, error) {
 	}
 	call.Args = args
 	return call, nil
+}
+
+// RemoteResponseToBytes - converts a RemoteResponse to a byte array
+func RemoteResponseToBytes(resp *RemoteResponse) []byte {
+	b := bytes.NewBuffer([]byte{})
+	w := bufio.NewWriter(b)
+
+	binary.Write(w, binary.BigEndian, APITypeString)           //type
+	binary.Write(w, binary.BigEndian, uint16(len(resp.Error))) //length
+	w.Write([]byte(resp.Error))                                //value
+	switch resp.Value.(type) {
+	case int64:
+		binary.Write(w, binary.BigEndian, APITypeInt64) //type
+		binary.Write(w, binary.BigEndian, uint16(8))    //length
+		binary.Write(w, binary.BigEndian, resp.Value)   //value
+	case string:
+		s := resp.Value.(string)
+		binary.Write(w, binary.BigEndian, APITypeString)  //type
+		binary.Write(w, binary.BigEndian, uint16(len(s))) //length
+		//binary.Write(w, binary.BigEndian, resp.Value)
+		w.Write([]byte(s)) //value
+	case []byte:
+		ba := resp.Value.([]byte)
+		binary.Write(w, binary.BigEndian, APITypeBytes)    //type
+		binary.Write(w, binary.BigEndian, uint16(len(ba))) //length
+		w.Write(ba)                                        //value
+	}
+	w.Flush()
+	return b.Bytes()
+}
+
+// RemoteResponseFromBytes - converts a RemoteResponse from a byte array
+func RemoteResponseFromBytes(input []byte) (*RemoteResponse, error) {
+	resp := new(RemoteResponse)
+	r := bufio.NewReader(bytes.NewBuffer(input))
+
+	// read the two TLV fields, add to struct
+	// Error string
+	var t byte
+	var l uint16
+	if err := binary.Read(r, binary.BigEndian, &t); err != nil {
+		return nil, err
+	}
+	if err := binary.Read(r, binary.BigEndian, &l); err != nil {
+		return nil, err
+	}
+	v := make([]byte, l)
+	if err := binary.Read(r, binary.BigEndian, &v); err != nil {
+		return nil, err
+	}
+	resp.Error = string(v)
+
+	// Value interface{}
+	if err := binary.Read(r, binary.BigEndian, &t); err != nil {
+		return nil, err
+	}
+	if err := binary.Read(r, binary.BigEndian, &l); err != nil {
+		return nil, err
+	}
+	v = make([]byte, l)
+	if err := binary.Read(r, binary.BigEndian, &v); err != nil {
+		return nil, err
+	}
+	switch t {
+	case APITypeInt64:
+		var vint uint64
+		if err := binary.Read(r, binary.BigEndian, &vint); err != nil {
+			return nil, err
+		}
+		resp.Value = vint
+	case APITypeString:
+		resp.Value = string(v)
+	case APITypeBytes:
+		resp.Value = v
+	}
+	return resp, nil
 }
