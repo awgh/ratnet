@@ -29,17 +29,15 @@ func (node *Node) Forward(channelName string, message []byte) error {
 	rxsum = append(rxsum, []byte(channelName)...)
 	message = append(rxsum, message...)
 
-	for _, mail := range node.outbox {
-		if mail.channel == channelName && bytes.Equal(mail.msg, message) {
-			return nil // already have a copy... //todo: do we really need this check?
-		}
+	if node.outbox.MsgExists(channelName, message) {
+		return nil
 	}
 
 	m := new(outboxMsg)
 	m.channel = channelName
 	m.timeStamp = time.Now().UnixNano()
 	m.msg = message
-	node.outbox = append(node.outbox, m)
+	node.outbox.Append(m)
 	return nil
 }
 

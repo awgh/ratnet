@@ -11,11 +11,14 @@ import (
 
 // PublicRPC : Entrypoint for RPC functions that are exposed to the public/Internet
 func PublicRPC(transport api.Transport, node api.Node, call api.RemoteCall) (interface{}, error) {
+
+	//log.Printf("PublicRPC called with %+v\n", call)
+
 	switch call.Action {
 	case "ID":
 		var i bc.PubKey
 		i, err := node.ID()
-		log.Printf("PublicRPC got %+v : %+v\n", i, err)
+		log.Printf("PublicRPC ID returned %+v : %+v\n", i, err)
 		if err != nil {
 			return nil, err
 		} else if i == i.Nil() {

@@ -1,8 +1,6 @@
 package ram
 
 import (
-	"time"
-
 	"github.com/awgh/bencrypt/ecc"
 
 	"github.com/awgh/bencrypt/bc"
@@ -10,12 +8,6 @@ import (
 	"github.com/awgh/ratnet/nodes"
 	"github.com/awgh/ratnet/router"
 )
-
-type outboxMsg struct {
-	channel   string
-	msg       []byte
-	timeStamp int64
-}
 
 // Node : defines an instance of the API with a ql-DB backed Node
 type Node struct {
@@ -38,7 +30,7 @@ type Node struct {
 	channels map[string]*api.ChannelPriv
 	config   map[string]string
 	contacts map[string]*api.Contact
-	outbox   []*outboxMsg
+	outbox   outboxQueue
 	peers    map[string]*api.Peer
 	profiles map[string]*api.ProfilePriv
 }
@@ -100,16 +92,7 @@ func (node *Node) SetRouter(router api.Router) {
 
 // FlushOutbox : Deletes outbound messages older than maxAgeSeconds seconds
 func (node *Node) FlushOutbox(maxAgeSeconds int64) {
-	c := (time.Now().UnixNano()) - (maxAgeSeconds * 1000000000)
-	for index, mail := range node.outbox {
-		if mail.timeStamp < c {
-			if len(node.outbox) > index {
-				node.outbox = append(node.outbox[:index], node.outbox[index+1:]...)
-			} else {
-				node.outbox = []*outboxMsg{}
-			}
-		}
-	}
+	node.outbox.Flush(maxAgeSeconds)
 }
 
 // Channels

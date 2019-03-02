@@ -267,7 +267,7 @@ func (node *Node) send(channelName string, destkey bc.PubKey, msg []byte) error 
 	m.channel = channelName
 	m.timeStamp = ts
 	m.msg = data
-	node.outbox = append(node.outbox, m)
+	node.outbox.Append(m)
 	return nil
 }
 

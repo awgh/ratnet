@@ -58,41 +58,8 @@ func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, maxBytes int64, channel
 	var retval api.Bundle
 	var msgs [][]byte
 
-	retval.Time = lastTime
-
-	for _, mail := range node.outbox {
-		if lastTime < mail.timeStamp {
-			pickupMsg := false
-			if len(channelNames) > 0 {
-				for _, channelName := range channelNames {
-					if channelName == mail.channel {
-						pickupMsg = true
-					}
-				}
-			} else {
-				pickupMsg = true
-			}
-			if pickupMsg {
-				msgsSize := 0
-				for i := range msgs {
-					msgsSize += len(msgs[i])
-				}
-
-				proposedSize := len(mail.msg) + msgsSize
-
-				if maxBytes > 0 && int64(proposedSize) > maxBytes {
-
-					if msgsSize == 0 {
-						log.Fatal("Bailing with zero return results!", proposedSize, len(mail.msg), msgsSize, maxBytes)
-					}
-
-					break
-				}
-				retval.Time = mail.timeStamp
-				msgs = append(msgs, mail.msg)
-			}
-		}
-	}
+	msgs, rvts := node.outbox.MsgsSince(lastTime, maxBytes, channelNames...)
+	retval.Time = rvts
 
 	// transmit
 	if len(msgs) > 0 {
