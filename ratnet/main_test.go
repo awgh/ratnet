@@ -47,7 +47,7 @@ var nodeType int
 var transportType int
 
 func init() {
-	nodeType = QL
+	nodeType = RAM
 	transportType = TLS
 }
 
@@ -341,6 +341,18 @@ func Test_server_AddPeer_1(t *testing.T) {
 	if errb != nil {
 		t.Error(errb.Error())
 	}
+
+	t.Log("Trying AddPeer on Admin interface with a specified policy")
+	_, errc := server1.Admin.RPC("localhost:30101", "AddPeer", "peer2", "false", "https://2.3.4.5:123", "policynametest")
+	if errc != nil {
+		t.Error(errc.Error())
+	}
+
+	t.Log("Trying AddPeer on Admin interface with a specified policy that already exists")
+	_, errd := server1.Admin.RPC("localhost:30101", "AddPeer", "peer3", "false", "https://3.4.5.6:234", "policynametest")
+	if errd != nil {
+		t.Error(errd.Error())
+	}
 }
 
 func Test_server_GetPeer_1(t *testing.T) {
@@ -369,16 +381,40 @@ func Test_server_GetPeer_1(t *testing.T) {
 	}
 
 	t.Log("Trying GetPeers on Admin interface")
-	peersRaw, err := server1.Admin.RPC("localhost:30101", "GetPeers")
+	// NOTE: See that "" in the call? For some reason, if you call this without any args, it gets an arg anyway - "peer1". Why? Dunno. But this makes it work. "" is treated as a wildcard by the "find peers" search
+	peersRaw, err := server1.Admin.RPC("localhost:30101", "GetPeers", "")
 	if err != nil {
 		t.Error(err.Error())
 	}
 	peers := peersRaw.([]api.Peer)
 	t.Logf("Got Peers: %+v\n", peers)
-	if len(peers) < 1 {
+	if len(peers) < 3 {
 		t.Fail()
 	}
 
+	t.Log("Trying GetPeers on Admin interface with a specified policy that has no peers")
+	groupedPeers, err := server1.Admin.RPC("localhost:30101", "GetPeers", "not-a-group")
+	if err != nil {
+		t.Error(err.Error())
+	}
+	var groupPeers []api.Peer
+	groupPeers = groupedPeers.([]api.Peer)
+	t.Logf("Got Peers: %+v\n", groupPeers)
+	if len(groupPeers) != 0 {
+		t.Fail()
+	}
+
+	t.Log("Trying GetPeers on Admin interface with a specified policy that has peers")
+	peers2, err := server1.Admin.RPC("localhost:30101", "GetPeers", "policynametest")
+	if err != nil {
+		t.Error(err.Error())
+	}
+	var peergroup []api.Peer
+	peergroup = peers2.([]api.Peer)
+	t.Logf("Got Peers: %+v\n", peergroup)
+	if len(peergroup) != 2 {
+		t.Fail()
+	}
 }
 
 func Test_server_Send_1(t *testing.T) {
