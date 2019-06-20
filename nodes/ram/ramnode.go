@@ -50,10 +50,14 @@ func New(contentKey, routingKey bc.KeyPair) *Node {
 	// set crypto modes
 	if contentKey == nil {
 		contentKey = new(ecc.KeyPair)
+	}
+	if contentKey.GetPubKey() == contentKey.GetPubKey().Nil() {
 		contentKey.GenerateKey()
 	}
 	if routingKey == nil {
 		routingKey = new(ecc.KeyPair)
+	}
+	if routingKey.GetPubKey() == routingKey.GetPubKey().Nil() {
 		routingKey.GenerateKey()
 	}
 	node.contentKey = contentKey

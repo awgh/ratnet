@@ -71,7 +71,7 @@ func initNode(n int64, testNode TestNode, nodeType int, transportType int, p2pMo
 		testNode.started = true
 		if nodeType == RAM {
 			// RamNode Mode:
-			testNode.Node = ram.New(nil, nil)
+			testNode.Node = ram.New(new(ecc.KeyPair), new(ecc.KeyPair))
 		} else if nodeType == QL {
 			// QLDB Mode
 			s := qldb.New(new(ecc.KeyPair), new(ecc.KeyPair))
