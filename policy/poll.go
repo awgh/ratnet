@@ -24,6 +24,8 @@ type Poll struct {
 	node      api.Node
 
 	Interval int
+
+	Group string
 }
 
 func init() {
@@ -34,15 +36,22 @@ func init() {
 func NewPollFromMap(transport api.Transport, node api.Node,
 	t map[string]interface{}) api.Policy {
 	interval := int(t["Interval"].(float64))
-	return NewPoll(transport, node, interval)
+	group := string(t["Group"].(string))
+	return NewPoll(transport, node, interval, group)
 }
 
 // NewPoll : Returns a new instance of a Poll Connection Policy
-func NewPoll(transport api.Transport, node api.Node, interval int) *Poll {
+func NewPoll(transport api.Transport, node api.Node, interval int, group ...string) *Poll {
 	p := new(Poll)
+	// if we don't have a specified group, it's ""
+	p.Group = ""
+	if len(group) > 0 {
+		p.Group = group[0]
+	}
 	p.Transport = transport
 	p.node = node
 	p.Interval = interval
+
 	return p
 }
 
@@ -51,7 +60,8 @@ func (p *Poll) MarshalJSON() (b []byte, e error) {
 	return json.Marshal(map[string]interface{}{
 		"Policy":    "poll",
 		"Transport": p.Transport,
-		"Interval":  p.Interval})
+		"Interval":  p.Interval,
+		"Group":     p.Group})
 }
 
 // RunPolicy : Poll
@@ -83,8 +93,8 @@ func (p *Poll) RunPolicy() error {
 			}
 			time.Sleep(time.Duration(p.Interval) * time.Millisecond) // update interval
 
-			// Get Server List
-			peers, err := p.node.GetPeers()
+			// Get Server List for this Poll's assigned Group
+			peers, err := p.node.GetPeers(p.Group)
 			if err != nil {
 				log.Println("Poll.RunPolicy error in loop: ", err)
 				continue
