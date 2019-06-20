@@ -81,9 +81,9 @@ type Node interface {
 	// GetPeer : Retrieve a peer by name (30)
 	GetPeer(name string) (*Peer, error)
 	// GetPeers : Retrieve this node's list of peers (31)
-	GetPeers() ([]Peer, error)
+	GetPeers(group ...string) ([]Peer, error)
 	// AddPeer : Add or Update a peer configuration (32)
-	AddPeer(name string, enabled bool, uri string) error
+	AddPeer(name string, enabled bool, uri string, group ...string) error
 	// DeletePeer : Remove a peer from this node's database (33)
 	DeletePeer(name string) error
 
@@ -147,6 +147,7 @@ type Peer struct {
 	Name    string
 	Enabled bool
 	URI     string
+	Group   string
 }
 
 // Bundle : mostly-opaque data blob returned by Pickup and passed into Dropoff

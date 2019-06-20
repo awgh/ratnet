@@ -3,6 +3,7 @@ package qldb
 import (
 	"errors"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/awgh/bencrypt/bc"
@@ -120,13 +121,17 @@ func (node *Node) GetPeer(name string) (*api.Peer, error) {
 }
 
 // GetPeers : Retrieve a list of peers in this node's database
-func (node *Node) GetPeers() ([]api.Peer, error) {
-	return node.qlGetPeers()
+func (node *Node) GetPeers(group ...string) ([]api.Peer, error) {
+	// if we don't have a specified group, it's ""
+	groupName := strings.Join(group, " ")
+	return node.qlGetPeers(groupName)
 }
 
 // AddPeer : Add or Update a peer configuration
-func (node *Node) AddPeer(name string, enabled bool, uri string) error {
-	return node.qlAddPeer(name, enabled, uri)
+func (node *Node) AddPeer(name string, enabled bool, uri string, group ...string) error {
+	// if we don't have a specified group, it's ""
+	groupName := strings.Join(group, " ")
+	return node.qlAddPeer(name, enabled, uri, groupName)
 }
 
 // DeletePeer : Remove a peer from this node's database

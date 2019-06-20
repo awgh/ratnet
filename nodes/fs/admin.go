@@ -43,9 +43,6 @@ func (node *Node) AddContact(name string, key string) error {
 	if !node.contentKey.ValidatePubKey(key) {
 		return errors.New("Invalid Public Key in AddContact")
 	}
-	if _, ok := node.contacts[name]; ok {
-		return errors.New("Contact already exists")
-	}
 	c := new(api.Contact)
 	c.Name = name
 	c.Pubkey = key
@@ -180,24 +177,38 @@ func (node *Node) GetPeer(name string) (*api.Peer, error) {
 	p.Name = name
 	p.Enabled = peer.Enabled
 	p.URI = peer.URI
+	p.Group = peer.Group
 	return p, nil
 }
 
 // GetPeers : Retrieve a list of peers in this node's database
-func (node *Node) GetPeers() ([]api.Peer, error) {
+func (node *Node) GetPeers(group ...string) ([]api.Peer, error) {
+	// if we don't have a specified group, it's ""
+	groupName := ""
+	if len(group) > 0 {
+		groupName = group[0]
+	}
 	var peers []api.Peer
 	for _, v := range node.peers {
-		peers = append(peers, api.Peer{Name: v.Name, Enabled: v.Enabled, URI: v.URI})
+		if groupName == v.Group {
+			peers = append(peers, api.Peer{Name: v.Name, Enabled: v.Enabled, URI: v.URI, Group: v.Group})
+		}
 	}
 	return peers, nil
 }
 
 // AddPeer : Add or Update a peer configuration
-func (node *Node) AddPeer(name string, enabled bool, uri string) error {
+func (node *Node) AddPeer(name string, enabled bool, uri string, group ...string) error {
+	// if we don't have a specified group, it's ""
+	groupName := ""
+	if len(group) > 0 {
+		groupName = group[0]
+	}
 	peer := new(api.Peer)
 	peer.Name = name
 	peer.Enabled = enabled
 	peer.URI = uri
+	peer.Group = groupName
 	node.peers[name] = peer
 	return nil
 }

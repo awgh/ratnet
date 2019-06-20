@@ -103,27 +103,6 @@ func (node *Node) SetRouter(router api.Router) {
 // FlushOutbox : Deletes outbound messages older than maxAgeSeconds seconds
 func (node *Node) FlushOutbox(maxAgeSeconds int64) {
 	now := time.Now()
-	/*
-		channelDirs, err := ioutil.ReadDir(node.basePath)
-		if err != nil {
-			log.Fatal(err.Error())
-		}
-			for _, dirInfo := range channelDirs {
-				if dirInfo.IsDir() {
-					chanDir := filepath.Join(node.basePath, dirInfo.Name())
-					msgFiles, err := ioutil.ReadDir(chanDir)
-					if err != nil {
-						log.Fatal(err.Error())
-					}
-					for _, info := range msgFiles {
-						if diff := now.Sub(info.ModTime()); diff > time.Duration(maxAgeSeconds)*time.Second {
-							fmt.Printf("Deleting %s which is %s seconds old\n", info.Name(), diff)
-						}
-					}
-
-				}
-			}
-	*/
 	_ = filepath.Walk(node.basePath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			log.Printf("FlushOutbox failure accessing a path %q: %v\n", path, err)

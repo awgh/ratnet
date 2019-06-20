@@ -71,7 +71,7 @@ func initNode(n int64, testNode TestNode, nodeType int, transportType int, p2pMo
 		testNode.started = true
 		if nodeType == RAM {
 			// RamNode Mode:
-			testNode.Node = ram.New(new(ecc.KeyPair), new(ecc.KeyPair))
+			testNode.Node = ram.New(nil, nil)
 		} else if nodeType == QL {
 			// QLDB Mode
 			s := qldb.New(new(ecc.KeyPair), new(ecc.KeyPair))
@@ -342,14 +342,14 @@ func Test_server_AddPeer_1(t *testing.T) {
 		t.Error(errb.Error())
 	}
 
-	t.Log("Trying AddPeer on Admin interface with a specified policy")
-	_, errc := server1.Admin.RPC("localhost:30101", "AddPeer", "peer2", "false", "https://2.3.4.5:123", "policynametest")
+	t.Log("Trying AddPeer on Admin interface with a group name")
+	_, errc := server1.Admin.RPC("localhost:30101", "AddPeer", "peer2", "false", "https://2.3.4.5:123", "groupnametest")
 	if errc != nil {
 		t.Error(errc.Error())
 	}
 
-	t.Log("Trying AddPeer on Admin interface with a specified policy that already exists")
-	_, errd := server1.Admin.RPC("localhost:30101", "AddPeer", "peer3", "false", "https://3.4.5.6:234", "policynametest")
+	t.Log("Trying AddPeer on Admin interface with a group name that already exists")
+	_, errd := server1.Admin.RPC("localhost:30101", "AddPeer", "peer3", "false", "https://3.4.5.6:234", "groupnametest")
 	if errd != nil {
 		t.Error(errd.Error())
 	}
@@ -358,62 +358,87 @@ func Test_server_AddPeer_1(t *testing.T) {
 func Test_server_GetPeer_1(t *testing.T) {
 	server1 = initNode(1, server1, nodeType, transportType, false)
 
+	//
+	t.Log("Trying AddPeer on Public interface")
+	// should not work on public interface
+	if _, erra := server1.Public.RPC("localhost:30001", "AddPeer", "peer1", "false", "https://1.2.3.4:443"); erra == nil {
+		t.Error(errors.New("AddPeer was accessible on Public network interface"))
+	}
+
+	t.Log("Trying AddPeer on Admin interface")
+	_, errb := server1.Admin.RPC("localhost:30101", "AddPeer", "peer1", "false", "https://1.2.3.4:443")
+	if errb != nil {
+		t.Error(errb.Error())
+	}
+
+	t.Log("Trying AddPeer on Admin interface with a group name")
+	_, errc := server1.Admin.RPC("localhost:30101", "AddPeer", "peer2", "false", "https://2.3.4.5:123", "groupnametest")
+	if errc != nil {
+		t.Error(errc.Error())
+	}
+
+	t.Log("Trying AddPeer on Admin interface with a group name that already exists")
+	_, errd := server1.Admin.RPC("localhost:30101", "AddPeer", "peer3", "false", "https://3.4.5.6:234", "groupnametest")
+	if errd != nil {
+		t.Error(errd.Error())
+	}
+	//
+
 	t.Log("Trying GetPeer on Public interface")
 	// should not work on public interface
 	if _, erra := server1.Public.RPC("localhost:30001", "GetPeer", "peer1"); erra == nil {
-		t.Error(errors.New("GetPeer was accessible on Public network interface"))
+		t.Fatal(errors.New("GetPeer was accessible on Public network interface"))
 	}
 
 	t.Log("Trying GetPeers on Public interface")
 	// should not work on public interface
 	if _, erra := server1.Public.RPC("localhost:30001", "GetPeers"); erra == nil {
-		t.Error(errors.New("GetPeers was accessible on Public network interface"))
+		t.Fatal(errors.New("GetPeers was accessible on Public network interface"))
 	}
 
 	t.Log("Trying GetPeer on Admin interface")
 	peer, err := server1.Admin.RPC("localhost:30101", "GetPeer", "peer1")
 	if err != nil {
-		t.Error(err.Error())
+		t.Fatal(err.Error())
 	}
 	t.Logf("Got Peer: %+v\n", peer)
 	if peer == nil {
-		t.Fail()
+		t.Fatal(errors.New("GetPeer on Admin interface failed"))
 	}
 
 	t.Log("Trying GetPeers on Admin interface")
-	// NOTE: See that "" in the call? For some reason, if you call this without any args, it gets an arg anyway - "peer1". Why? Dunno. But this makes it work. "" is treated as a wildcard by the "find peers" search
-	peersRaw, err := server1.Admin.RPC("localhost:30101", "GetPeers", "")
+	peersRaw, err := server1.Admin.RPC("localhost:30101", "GetPeers")
 	if err != nil {
-		t.Error(err.Error())
+		t.Fatal(err.Error())
 	}
 	peers := peersRaw.([]api.Peer)
 	t.Logf("Got Peers: %+v\n", peers)
-	if len(peers) < 3 {
-		t.Fail()
+	if len(peers) != 1 {
+		t.Fatal(errors.New("GetPeers on Admin interface failed"))
 	}
 
-	t.Log("Trying GetPeers on Admin interface with a specified policy that has no peers")
+	t.Log("Trying GetPeers on Admin interface with a group that has no peers")
 	groupedPeers, err := server1.Admin.RPC("localhost:30101", "GetPeers", "not-a-group")
 	if err != nil {
-		t.Error(err.Error())
+		t.Fatal(err.Error())
 	}
 	var groupPeers []api.Peer
 	groupPeers = groupedPeers.([]api.Peer)
 	t.Logf("Got Peers: %+v\n", groupPeers)
 	if len(groupPeers) != 0 {
-		t.Fail()
+		t.Fatal(errors.New("GetPeers with a group with no peers returned results"))
 	}
 
-	t.Log("Trying GetPeers on Admin interface with a specified policy that has peers")
-	peers2, err := server1.Admin.RPC("localhost:30101", "GetPeers", "policynametest")
+	t.Log("Trying GetPeers on Admin interface with a group that has peers")
+	peers2, err := server1.Admin.RPC("localhost:30101", "GetPeers", "groupnametest")
 	if err != nil {
-		t.Error(err.Error())
+		t.Fatal(err.Error())
 	}
 	var peergroup []api.Peer
 	peergroup = peers2.([]api.Peer)
 	t.Logf("Got Peers: %+v\n", peergroup)
 	if len(peergroup) != 2 {
-		t.Fail()
+		t.Fatal(errors.New("GetPeers with a group with peers did not return two results"))
 	}
 }
 

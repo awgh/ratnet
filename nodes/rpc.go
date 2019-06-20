@@ -251,18 +251,18 @@ func AdminRPC(transport api.Transport, node api.Node, call api.RemoteCall) (inte
 		return nil, nil
 
 	case "GetPeers":
-		if peers, err := node.GetPeers(); err != nil {
-			var policy = ""
-			if len(call.Args) > 1 {
-				return nil, errors.New("Invalid argument count")
+		var group = ""
+		if len(call.Args) > 1 {
+			return nil, errors.New("Invalid argument count")
+		}
+		if len(call.Args) > 0 {
+			var ok bool
+			group, ok = call.Args[0].(string)
+			if !ok {
+				return nil, errors.New("Invalid argument")
 			}
-			if len(call.Args) > 0 {
-				var ok bool
-				policy, ok = call.Args[0].(string)
-				if !ok {
-					return nil, errors.New("Invalid argument")
-				}
-			}
+		}
+		if peers, err := node.GetPeers(group); err != nil {
 			return nil, err
 		} else {
 			return peers, nil
@@ -289,11 +289,11 @@ func AdminRPC(transport api.Transport, node api.Node, call api.RemoteCall) (inte
 			return nil, errors.New("Invalid bool format")
 		}
 		if len(call.Args) > 3 {
-			policy, ok := call.Args[3].(string)
+			group, ok := call.Args[3].(string)
 			if !ok {
 				return nil, errors.New("Invalid argument")
 			}
-			return nil, node.AddPeer(peerName, enabled, peerURI, policy)
+			return nil, node.AddPeer(peerName, enabled, peerURI, group)
 		}
 		return nil, node.AddPeer(peerName, enabled, peerURI)
 
