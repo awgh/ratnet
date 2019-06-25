@@ -5,6 +5,12 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"io"
+
+	"github.com/awgh/bencrypt/bc"
+
+	"github.com/awgh/bencrypt/ecc"
+	"github.com/awgh/bencrypt/rsa"
 )
 
 // API Call ID numbers
@@ -37,9 +43,25 @@ const (
 
 // API Parameter Data types
 const (
+	APITypeNil    byte = 0x0
 	APITypeInt64  byte = 0x1
 	APITypeString byte = 0x2
 	APITypeBytes  byte = 0x3
+
+	APITypePubKeyECC byte = 0x10
+	APITypePubKeyRSA byte = 0x11
+
+	APITypeContactArray byte = 0x20
+	APITypeChannelArray byte = 0x21
+	APITypeProfileArray byte = 0x22
+	APITypePeerArray    byte = 0x23
+
+	APITypeContact byte = 0x30
+	APITypeChannel byte = 0x31
+	APITypeProfile byte = 0x32
+	APITypePeer    byte = 0x33
+
+	APITypeBundle byte = 0x40
 )
 
 // RemoteCall : defines a Remote Procedure Call
@@ -171,26 +193,7 @@ func ArgsToBytes(args []interface{}) []byte {
 	b := bytes.NewBuffer([]byte{})
 	w := bufio.NewWriter(b)
 	for _, i := range args {
-		switch i.(type) {
-		case uint64:
-			a := i.(uint64)
-			binary.Write(w, binary.BigEndian, APITypeInt64) //type
-			binary.Write(w, binary.BigEndian, uint16(8))    //length
-			binary.Write(w, binary.BigEndian, a)            //value
-			//w.Write(ba) //value
-		case string:
-			s := i.(string)
-			binary.Write(w, binary.BigEndian, APITypeString)  //type
-			binary.Write(w, binary.BigEndian, uint16(len(s))) //length
-			w.Write([]byte(s))                                //value
-		case []byte:
-			ba := i.([]byte)
-			binary.Write(w, binary.BigEndian, APITypeBytes)    //type
-			binary.Write(w, binary.BigEndian, uint16(len(ba))) //length
-			w.Write(ba)                                        //value
-		default:
-			//return nil, errors.New("Only []byte, string, and int64 can be serialized")
-		}
+		serialize(w, i)
 	}
 	w.Flush()
 	return b.Bytes()
@@ -203,30 +206,17 @@ func ArgsFromBytes(args []byte) ([]interface{}, error) {
 
 	for i := 0; i < len(args); i++ {
 		// read a TLV field, add it to output array
-		var t byte
-		if err := binary.Read(r, binary.BigEndian, &t); err != nil {
+		t, v, err := readTLV(r)
+		if err != nil {
 			return nil, err
 		}
-		i++
-		var l uint16
-		if err := binary.Read(r, binary.BigEndian, &l); err != nil {
+		i += 3 + len(v)
+		b := bytes.NewBuffer(v)
+		rt, err := deserialize(b, t, v)
+		if err != nil {
 			return nil, err
 		}
-		i += 2
-		v := make([]byte, l)
-		if err := binary.Read(r, binary.BigEndian, &v); err != nil {
-			return nil, err
-		}
-		i += int(l)
-		switch t {
-		case APITypeInt64:
-			vint := binary.BigEndian.Uint64(v)
-			output = append(output, vint)
-		case APITypeString:
-			output = append(output, string(v))
-		case APITypeBytes:
-			output = append(output, v)
-		}
+		output = append(output, rt)
 	}
 	return output, nil
 }
@@ -266,26 +256,9 @@ func RemoteResponseToBytes(resp *RemoteResponse) []byte {
 	b := bytes.NewBuffer([]byte{})
 	w := bufio.NewWriter(b)
 
-	binary.Write(w, binary.BigEndian, APITypeString)           //type
-	binary.Write(w, binary.BigEndian, uint16(len(resp.Error))) //length
-	w.Write([]byte(resp.Error))                                //value
-	switch resp.Value.(type) {
-	case int64:
-		binary.Write(w, binary.BigEndian, APITypeInt64) //type
-		binary.Write(w, binary.BigEndian, uint16(8))    //length
-		binary.Write(w, binary.BigEndian, resp.Value)   //value
-	case string:
-		s := resp.Value.(string)
-		binary.Write(w, binary.BigEndian, APITypeString)  //type
-		binary.Write(w, binary.BigEndian, uint16(len(s))) //length
-		//binary.Write(w, binary.BigEndian, resp.Value)
-		w.Write([]byte(s)) //value
-	case []byte:
-		ba := resp.Value.([]byte)
-		binary.Write(w, binary.BigEndian, APITypeBytes)    //type
-		binary.Write(w, binary.BigEndian, uint16(len(ba))) //length
-		w.Write(ba)                                        //value
-	}
+	writeTLV(w, APITypeString, []byte(resp.Error))
+
+	serialize(w, resp.Value)
 	w.Flush()
 	return b.Bytes()
 }
@@ -297,42 +270,414 @@ func RemoteResponseFromBytes(input []byte) (*RemoteResponse, error) {
 
 	// read the two TLV fields, add to struct
 	// Error string
-	var t byte
-	var l uint16
-	if err := binary.Read(r, binary.BigEndian, &t); err != nil {
-		return nil, err
-	}
-	if err := binary.Read(r, binary.BigEndian, &l); err != nil {
-		return nil, err
-	}
-	v := make([]byte, l)
-	if err := binary.Read(r, binary.BigEndian, &v); err != nil {
+	t, v, err := readTLV(r)
+	if err != nil {
 		return nil, err
 	}
 	resp.Error = string(v)
 
 	// Value interface{}
-	if err := binary.Read(r, binary.BigEndian, &t); err != nil {
+	t, v, err = readTLV(r)
+	if err != nil {
 		return nil, err
 	}
-	if err := binary.Read(r, binary.BigEndian, &l); err != nil {
+	rv, err := deserialize(r, t, v)
+	if err != nil {
 		return nil, err
 	}
-	v = make([]byte, l)
-	if err := binary.Read(r, binary.BigEndian, &v); err != nil {
-		return nil, err
+	resp.Value = rv
+	return resp, nil
+}
+
+func serialize(w io.Writer, v interface{}) {
+	switch v.(type) {
+	case int64:
+		binary.Write(w, binary.BigEndian, APITypeInt64) //type
+		binary.Write(w, binary.BigEndian, uint16(8))    //length
+		binary.Write(w, binary.BigEndian, v)            //value
+	case string:
+		s := v.(string)
+		writeTLV(w, APITypeString, []byte(s))
+	case []byte:
+		ba := v.([]byte)
+		writeTLV(w, APITypeBytes, ba)
+	case bc.PubKey:
+		pk, ok := v.(*ecc.PubKey)
+		var kb []byte
+		var typ byte
+		if ok {
+			kb = pk.ToBytes()
+			typ = APITypePubKeyECC
+		} else {
+			rk := v.(*rsa.PubKey)
+			kb = rk.ToBytes()
+			typ = APITypePubKeyRSA
+		}
+		writeTLV(w, typ, kb)
+	case *Contact:
+		ap := v.(*Contact)
+		b := bytes.NewBuffer([]byte{})
+		writeLV(b, []byte(ap.Name))
+		writeLV(b, []byte(ap.Pubkey))
+		writeTLV(w, APITypeContact, b.Bytes())
+	case []Contact:
+		ac := v.([]Contact)
+		b := bytes.NewBuffer([]byte{})
+		for _, c := range ac {
+			writeLV(b, []byte(c.Name))
+			writeLV(b, []byte(c.Pubkey))
+		}
+		writeTLV(w, APITypeContactArray, b.Bytes())
+	case *Channel:
+		ap := v.(*Channel)
+		b := bytes.NewBuffer([]byte{})
+		writeLV(b, []byte(ap.Name))
+		writeLV(b, []byte(ap.Pubkey))
+		writeTLV(w, APITypeChannel, b.Bytes())
+	case []Channel:
+		ac := v.([]Channel)
+		b := bytes.NewBuffer([]byte{})
+		for _, c := range ac {
+			writeLV(b, []byte(c.Name))
+			writeLV(b, []byte(c.Pubkey))
+		}
+		writeTLV(w, APITypeChannelArray, b.Bytes())
+	case *Profile:
+		ap := v.(*Profile)
+		b := bytes.NewBuffer([]byte{})
+		writeLV(b, []byte(ap.Name))
+		writeLV(b, []byte(ap.Pubkey))
+		if ap.Enabled {
+			b.WriteByte(1)
+		} else {
+			b.WriteByte(0)
+		}
+		writeTLV(w, APITypeProfile, b.Bytes())
+	case []Profile:
+		ac := v.([]Profile)
+		b := bytes.NewBuffer([]byte{})
+		for _, c := range ac {
+			writeLV(b, []byte(c.Name))
+			writeLV(b, []byte(c.Pubkey))
+			if c.Enabled {
+				b.WriteByte(1)
+			} else {
+				b.WriteByte(0)
+			}
+		}
+		writeTLV(w, APITypeProfileArray, b.Bytes())
+
+	case *Peer:
+		ap := v.(*Peer)
+		b := bytes.NewBuffer([]byte{})
+		writeLV(b, []byte(ap.Name))
+		writeLV(b, []byte(ap.Group))
+		writeLV(b, []byte(ap.URI))
+		if ap.Enabled {
+			b.WriteByte(1)
+		} else {
+			b.WriteByte(0)
+		}
+		writeTLV(w, APITypePeer, b.Bytes())
+	case []Peer:
+		ac := v.([]Peer)
+		b := bytes.NewBuffer([]byte{})
+		for _, c := range ac {
+			writeLV(b, []byte(c.Name))
+			writeLV(b, []byte(c.Group))
+			writeLV(b, []byte(c.URI))
+			if c.Enabled {
+				b.WriteByte(1)
+			} else {
+				b.WriteByte(0)
+			}
+		}
+		writeTLV(w, APITypePeerArray, b.Bytes())
+	case Bundle:
+		bundle := v.(Bundle)
+		b := bytes.NewBuffer([]byte{})
+		writeLV(b, bundle.Data)
+		binary.Write(b, binary.BigEndian, bundle.Time)
+		writeTLV(w, APITypeBundle, b.Bytes())
 	}
+}
+
+func deserialize(r io.Reader, t byte, v []byte) (interface{}, error) {
 	switch t {
+	case APITypeNil:
+		return nil, nil
 	case APITypeInt64:
-		var vint uint64
+		var vint int64
 		if err := binary.Read(r, binary.BigEndian, &vint); err != nil {
 			return nil, err
 		}
-		resp.Value = vint
+		return vint, nil
 	case APITypeString:
-		resp.Value = string(v)
+		return string(v), nil
 	case APITypeBytes:
-		resp.Value = v
+		return v, nil
+	case APITypePubKeyECC:
+		key := new(ecc.PubKey)
+		if err := key.FromBytes(v); err != nil {
+			return nil, err
+		}
+		return key, nil
+	case APITypePubKeyRSA:
+		key := new(rsa.PubKey)
+		if err := key.FromBytes(v); err != nil {
+			return nil, err
+		}
+		return key, nil
+
+	case APITypeContact:
+		var contact Contact
+		b := bytes.NewBuffer(v)
+		va, err := readLV(b)
+		if err != nil {
+			return nil, err
+		}
+		contact.Name = string(va)
+		va, err = readLV(b)
+		if err != nil {
+			return nil, err
+		}
+		contact.Pubkey = string(va)
+		return &contact, nil
+
+	case APITypeContactArray:
+		bytesRead := 0
+		var contacts []Contact
+		b := bytes.NewBuffer(v)
+		for bytesRead < len(v) {
+			var contact Contact
+			va, err := readLV(b)
+			if err != nil {
+				return nil, err
+			}
+			bytesRead += len(va) + 2
+			contact.Name = string(va)
+			va, err = readLV(b)
+			if err != nil {
+				return nil, err
+			}
+			bytesRead += len(va) + 2
+			contact.Pubkey = string(va)
+			contacts = append(contacts, contact)
+		}
+		return contacts, nil
+
+	case APITypeChannel:
+		var channel Channel
+		b := bytes.NewBuffer(v)
+		va, err := readLV(b)
+		if err != nil {
+			return nil, err
+		}
+		channel.Name = string(va)
+		va, err = readLV(b)
+		if err != nil {
+			return nil, err
+		}
+		channel.Pubkey = string(va)
+		return &channel, nil
+
+	case APITypeChannelArray:
+		bytesRead := 0
+		var channels []Channel
+		b := bytes.NewBuffer(v)
+		for bytesRead < len(v) {
+			var channel Channel
+			va, err := readLV(b)
+			if err != nil {
+				return nil, err
+			}
+			bytesRead += len(va) + 2
+			channel.Name = string(va)
+			va, err = readLV(b)
+			if err != nil {
+				return nil, err
+			}
+			bytesRead += len(va) + 2
+			channel.Pubkey = string(va)
+			channels = append(channels, channel)
+		}
+		return channels, nil
+
+	case APITypeProfile:
+		var profile Profile
+		b := bytes.NewBuffer(v)
+		va, err := readLV(b)
+		if err != nil {
+			return nil, err
+		}
+		profile.Name = string(va)
+		va, err = readLV(b)
+		if err != nil {
+			return nil, err
+		}
+		profile.Pubkey = string(va)
+		bt, err := b.ReadByte()
+		if err != nil {
+			return nil, err
+		}
+		if bt == 1 {
+			profile.Enabled = true
+		} else {
+			profile.Enabled = false
+		}
+		return &profile, nil
+
+	case APITypeProfileArray:
+		bytesRead := 0
+		var profiles []Profile
+		b := bytes.NewBuffer(v)
+		for bytesRead < len(v) {
+			var profile Profile
+			va, err := readLV(b)
+			if err != nil {
+				return nil, err
+			}
+			bytesRead += len(va) + 2
+			profile.Name = string(va)
+			va, err = readLV(b)
+			if err != nil {
+				return nil, err
+			}
+			bytesRead += len(va) + 2
+			profile.Pubkey = string(va)
+
+			bt, err := b.ReadByte()
+			if err != nil {
+				return nil, err
+			}
+			bytesRead++
+			if bt == 1 {
+				profile.Enabled = true
+			} else {
+				profile.Enabled = false
+			}
+			profiles = append(profiles, profile)
+		}
+		return profiles, nil
+
+	case APITypePeer:
+		var peer Peer
+		b := bytes.NewBuffer(v)
+		va, err := readLV(b)
+		if err != nil {
+			return nil, err
+		}
+		peer.Name = string(va)
+		va, err = readLV(b)
+		if err != nil {
+			return nil, err
+		}
+		peer.Group = string(va)
+		va, err = readLV(b)
+		if err != nil {
+			return nil, err
+		}
+		peer.URI = string(va)
+		bt, err := b.ReadByte()
+		if err != nil {
+			return nil, err
+		}
+		if bt == 1 {
+			peer.Enabled = true
+		} else {
+			peer.Enabled = false
+		}
+		return &peer, nil
+
+	case APITypePeerArray:
+		bytesRead := 0
+		var peers []Peer
+		b := bytes.NewBuffer(v)
+		for bytesRead < len(v) {
+			var peer Peer
+			va, err := readLV(b)
+			if err != nil {
+				return nil, err
+			}
+			bytesRead += len(va) + 2
+			peer.Name = string(va)
+			va, err = readLV(b)
+			if err != nil {
+				return nil, err
+			}
+			bytesRead += len(va) + 2
+			peer.Group = string(va)
+			va, err = readLV(b)
+			if err != nil {
+				return nil, err
+			}
+			bytesRead += len(va) + 2
+			peer.URI = string(va)
+			bt, err := b.ReadByte()
+			if err != nil {
+				return nil, err
+			}
+			bytesRead++
+			if bt == 1 {
+				peer.Enabled = true
+			} else {
+				peer.Enabled = false
+			}
+			peers = append(peers, peer)
+		}
+		return peers, nil
+
+	case APITypeBundle:
+		var bundle Bundle
+		b := bytes.NewBuffer(v)
+		data, err := readLV(b)
+		if err != nil {
+			return nil, err
+		}
+		bundle.Data = data
+		var vint int64
+		if err := binary.Read(b, binary.BigEndian, &vint); err != nil {
+			return nil, err
+		}
+		bundle.Time = vint
+		return bundle, nil
 	}
-	return resp, nil
+	return nil, errors.New("Unknown Type")
+}
+
+func writeTLV(w io.Writer, typ byte, value []byte) {
+	binary.Write(w, binary.BigEndian, typ) //type
+	writeLV(w, value)
+}
+
+func writeLV(w io.Writer, value []byte) {
+	length := uint16(len(value))
+	binary.Write(w, binary.BigEndian, length) //length
+	w.Write(value)                            //value
+}
+
+func readTLV(r io.Reader) (byte, []byte, error) {
+	var t byte
+	if err := binary.Read(r, binary.BigEndian, &t); err == io.EOF {
+		return 0, nil, nil //EOF
+	} else if err != nil {
+		return t, nil, err
+	}
+	v, err := readLV(r)
+	return t, v, err
+}
+
+func readLV(r io.Reader) ([]byte, error) {
+	var l uint16
+	if err := binary.Read(r, binary.BigEndian, &l); err != nil {
+		return nil, err
+	}
+	if l == 0 {
+		return nil, nil
+	}
+	v := make([]byte, l)
+	if err := binary.Read(r, binary.BigEndian, &v); err != nil {
+		return nil, err
+	}
+	return v, nil
 }

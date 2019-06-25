@@ -48,7 +48,7 @@ var transportType int
 
 func init() {
 	nodeType = RAM
-	transportType = TLS
+	transportType = UDP
 }
 
 var (
@@ -293,6 +293,14 @@ func Test_server_AddProfile_1(t *testing.T) {
 func Test_server_GetProfile_1(t *testing.T) {
 	server1 = initNode(1, server1, nodeType, transportType, false)
 
+	/* todo: AddProfile twice in a row on ramnode is a bug
+	t.Log("Trying AddProfile on Admin interface")
+	_, errb := server1.Admin.RPC("localhost:30101", "AddProfile", "profile1", "false")
+	if errb != nil {
+		t.Error(errb.Error())
+	}
+	*/
+
 	t.Log("Trying GetProfile on Public interface")
 	// should not work on public interface
 	if _, erra := server1.Public.RPC("localhost:30001", "GetProfile", "profile1"); erra == nil {
@@ -325,6 +333,7 @@ func Test_server_GetProfile_1(t *testing.T) {
 	if len(profiles) < 1 {
 		t.Fail()
 	}
+
 }
 
 func Test_server_AddPeer_1(t *testing.T) {

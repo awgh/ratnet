@@ -111,7 +111,9 @@ func (node *Node) GetProfile(name string) (*api.Profile, error) {
 	pub := new(api.Profile)
 	pub.Name = name
 	pub.Enabled = p.Enabled
-	pub.Pubkey = p.Privkey.GetPubKey().ToB64()
+	kp := p.Privkey
+	pk := kp.GetPubKey()
+	pub.Pubkey = pk.ToB64()
 	return pub, nil
 }
 
