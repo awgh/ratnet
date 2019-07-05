@@ -12,6 +12,7 @@ import (
 	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/bencrypt/ecc"
 	"github.com/awgh/ratnet/api"
+	"github.com/awgh/ratnet/nodes/db"
 	"github.com/awgh/ratnet/nodes/fs"
 	"github.com/awgh/ratnet/nodes/qldb"
 	"github.com/awgh/ratnet/nodes/ram"
@@ -20,6 +21,8 @@ import (
 	"github.com/awgh/ratnet/transports/udp"
 
 	_ "github.com/cznic/ql/driver"
+
+	_ "upper.io/db.v3/ql"
 )
 
 type TestNode struct {
@@ -40,6 +43,7 @@ const (
 	RAM int = iota
 	QL
 	FS
+	DB
 	NumNodes
 )
 
@@ -47,7 +51,7 @@ var nodeType int
 var transportType int
 
 func init() {
-	nodeType = RAM
+	nodeType = DB
 	transportType = UDP
 }
 
@@ -81,6 +85,17 @@ func initNode(n int64, testNode TestNode, nodeType int, transportType int, p2pMo
 			os.Mkdir("qltmp"+num, os.FileMode(int(0755)))
 			dbfile := "qltmp" + num + "/ratnet_test" + num + ".ql"
 			s.BootstrapDB(dbfile)
+			s.FlushOutbox(0)
+			testNode.Node = s
+		} else if nodeType == DB {
+			// DB Mode
+			s := db.New(new(ecc.KeyPair), new(ecc.KeyPair))
+			if err := os.RemoveAll("dbtmp" + num); err != nil {
+				log.Printf("error removing directory %s: %s\n", "dbtmp"+num, err.Error())
+			}
+			os.Mkdir("dbtmp"+num, os.FileMode(int(0755)))
+			dbfile := "file://dbtmp" + num + "/ratnet_test" + num + ".ql"
+			s.BootstrapDB("ql", dbfile)
 			s.FlushOutbox(0)
 			testNode.Node = s
 		} else if nodeType == FS {

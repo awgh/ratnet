@@ -111,14 +111,14 @@ type Node interface {
 
 // Contact : object that describes a contact (named public key)
 type Contact struct {
-	Name   string
-	Pubkey string
+	Name   string `db:"name"`
+	Pubkey string `db:"pubkey"`
 }
 
 // Channel : object that describes a channel (named public key)
 type Channel struct {
-	Name   string
-	Pubkey string
+	Name   string `db:"name"`
+	Pubkey string `db:"pubkey"`
 }
 
 // ChannelPriv : object that describes a channel (including private key)
@@ -128,11 +128,17 @@ type ChannelPriv struct {
 	Privkey bc.KeyPair
 }
 
+// ChannelPrivDB : object that describes a channel, database version (including private key)
+type ChannelPrivDB struct {
+	Name    string `db:"name"`
+	Privkey string `db:"privkey"`
+}
+
 // Profile : object that describes a profile
 type Profile struct {
-	Name    string
-	Enabled bool
-	Pubkey  string
+	Name    string `db:"name"`
+	Enabled bool   `db:"enabled"`
+	Pubkey  string `db:"pubkey"`
 }
 
 // ProfilePriv : object that describes a profile (including private key)
@@ -142,16 +148,36 @@ type ProfilePriv struct {
 	Privkey bc.KeyPair
 }
 
+// ProfilePrivDB : object that describes a profile, database version (including private key)
+type ProfilePrivDB struct {
+	Name    string `db:"name"`
+	Enabled bool   `db:"enabled"`
+	Privkey string `db:"privkey"`
+}
+
 // Peer : object that describes a peer (transport connection instructions)
 type Peer struct {
-	Name    string
-	Enabled bool
-	URI     string
-	Group   string
+	Name    string `db:"name"`
+	Enabled bool   `db:"enabled"`
+	URI     string `db:"uri"`
+	Group   string `db:"peergroup"`
 }
 
 // Bundle : mostly-opaque data blob returned by Pickup and passed into Dropoff
 type Bundle struct {
 	Data []byte
 	Time int64
+}
+
+// OutboxMsg : object that describes an outbox message
+type OutboxMsg struct {
+	Channel   string `db:"channel"`
+	Msg       []byte `db:"msg"`
+	Timestamp int64  `db:"timestamp"`
+}
+
+// ConfigValue - Name/Value pairs of configuration strings
+type ConfigValue struct {
+	Name  string `db:"name"`
+	Value string `db:"value"`
 }
