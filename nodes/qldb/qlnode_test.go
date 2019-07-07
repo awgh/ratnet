@@ -9,7 +9,7 @@ import (
 	"github.com/awgh/bencrypt/ecc"
 	"github.com/awgh/ratnet/api"
 
-	_ "github.com/cznic/ql/driver"
+	_ "modernc.org/ql/driver"
 )
 
 var (

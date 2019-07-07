@@ -20,9 +20,8 @@ import (
 	"github.com/awgh/ratnet/transports/tls"
 	"github.com/awgh/ratnet/transports/udp"
 
-	_ "github.com/cznic/ql/driver"
-
-	_ "upper.io/db.v3/ql"
+	//_ "modernc.org/ql/driver"
+	_ "upper.io/db.v3/ql" // this requires PR #507: https://github.com/upper/db/pull/507
 )
 
 type TestNode struct {

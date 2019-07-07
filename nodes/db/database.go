@@ -26,7 +26,7 @@ func closeDB(database db.Database) {
 
 func (node *Node) dbGetContactPubKey(name string) (string, error) {
 	col := node.db.Collection("contacts")
-	res := col.Find().Where("name == ?", name)
+	res := col.Find().Where("name = ?", name)
 	var contact api.Contact
 
 	if err := res.One(&contact); err != nil {
@@ -52,7 +52,7 @@ func (node *Node) dbAddContact(name, pubkey string) error {
 		return err
 	}
 	col := tx.Collection("contacts")
-	res := col.Find("name == ?", name)
+	res := col.Find("name = ?", name)
 	cnt, err := res.Count()
 	if err != nil {
 		return err
@@ -72,13 +72,13 @@ func (node *Node) dbAddContact(name, pubkey string) error {
 
 func (node *Node) dbDeleteContact(name string) {
 	col := node.db.Collection("contacts")
-	res := col.Find("name == ?", name)
+	res := col.Find("name = ?", name)
 	_ = res.Delete()
 }
 
 func (node *Node) dbGetChannelPrivKey(name string) (string, error) {
 	col := node.db.Collection("channels")
-	res := col.Find().Where("name == ?", name)
+	res := col.Find().Where("name = ?", name)
 	var channel api.ChannelPrivDB
 	if err := res.One(&channel); err != nil {
 		return "", err
@@ -128,7 +128,7 @@ func (node *Node) dbAddChannel(name, privkey string) error {
 		return err
 	}
 	col := tx.Collection("channels")
-	res := col.Find("name == ?", name)
+	res := col.Find("name = ?", name)
 	cnt, err := res.Count()
 	if err != nil {
 		return err
@@ -152,13 +152,13 @@ func (node *Node) dbAddChannel(name, privkey string) error {
 
 func (node *Node) dbDeleteChannel(name string) {
 	col := node.db.Collection("channels")
-	res := col.Find("name == ?", name)
+	res := col.Find("name = ?", name)
 	_ = res.Delete()
 }
 
 func (node *Node) dbGetProfile(name string) (*api.Profile, error) {
 	col := node.db.Collection("profiles")
-	res := col.Find().Where("name == ?", name)
+	res := col.Find().Where("name = ?", name)
 	var profile api.ProfilePrivDB
 	if err := res.One(&profile); err != nil {
 		return nil, err
@@ -190,7 +190,7 @@ func (node *Node) dbGetProfiles() ([]api.Profile, error) {
 
 func (node *Node) dbAddProfile(name string, enabled bool) error {
 	col := node.db.Collection("profiles")
-	res := col.Find().Where("name == ?", name)
+	res := col.Find().Where("name = ?", name)
 	count, err := res.Count()
 	if err != nil {
 		return err
@@ -219,13 +219,13 @@ func (node *Node) dbAddProfile(name string, enabled bool) error {
 
 func (node *Node) dbDeleteProfile(name string) {
 	col := node.db.Collection("profiles")
-	res := col.Find("name == ?", name)
+	res := col.Find("name = ?", name)
 	_ = res.Delete()
 }
 
 func (node *Node) dbGetProfilePrivateKey(name string) string {
 	col := node.db.Collection("profiles")
-	res := col.Find().Where("name == ?", name)
+	res := col.Find().Where("name = ?", name)
 	var profile api.ProfilePrivDB
 	if err := res.One(profile); err != nil {
 		return ""
@@ -235,7 +235,7 @@ func (node *Node) dbGetProfilePrivateKey(name string) string {
 
 func (node *Node) dbGetPeer(name string) (*api.Peer, error) {
 	col := node.db.Collection("peers")
-	res := col.Find().Where("name == ?", name)
+	res := col.Find().Where("name = ?", name)
 	var peer api.Peer
 	if err := res.One(&peer); err != nil {
 		return nil, err
@@ -245,7 +245,7 @@ func (node *Node) dbGetPeer(name string) (*api.Peer, error) {
 
 func (node *Node) dbGetPeers(group string) ([]api.Peer, error) {
 	col := node.db.Collection("peers")
-	res := col.Find().Where("peergroup == ?", group)
+	res := col.Find().Where("peergroup = ?", group)
 	var peers []api.Peer
 	if err := res.All(&peers); err != nil {
 		return nil, err
@@ -255,7 +255,7 @@ func (node *Node) dbGetPeers(group string) ([]api.Peer, error) {
 
 func (node *Node) dbAddPeer(name string, enabled bool, uri string, group string) error {
 	col := node.db.Collection("peers")
-	res := col.Find().Where("name == ?", name).And("peergroup == ?", group)
+	res := col.Find().Where("name = ?", name).And("peergroup = ?", group)
 	count, err := res.Count()
 	if err != nil {
 		return err
@@ -283,7 +283,7 @@ func (node *Node) dbAddPeer(name string, enabled bool, uri string, group string)
 
 func (node *Node) dbDeletePeer(name string) {
 	col := node.db.Collection("peers")
-	res := col.Find("name == ?", name)
+	res := col.Find("name = ?", name)
 	_ = res.Delete()
 }
 
@@ -294,7 +294,7 @@ func (node *Node) dbOutboxEnqueue(channelName string, msg []byte, ts int64, chec
 
 	if checkExists {
 		// save message in my outbox, if not already present
-		res := col.Find("channel == ?", channelName).And("msg == ?", msg)
+		res := col.Find("channel = ?", channelName).And("msg = ?", msg)
 		if err := res.One(&outboxmsg); err != nil {
 			return err
 		}
@@ -487,7 +487,7 @@ func (node *Node) BootstrapDB(dbAdapter, dbConnectionString string) sqlbuilder.D
 
 	// Content Key Setup
 	col := node.db.Collection("config")
-	res1 := col.Find("name == ?", "contentkey")
+	res1 := col.Find("name = ?", "contentkey")
 	cnt, err := res1.Count()
 	if err != nil {
 		node.errMsg(err, true)
@@ -507,7 +507,7 @@ func (node *Node) BootstrapDB(dbAdapter, dbConnectionString string) sqlbuilder.D
 	}
 
 	// Routing Key Setup
-	res2 := col.Find("name == ?", "routingkey")
+	res2 := col.Find("name = ?", "routingkey")
 	cnt, err = res2.Count()
 	if err != nil {
 		node.errMsg(err, true)

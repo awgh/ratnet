@@ -13,7 +13,7 @@ import (
 	"github.com/awgh/ratnet/nodes"
 	"github.com/awgh/ratnet/router"
 
-	_ "github.com/cznic/ql/driver" // load the QL database driver
+	_ "modernc.org/ql/driver" // load the QL database driver
 )
 
 // Node : defines an instance of the API with a ql-DB backed Node
