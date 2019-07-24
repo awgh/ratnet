@@ -3,19 +3,92 @@ package router
 import (
 	"encoding/json"
 	"errors"
+	"sync"
+	"sync/atomic"
 
 	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
 )
+
+const (
+	recentBufferSize = 8
+	cacheSize        = 100
+	entriesPerTable  = cacheSize / recentBufferSize
+	nonceSize        = 32
+)
+
+type recentPage struct {
+	mtx        sync.RWMutex
+	recentPage map[[nonceSize]byte]bool
+}
+
+type recentBuffer struct {
+	mtx           sync.RWMutex
+	recentPageIdx int32
+	recentBuffer  [recentBufferSize]recentPage
+}
+
+func newRecentBuffer() (r recentBuffer) {
+	for i := range r.recentBuffer {
+		r.recentBuffer[i].recentPage = make(map[[nonceSize]byte]bool, entriesPerTable)
+	}
+	return
+}
+
+func (r *recentBuffer) getrecentPageIdx() int32 {
+	return atomic.LoadInt32(&r.recentPageIdx)
+}
+
+func (r *recentBuffer) increcentPageIdx() {
+	atomic.AddInt32(&r.recentPageIdx, 1)
+}
+
+func (r *recentBuffer) resetrecentPageIdx() {
+	atomic.StoreInt32(&r.recentPageIdx, 0)
+}
+
+func (r *recentBuffer) getrecentPageVal(idx int32, val [nonceSize]byte) bool {
+	r.mtx.RLock()
+	r.recentBuffer[idx].mtx.RLock()
+	defer r.recentBuffer[idx].mtx.RUnlock()
+	defer r.mtx.RUnlock()
+
+	_, ok := r.recentBuffer[idx].recentPage[val]
+	return ok
+}
+
+func (r *recentBuffer) resetrecentPageIfFull(idx int32) bool {
+	r.mtx.RLock()
+	r.recentBuffer[idx].mtx.RLock()
+	isFull := len(r.recentBuffer[idx].recentPage) >= entriesPerTable
+	r.recentBuffer[idx].mtx.RUnlock()
+	r.mtx.RUnlock()
+
+	if isFull {
+		r.mtx.Lock()
+		r.recentBuffer[idx].mtx.Lock()
+		r.recentBuffer[idx].recentPage = make(map[[nonceSize]byte]bool, entriesPerTable)
+		r.recentBuffer[idx].mtx.Unlock()
+		r.mtx.Unlock()
+	}
+
+	return isFull
+}
+
+func (r *recentBuffer) setrecentPageVal(idx int32, val [nonceSize]byte) {
+	r.mtx.RLock()
+	r.recentBuffer[idx].mtx.Lock()
+	r.recentBuffer[idx].recentPage[val] = true
+	r.recentBuffer[idx].mtx.Unlock()
+	r.mtx.RUnlock()
+}
 
 // DefaultRouter - The Default router makes no changes at all,
 //                 every message is sent out on the same channel it came in on,
 //                 and non-channel messages are consumed but not forwarded
 type DefaultRouter struct {
 	// Internal
-	recentPageIdx int
-	recentPage1   map[[16]byte]byte
-	recentPage2   map[[16]byte]byte
+	recentBuffer
 
 	Patches []api.Patch
 
@@ -65,8 +138,7 @@ func NewDefaultRouter() *DefaultRouter {
 	r.ForwardConsumedChannels = true
 	r.ForwardConsumedProfiles = false
 	// init page maps
-	r.recentPage1 = make(map[[16]byte]byte)
-	r.recentPage2 = make(map[[16]byte]byte)
+	r.recentBuffer = newRecentBuffer()
 	return r
 }
 
@@ -104,14 +176,14 @@ func (r *DefaultRouter) Route(node api.Node, message []byte) error {
 	//  Stuff Everything will need just about every time...
 	//
 	var channelLen uint16 // beginning uint16 of message is channel name length
-	channelName := ""
+	var channelName string
 	channelLen = (uint16(message[0]) << 8) | uint16(message[1])
 	if len(message) < int(channelLen)+2+64 { // uint16 + LuggageTag
 		return errors.New("Incorrect channel name length")
 	}
-	idx := 2 + channelLen          //skip over the channel name
-	nonce := message[idx : idx+16] // todo: this is truncating half the pubkey
-	if r.seenRecently(nonce) {     // LOOP PREVENTION before handling or forwarding
+	idx := 2 + channelLen //skip over the channel name
+	nonce := message[idx : idx+nonceSize]
+	if r.seenRecently(nonce) { // LOOP PREVENTION before handling or forwarding
 		return nil
 	}
 
@@ -119,7 +191,6 @@ func (r *DefaultRouter) Route(node api.Node, message []byte) error {
 	if err != nil {
 		return err
 	}
-	//
 
 	// When the channel tag is set...
 	if channelLen > 0 { // channel message
@@ -188,45 +259,26 @@ func (r *DefaultRouter) Route(node api.Node, message []byte) error {
 }
 
 // seenRecently : Returns whether this message should be filtered out by loop detection
-func (r *DefaultRouter) seenRecently(hdr []byte) bool {
+func (r *DefaultRouter) seenRecently(nonce []byte) bool {
 
-	halfCacheSize := 50
+	var nonceVal [nonceSize]byte
+	copy(nonceVal[:], nonce[:nonceSize])
 
-	var shdr [16]byte // todo: truncating half of shared key
-	copy(shdr[:], hdr[:16])
-	_, aok := r.recentPage1[shdr]
-	_, bok := r.recentPage2[shdr]
-	retval := aok || bok
+	idx := r.getrecentPageIdx()
+	seen := r.getrecentPageVal(idx, nonceVal)
 
-	//log.Printf("seen: %+v len1: %d len2: %d\n", shdr, len(r.recentPage1), len(r.recentPage2))
-
-	switch r.recentPageIdx {
-	default:
-		fallthrough
-	case 0:
-		if len(r.recentPage1) >= halfCacheSize {
-			if len(r.recentPage2) >= halfCacheSize {
-				r.recentPage2 = nil
-				r.recentPage2 = make(map[[16]byte]byte)
-			}
-			r.recentPageIdx = 1
-			r.recentPage2[shdr] = 1
+	if reset := r.resetrecentPageIfFull(idx); reset {
+		if idx < recentBufferSize-1 {
+			r.increcentPageIdx()
+			idx++
 		} else {
-			r.recentPage1[shdr] = 1
-		}
-	case 1:
-		if len(r.recentPage2) >= halfCacheSize {
-			if len(r.recentPage1) >= halfCacheSize {
-				r.recentPage1 = nil
-				r.recentPage1 = make(map[[16]byte]byte)
-			}
-			r.recentPageIdx = 0
-			r.recentPage1[shdr] = 1
-		} else {
-			r.recentPage2[shdr] = 1
+			r.resetrecentPageIdx()
+			idx = 0
 		}
 	}
-	return retval
+	r.setrecentPageVal(idx, nonceVal)
+
+	return seen
 }
 
 // MarshalJSON : Create a serialized JSON blob out of the config of this router
