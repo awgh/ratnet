@@ -294,7 +294,10 @@ func (node *Node) Start() error {
 			}
 
 			// read message off the input channel
-			message := <-node.In()
+			message, more := <-node.In()
+			if !more {
+				break
+			}
 
 			switch message.IsChan {
 			case true:
@@ -319,4 +322,8 @@ func (node *Node) Stop() {
 	for _, policy := range node.policies {
 		policy.Stop()
 	}
+
+	close(node.in)
+	close(node.out)
+	close(node.err)
 }
