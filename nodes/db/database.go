@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"time"
 
@@ -428,7 +429,6 @@ func (c connectionURL) String() string { return c.url }
 
 // BootstrapDB - Initialize or open a database file
 func (node *Node) BootstrapDB(dbAdapter, dbConnectionString string) sqlbuilder.Database {
-
 	if node.db != nil {
 		return node.db
 	}
@@ -439,51 +439,74 @@ func (node *Node) BootstrapDB(dbAdapter, dbConnectionString string) sqlbuilder.D
 		log.Fatal(err)
 	}
 
+	strName := getBackendType(dbAdapter, "string")
+	blobName := getBackendType(dbAdapter, "blob")
+	int64Name := getBackendType(dbAdapter, "int64")
+
+	checkErr := func(e error) {
+		if e != nil {
+			panic(e)
+		}
+	}
+
 	// One-time Initialization
-	node.db.Exec(`
+	_, err = node.db.Exec(fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS contacts (
-			name	string	NOT NULL,
-			pubkey	string	NOT NULL
+			name	%s	NOT NULL,
+			pubkey	%s	NOT NULL
 		);		
-	`)
-	node.db.Exec(`
+	`, strName, strName))
+	checkErr(err)
+
+	_, err = node.db.Exec(fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS channels ( 			
-			name	string	NOT NULL,
-			privkey	string	NOT NULL
+			name	%s	NOT NULL,
+			privkey	%s	NOT NULL
 		);
-	`)
-	node.db.Exec(`
+	`, strName, strName))
+	checkErr(err)
+
+	_, err = node.db.Exec(fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS config ( 
-			name	string	NOT NULL,
-			value	string	NOT NULL
+			name	%s	NOT NULL,
+			value	%s	NOT NULL
 		);
-	`)
-	node.db.Exec(`
+	`, strName, strName))
+	checkErr(err)
+
+	_, err = node.db.Exec(fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS outbox (
-			channel		string	DEFAULT "",
-			msg			blob	NOT NULL,
-			timestamp	int64	NOT NULL
+			channel		%s, 
+			msg			%s	NOT NULL,
+			timestamp	%s	NOT NULL
 		);
-	`)
-	node.db.Exec(`
+	`, strName, blobName, int64Name))
+	checkErr(err)
+
+	_, err = node.db.Exec(`
 			CREATE INDEX IF NOT EXISTS outboxID ON outbox (timestamp);
 	`)
-	node.db.Exec(`
+	checkErr(err)
+
+	_, err = node.db.Exec(fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS peers (
-			name	string	NOT NULL,  
-			uri			string	NOT NULL,
+			name		%s		NOT NULL,  
+			uri			%s		NOT NULL,
 			enabled		bool	NOT NULL,
-			peergroup   string  NOT NULL,
-			pubkey	string	DEFAULT NULL
+			peergroup   %s  	NOT NULL,
+			pubkey		%s		
 		);
-	`)
-	node.db.Exec(`
+	`, strName, strName, strName, strName))
+	checkErr(err)
+
+	_, err = node.db.Exec(fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS profiles (
-			name	string	NOT NULL,
-			privkey	string	NOT NULL,
+			name	%s		NOT NULL,
+			privkey	%s		NOT NULL,
 			enabled	bool	NOT NULL
 		);
-	`)
+	`, strName, strName))
+	checkErr(err)
 
 	// Content Key Setup
 	col := node.db.Collection("config")
@@ -527,4 +550,65 @@ func (node *Node) BootstrapDB(dbAdapter, dbConnectionString string) sqlbuilder.D
 
 	node.refreshChannels()
 	return node.db
+}
+
+func getBackendType(dbAdapter, dbType string) string {
+	switch dbAdapter {
+	case "postgresql":
+		switch dbType {
+		case "string":
+			return "text"
+		case "blob":
+			return "bytea"
+		case "int64":
+			return "bigint"
+		default:
+		}
+	case "mysql":
+		switch dbType {
+		case "string":
+			return "text"
+		case "blob":
+			return dbType
+		case "int64":
+			return "bigint"
+		default:
+		}
+	case "sqllite":
+		switch dbType {
+		case "string":
+			return "text"
+		case "blob":
+			return dbType
+		case "int64":
+			return "integer"
+		default:
+		}
+	case "mssql":
+		switch dbType {
+		case "string":
+			return "varchar"
+		case "blob":
+			return "varbinary"
+		case "int64":
+			return "bigint"
+		default:
+		}
+	case "ql":
+		return dbType
+	case "mongodb":
+		switch dbType {
+		case "string":
+			return dbType
+		case "blob":
+			return "binData"
+		case "int64":
+			return "long"
+		default:
+		}
+	default:
+		panic(fmt.Sprintf("invalid database backend %s", dbAdapter))
+	}
+
+	panic(fmt.Sprintf("invalid data type %s", dbType))
 }
