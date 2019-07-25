@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"sync"
-	"sync/atomic"
 
 	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
@@ -34,49 +33,54 @@ func newRecentBuffer() (r recentBuffer) {
 	return
 }
 
-func (r *recentBuffer) getRecentPageIdx() int32 {
-	return atomic.LoadInt32(&r.recentPageIdx)
-}
-
-func (r *recentBuffer) increcentPageIdx() {
-	atomic.AddInt32(&r.recentPageIdx, 1)
-}
-
-func (r *recentBuffer) resetRecentPageIdx() {
-	atomic.StoreInt32(&r.recentPageIdx, 0)
-}
-
 func (r *recentBuffer) hasMsgBeenSeen(nonce [nonceSize]byte) bool {
-	r.mtx.RLock()
-	defer r.mtx.RUnlock()
-
 	for i := range r.recentBuffer {
 		if _, ok := r.recentBuffer[i].recentPage[nonce]; ok {
 			return ok
 		}
 	}
-
 	return false
 }
 
 func (r *recentBuffer) resetRecentPageIfFull(idx int32) bool {
-	r.mtx.RLock()
 	isFull := len(r.recentBuffer[idx].recentPage) >= entriesPerTable
-	r.mtx.RUnlock()
 
 	if isFull {
-		r.mtx.Lock()
 		r.recentBuffer[idx].recentPage = make(map[[nonceSize]byte]bool, entriesPerTable)
-		r.mtx.Unlock()
 	}
-
 	return isFull
 }
 
 func (r *recentBuffer) setMsgSeen(idx int32, nonce [nonceSize]byte) {
-	r.mtx.Lock()
 	r.recentBuffer[idx].recentPage[nonce] = true
-	r.mtx.Unlock()
+}
+
+// seenRecently : Returns whether this message should be filtered out by loop detection
+func (r *recentBuffer) seenRecently(nonce []byte) bool {
+	r.mtx.RLock()
+	defer r.mtx.RUnlock()
+
+	var nonceVal [nonceSize]byte
+	copy(nonceVal[:], nonce[:nonceSize])
+
+	seen := r.hasMsgBeenSeen(nonceVal)
+	idx := r.recentPageIdx
+
+	if reset := r.resetRecentPageIfFull(idx); reset {
+		if idx < recentBufferSize-1 {
+			r.recentPageIdx++
+			idx++
+		} else {
+			r.recentPageIdx = 0
+			idx = 0
+		}
+	}
+
+	if !seen {
+		r.setMsgSeen(idx, nonceVal)
+	}
+
+	return seen
 }
 
 // DefaultRouter - The Default router makes no changes at all,
@@ -252,32 +256,6 @@ func (r *DefaultRouter) Route(node api.Node, message []byte) error {
 		}
 	}
 	return nil
-}
-
-// seenRecently : Returns whether this message should be filtered out by loop detection
-func (r *DefaultRouter) seenRecently(nonce []byte) bool {
-
-	var nonceVal [nonceSize]byte
-	copy(nonceVal[:], nonce[:nonceSize])
-
-	seen := r.hasMsgBeenSeen(nonceVal)
-	idx := r.getRecentPageIdx()
-
-	if reset := r.resetRecentPageIfFull(idx); reset {
-		if idx < recentBufferSize-1 {
-			r.increcentPageIdx()
-			idx++
-		} else {
-			r.resetRecentPageIdx()
-			idx = 0
-		}
-	}
-
-	if !seen {
-		r.setMsgSeen(idx, nonceVal)
-	}
-
-	return seen
 }
 
 // MarshalJSON : Create a serialized JSON blob out of the config of this router
