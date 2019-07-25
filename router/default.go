@@ -12,13 +12,12 @@ import (
 
 const (
 	recentBufferSize = 8
-	cacheSize        = 100
+	cacheSize        = 256
 	entriesPerTable  = cacheSize / recentBufferSize
 	nonceSize        = 32
 )
 
 type recentPage struct {
-	mtx        sync.RWMutex
 	recentPage map[[nonceSize]byte]bool
 }
 
@@ -35,7 +34,7 @@ func newRecentBuffer() (r recentBuffer) {
 	return
 }
 
-func (r *recentBuffer) getrecentPageIdx() int32 {
+func (r *recentBuffer) getRecentPageIdx() int32 {
 	return atomic.LoadInt32(&r.recentPageIdx)
 }
 
@@ -43,44 +42,41 @@ func (r *recentBuffer) increcentPageIdx() {
 	atomic.AddInt32(&r.recentPageIdx, 1)
 }
 
-func (r *recentBuffer) resetrecentPageIdx() {
+func (r *recentBuffer) resetRecentPageIdx() {
 	atomic.StoreInt32(&r.recentPageIdx, 0)
 }
 
-func (r *recentBuffer) getrecentPageVal(idx int32, val [nonceSize]byte) bool {
+func (r *recentBuffer) hasMsgBeenSeen(nonce [nonceSize]byte) bool {
 	r.mtx.RLock()
-	r.recentBuffer[idx].mtx.RLock()
-	defer r.recentBuffer[idx].mtx.RUnlock()
 	defer r.mtx.RUnlock()
 
-	_, ok := r.recentBuffer[idx].recentPage[val]
-	return ok
+	for i := range r.recentBuffer {
+		if _, ok := r.recentBuffer[i].recentPage[nonce]; ok {
+			return ok
+		}
+	}
+
+	return false
 }
 
-func (r *recentBuffer) resetrecentPageIfFull(idx int32) bool {
+func (r *recentBuffer) resetRecentPageIfFull(idx int32) bool {
 	r.mtx.RLock()
-	r.recentBuffer[idx].mtx.RLock()
 	isFull := len(r.recentBuffer[idx].recentPage) >= entriesPerTable
-	r.recentBuffer[idx].mtx.RUnlock()
 	r.mtx.RUnlock()
 
 	if isFull {
 		r.mtx.Lock()
-		r.recentBuffer[idx].mtx.Lock()
 		r.recentBuffer[idx].recentPage = make(map[[nonceSize]byte]bool, entriesPerTable)
-		r.recentBuffer[idx].mtx.Unlock()
 		r.mtx.Unlock()
 	}
 
 	return isFull
 }
 
-func (r *recentBuffer) setrecentPageVal(idx int32, val [nonceSize]byte) {
-	r.mtx.RLock()
-	r.recentBuffer[idx].mtx.Lock()
-	r.recentBuffer[idx].recentPage[val] = true
-	r.recentBuffer[idx].mtx.Unlock()
-	r.mtx.RUnlock()
+func (r *recentBuffer) setMsgSeen(idx int32, nonce [nonceSize]byte) {
+	r.mtx.Lock()
+	r.recentBuffer[idx].recentPage[nonce] = true
+	r.mtx.Unlock()
 }
 
 // DefaultRouter - The Default router makes no changes at all,
@@ -264,19 +260,22 @@ func (r *DefaultRouter) seenRecently(nonce []byte) bool {
 	var nonceVal [nonceSize]byte
 	copy(nonceVal[:], nonce[:nonceSize])
 
-	idx := r.getrecentPageIdx()
-	seen := r.getrecentPageVal(idx, nonceVal)
+	seen := r.hasMsgBeenSeen(nonceVal)
+	idx := r.getRecentPageIdx()
 
-	if reset := r.resetrecentPageIfFull(idx); reset {
+	if reset := r.resetRecentPageIfFull(idx); reset {
 		if idx < recentBufferSize-1 {
 			r.increcentPageIdx()
 			idx++
 		} else {
-			r.resetrecentPageIdx()
+			r.resetRecentPageIdx()
 			idx = 0
 		}
 	}
-	r.setrecentPageVal(idx, nonceVal)
+
+	if !seen {
+		r.setMsgSeen(idx, nonceVal)
+	}
 
 	return seen
 }
