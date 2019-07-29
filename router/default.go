@@ -16,9 +16,7 @@ const (
 	nonceSize        = 32
 )
 
-type recentPage struct {
-	recentPage map[[nonceSize]byte]bool
-}
+type recentPage map[[nonceSize]byte]bool
 
 type recentBuffer struct {
 	mtx           sync.RWMutex
@@ -28,14 +26,14 @@ type recentBuffer struct {
 
 func newRecentBuffer() (r recentBuffer) {
 	for i := range r.recentBuffer {
-		r.recentBuffer[i].recentPage = make(map[[nonceSize]byte]bool, entriesPerTable)
+		r.recentBuffer[i] = make(recentPage, entriesPerTable)
 	}
 	return
 }
 
 func (r *recentBuffer) hasMsgBeenSeen(nonce [nonceSize]byte) bool {
 	for i := range r.recentBuffer {
-		if _, ok := r.recentBuffer[i].recentPage[nonce]; ok {
+		if _, ok := r.recentBuffer[i][nonce]; ok {
 			return ok
 		}
 	}
@@ -43,16 +41,16 @@ func (r *recentBuffer) hasMsgBeenSeen(nonce [nonceSize]byte) bool {
 }
 
 func (r *recentBuffer) resetRecentPageIfFull(idx int32) bool {
-	isFull := len(r.recentBuffer[idx].recentPage) >= entriesPerTable
+	isFull := len(r.recentBuffer[idx]) >= entriesPerTable
 
 	if isFull {
-		r.recentBuffer[idx].recentPage = make(map[[nonceSize]byte]bool, entriesPerTable)
+		r.recentBuffer[idx] = make(recentPage, entriesPerTable)
 	}
 	return isFull
 }
 
 func (r *recentBuffer) setMsgSeen(idx int32, nonce [nonceSize]byte) {
-	r.recentBuffer[idx].recentPage[nonce] = true
+	r.recentBuffer[idx][nonce] = true
 }
 
 // seenRecently : Returns whether this message should be filtered out by loop detection
