@@ -19,7 +19,7 @@ const (
 type recentPage map[[nonceSize]byte]bool
 
 type recentBuffer struct {
-	mtx           sync.RWMutex
+	mtx           sync.Mutex
 	recentPageIdx int32
 	recentBuffer  [recentBufferSize]recentPage
 }
@@ -55,8 +55,8 @@ func (r *recentBuffer) setMsgSeen(idx int32, nonce [nonceSize]byte) {
 
 // seenRecently : Returns whether this message should be filtered out by loop detection
 func (r *recentBuffer) seenRecently(nonce []byte) bool {
-	r.mtx.RLock()
-	defer r.mtx.RUnlock()
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
 
 	var nonceVal [nonceSize]byte
 	copy(nonceVal[:], nonce[:nonceSize])
