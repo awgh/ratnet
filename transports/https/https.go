@@ -146,6 +146,7 @@ func (h *Module) Listen(listen string, adminMode bool) {
 }
 
 func (h *Module) handleResponse(w http.ResponseWriter, r *http.Request, node api.Node, adminMode bool) {
+
 	var a api.RemoteCall
 
 	dec := gob.NewDecoder(r.Body)

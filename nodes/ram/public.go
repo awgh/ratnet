@@ -25,7 +25,7 @@ func (node *Node) Dropoff(bundle api.Bundle) error {
 	if err != nil {
 		return err
 	} else if !tagOK {
-		return errors.New("Luggage Tag Check Failed in Dropoff")
+		return errors.New("Luggage Tag Check Failed in RamNode Dropoff")
 	}
 
 	var msgs [][]byte
@@ -58,26 +58,8 @@ func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, maxBytes int64, channel
 	var retval api.Bundle
 	var msgs [][]byte
 
-	retval.Time = lastTime
-
-	for _, mail := range node.outbox {
-		if lastTime < mail.timeStamp {
-			pickupMsg := false
-			if len(channelNames) > 0 {
-				for _, channelName := range channelNames {
-					if channelName == mail.channel {
-						pickupMsg = true
-					}
-				}
-			} else {
-				pickupMsg = true
-			}
-			if pickupMsg {
-				msgs = append(msgs, mail.msg) // todo: ramNode ignores maxBytes
-				retval.Time = mail.timeStamp
-			}
-		}
-	}
+	msgs, rvts := node.outbox.MsgsSince(lastTime, maxBytes, channelNames...)
+	retval.Time = rvts
 
 	// transmit
 	if len(msgs) > 0 {

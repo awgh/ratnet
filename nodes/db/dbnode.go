@@ -1,19 +1,17 @@
-package qldb
+package db
 
-// To install ql:
-//force github.com/cznic/zappy to purego mode
-//go get -tags purego github.com/cznic/ql  (or ql+cgo seems to work on arm now, too)
+// To install upper db:
+// go get -v -u upper.io/db.v3
+// FOR POSTGRES DRIVER: go get -v -u github.com/lib/pq
 
 import (
-	"database/sql"
 	"sync"
 
 	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/ratnet/api"
 	"github.com/awgh/ratnet/nodes"
 	"github.com/awgh/ratnet/router"
-
-	_ "modernc.org/ql/driver" // load the QL database driver
+	"upper.io/db.v3/lib/sqlbuilder"
 )
 
 // Node : defines an instance of the API with a ql-DB backed Node
@@ -24,8 +22,10 @@ type Node struct {
 
 	policies []api.Policy
 	router   api.Router
-	db       func() *sql.DB
-	mutex    *sync.Mutex
+
+	db sqlbuilder.Database
+
+	mutex *sync.Mutex
 
 	isRunning bool
 

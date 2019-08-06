@@ -12,6 +12,7 @@ import (
 	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/bencrypt/ecc"
 	"github.com/awgh/ratnet/api"
+	"github.com/awgh/ratnet/nodes/db"
 	"github.com/awgh/ratnet/nodes/fs"
 	"github.com/awgh/ratnet/nodes/qldb"
 	"github.com/awgh/ratnet/nodes/ram"
@@ -19,7 +20,8 @@ import (
 	"github.com/awgh/ratnet/transports/tls"
 	"github.com/awgh/ratnet/transports/udp"
 
-	_ "github.com/cznic/ql/driver"
+	//_ "modernc.org/ql/driver"
+	_ "upper.io/db.v3/ql" // this requires PR #507: https://github.com/upper/db/pull/507
 )
 
 type TestNode struct {
@@ -40,6 +42,7 @@ const (
 	RAM int = iota
 	QL
 	FS
+	DB
 	NumNodes
 )
 
@@ -47,8 +50,8 @@ var nodeType int
 var transportType int
 
 func init() {
-	nodeType = QL
-	transportType = TLS
+	nodeType = DB
+	transportType = UDP
 }
 
 var (
@@ -81,6 +84,17 @@ func initNode(n int64, testNode TestNode, nodeType int, transportType int, p2pMo
 			os.Mkdir("qltmp"+num, os.FileMode(int(0755)))
 			dbfile := "qltmp" + num + "/ratnet_test" + num + ".ql"
 			s.BootstrapDB(dbfile)
+			s.FlushOutbox(0)
+			testNode.Node = s
+		} else if nodeType == DB {
+			// DB Mode
+			s := db.New(new(ecc.KeyPair), new(ecc.KeyPair))
+			if err := os.RemoveAll("dbtmp" + num); err != nil {
+				log.Printf("error removing directory %s: %s\n", "dbtmp"+num, err.Error())
+			}
+			os.Mkdir("dbtmp"+num, os.FileMode(int(0755)))
+			dbfile := "file://dbtmp" + num + "/ratnet_test" + num + ".ql"
+			s.BootstrapDB("ql", dbfile)
 			s.FlushOutbox(0)
 			testNode.Node = s
 		} else if nodeType == FS {
@@ -293,6 +307,14 @@ func Test_server_AddProfile_1(t *testing.T) {
 func Test_server_GetProfile_1(t *testing.T) {
 	server1 = initNode(1, server1, nodeType, transportType, false)
 
+	/* todo: AddProfile twice in a row on ramnode is a bug
+	t.Log("Trying AddProfile on Admin interface")
+	_, errb := server1.Admin.RPC("localhost:30101", "AddProfile", "profile1", "false")
+	if errb != nil {
+		t.Error(errb.Error())
+	}
+	*/
+
 	t.Log("Trying GetProfile on Public interface")
 	// should not work on public interface
 	if _, erra := server1.Public.RPC("localhost:30001", "GetProfile", "profile1"); erra == nil {
@@ -325,6 +347,7 @@ func Test_server_GetProfile_1(t *testing.T) {
 	if len(profiles) < 1 {
 		t.Fail()
 	}
+
 }
 
 func Test_server_AddPeer_1(t *testing.T) {
@@ -341,44 +364,105 @@ func Test_server_AddPeer_1(t *testing.T) {
 	if errb != nil {
 		t.Error(errb.Error())
 	}
+
+	t.Log("Trying AddPeer on Admin interface with a group name")
+	_, errc := server1.Admin.RPC("localhost:30101", "AddPeer", "peer2", "false", "https://2.3.4.5:123", "groupnametest")
+	if errc != nil {
+		t.Error(errc.Error())
+	}
+
+	t.Log("Trying AddPeer on Admin interface with a group name that already exists")
+	_, errd := server1.Admin.RPC("localhost:30101", "AddPeer", "peer3", "false", "https://3.4.5.6:234", "groupnametest")
+	if errd != nil {
+		t.Error(errd.Error())
+	}
 }
 
 func Test_server_GetPeer_1(t *testing.T) {
 	server1 = initNode(1, server1, nodeType, transportType, false)
 
+	//
+	t.Log("Trying AddPeer on Public interface")
+	// should not work on public interface
+	if _, erra := server1.Public.RPC("localhost:30001", "AddPeer", "peer1", "false", "https://1.2.3.4:443"); erra == nil {
+		t.Error(errors.New("AddPeer was accessible on Public network interface"))
+	}
+
+	t.Log("Trying AddPeer on Admin interface")
+	_, errb := server1.Admin.RPC("localhost:30101", "AddPeer", "peer1", "false", "https://1.2.3.4:443")
+	if errb != nil {
+		t.Error(errb.Error())
+	}
+
+	t.Log("Trying AddPeer on Admin interface with a group name")
+	_, errc := server1.Admin.RPC("localhost:30101", "AddPeer", "peer2", "false", "https://2.3.4.5:123", "groupnametest")
+	if errc != nil {
+		t.Error(errc.Error())
+	}
+
+	t.Log("Trying AddPeer on Admin interface with a group name that already exists")
+	_, errd := server1.Admin.RPC("localhost:30101", "AddPeer", "peer3", "false", "https://3.4.5.6:234", "groupnametest")
+	if errd != nil {
+		t.Error(errd.Error())
+	}
+	//
+
 	t.Log("Trying GetPeer on Public interface")
 	// should not work on public interface
 	if _, erra := server1.Public.RPC("localhost:30001", "GetPeer", "peer1"); erra == nil {
-		t.Error(errors.New("GetPeer was accessible on Public network interface"))
+		t.Fatal(errors.New("GetPeer was accessible on Public network interface"))
 	}
 
 	t.Log("Trying GetPeers on Public interface")
 	// should not work on public interface
 	if _, erra := server1.Public.RPC("localhost:30001", "GetPeers"); erra == nil {
-		t.Error(errors.New("GetPeers was accessible on Public network interface"))
+		t.Fatal(errors.New("GetPeers was accessible on Public network interface"))
 	}
 
 	t.Log("Trying GetPeer on Admin interface")
 	peer, err := server1.Admin.RPC("localhost:30101", "GetPeer", "peer1")
 	if err != nil {
-		t.Error(err.Error())
+		t.Fatal(err.Error())
 	}
 	t.Logf("Got Peer: %+v\n", peer)
 	if peer == nil {
-		t.Fail()
+		t.Fatal(errors.New("GetPeer on Admin interface failed"))
 	}
 
 	t.Log("Trying GetPeers on Admin interface")
 	peersRaw, err := server1.Admin.RPC("localhost:30101", "GetPeers")
 	if err != nil {
-		t.Error(err.Error())
+		t.Fatal(err.Error())
 	}
 	peers := peersRaw.([]api.Peer)
 	t.Logf("Got Peers: %+v\n", peers)
-	if len(peers) < 1 {
-		t.Fail()
+	if len(peers) != 1 {
+		t.Fatal(errors.New("GetPeers on Admin interface failed"))
 	}
 
+	t.Log("Trying GetPeers on Admin interface with a group that has no peers")
+	groupedPeers, err := server1.Admin.RPC("localhost:30101", "GetPeers", "not-a-group")
+	if err != nil {
+		t.Fatal(err.Error())
+	}
+	var groupPeers []api.Peer
+	groupPeers = groupedPeers.([]api.Peer)
+	t.Logf("Got Peers: %+v\n", groupPeers)
+	if len(groupPeers) != 0 {
+		t.Fatal(errors.New("GetPeers with a group with no peers returned results"))
+	}
+
+	t.Log("Trying GetPeers on Admin interface with a group that has peers")
+	peers2, err := server1.Admin.RPC("localhost:30101", "GetPeers", "groupnametest")
+	if err != nil {
+		t.Fatal(err.Error())
+	}
+	var peergroup []api.Peer
+	peergroup = peers2.([]api.Peer)
+	t.Logf("Got Peers: %+v\n", peergroup)
+	if len(peergroup) != 2 {
+		t.Fatal(errors.New("GetPeers with a group with peers did not return two results"))
+	}
 }
 
 func Test_server_Send_1(t *testing.T) {

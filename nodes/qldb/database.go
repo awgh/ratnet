@@ -413,14 +413,14 @@ func (node *Node) qlGetPeer(name string) (*api.Peer, error) {
 	return peer, nil
 }
 
-func (node *Node) qlGetPeers() ([]api.Peer, error) {
+func (node *Node) qlGetPeers(group string) ([]api.Peer, error) {
 	c := node.db()
 	defer closeDB(c)
-	sqlq := "SELECT name,uri,enabled FROM peers;"
+	sqlq := "SELECT name,uri,enabled,peergroup FROM peers WHERE peergroup==$1;"
 	if sqlDebug {
-		log.Println(sqlq)
+		log.Println(sqlq, group)
 	}
-	r, err := c.Query(sqlq)
+	r, err := c.Query(sqlq, group)
 	if r == nil || err != nil {
 		return nil, err
 	}
@@ -428,7 +428,7 @@ func (node *Node) qlGetPeers() ([]api.Peer, error) {
 	var peers []api.Peer
 	for r.Next() {
 		var s api.Peer
-		if err := r.Scan(&s.Name, &s.URI, &s.Enabled); err != nil {
+		if err := r.Scan(&s.Name, &s.URI, &s.Enabled, &s.Group); err != nil {
 			return nil, err
 		}
 		peers = append(peers, s)
@@ -436,23 +436,23 @@ func (node *Node) qlGetPeers() ([]api.Peer, error) {
 	return peers, nil
 }
 
-func (node *Node) qlAddPeer(name string, enabled bool, uri string) error {
+func (node *Node) qlAddPeer(name string, enabled bool, uri string, group string) error {
 	c := node.db()
 	defer closeDB(c)
-	sqlq := "SELECT name FROM peers WHERE name==$1;"
+	sqlq := "SELECT name FROM peers WHERE name==$1 AND peergroup==$2;"
 	if sqlDebug {
-		log.Println(sqlq, name)
+		log.Println(sqlq, name, group)
 	}
-	r := c.QueryRow(sqlq, name)
+	r := c.QueryRow(sqlq, name, group)
 	var n string
 	if err := r.Scan(&n); err == sql.ErrNoRows {
 		node.debugMsg("New Server")
-		node.transactExec("INSERT INTO peers (name,uri,enabled) VALUES( $1, $2, $3 );",
-			name, uri, enabled)
+		node.transactExec("INSERT INTO peers (name,uri,enabled,peergroup) VALUES( $1, $2, $3, $4 );",
+			name, uri, enabled, group)
 	} else if err == nil {
 		node.debugMsg("Update Server")
-		node.transactExec("UPDATE peers SET enabled=$1,uri=$2 WHERE name==$3;",
-			enabled, uri, name)
+		node.transactExec("UPDATE peers SET enabled=$1,uri=$2,peergroup=$3 WHERE name==$4;",
+			enabled, uri, group, name)
 	} else {
 		return err
 	}
@@ -681,8 +681,9 @@ func (node *Node) BootstrapDB(database string) func() *sql.DB {
 	node.transactExec(`
 		CREATE TABLE IF NOT EXISTS peers (
 			name	string	NOT NULL,  
-			uri		string	NOT NULL,
-			enabled	bool	NOT NULL,
+			uri			string	NOT NULL,
+			enabled		bool	NOT NULL,
+			peergroup   string  NOT NULL,
 			pubkey	string	DEFAULT NULL
 		);
 	`)

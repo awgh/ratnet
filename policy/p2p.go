@@ -289,3 +289,9 @@ func (s *P2P) mdnsAdvertise() error {
 	}
 	return nil
 }
+
+// GetTransport : Returns the transports associated with this policy
+//
+func (s *P2P) GetTransport() api.Transport {
+	return s.Transport
+}

@@ -1,4 +1,4 @@
-package qldb
+package db
 
 import (
 	"bytes"
@@ -55,7 +55,7 @@ func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, maxBytes int64, channel
 	node.debugMsg("Pickup called")
 	var retval api.Bundle
 
-	msgs, lastTimeReturned, err := node.qlGetMessages(lastTime, maxBytes, channelNames...)
+	msgs, lastTimeReturned, err := node.dbGetMessages(lastTime, maxBytes, channelNames...)
 	if err != nil {
 		return retval, err
 	}

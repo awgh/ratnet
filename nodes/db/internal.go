@@ -1,9 +1,10 @@
-package ram
+package db
 
 import (
 	"bytes"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"runtime/debug"
@@ -14,11 +15,7 @@ import (
 
 // GetChannelPrivKey : Return the private key of a given channel
 func (node *Node) GetChannelPrivKey(name string) (string, error) {
-	c, ok := node.channels[name]
-	if !ok {
-		return "", errors.New("Channel not found")
-	}
-	return c.Privkey.ToB64(), nil
+	return node.dbGetChannelPrivKey(name)
 }
 
 // Forward - Add an already-encrypted message to the outbound message queue (forward it along)
@@ -29,34 +26,24 @@ func (node *Node) Forward(channelName string, message []byte) error {
 	rxsum = append(rxsum, []byte(channelName)...)
 	message = append(rxsum, message...)
 
-	if node.outbox.MsgExists(channelName, message) {
-		return nil
-	}
-
-	m := new(outboxMsg)
-	m.channel = channelName
-	m.timeStamp = time.Now().UnixNano()
-	m.msg = message
-	node.outbox.Append(m)
-	return nil
+	return node.dbOutboxEnqueue(channelName, message, time.Now().UnixNano(), false) //true
 }
 
 // Handle - Decrypt and handle an encrypted message
-// 			returns TagOK, which is true if the message is intended for a key we have
 func (node *Node) Handle(channelName string, message []byte) (bool, error) {
 	var clear []byte
 	var err error
-	tagOK := false
+	var tagOK bool
 	var clearMsg api.Msg // msg to out channel
 	channelLen := len(channelName)
 
 	if channelLen > 0 {
-		v, ok := node.channels[channelName]
-		if !ok || v.Privkey == nil {
-			return tagOK, errors.New("Cannot Handle message for Unknown Channel")
+		v, ok := node.channelKeys[channelName]
+		if !ok {
+			return false, errors.New("Cannot Handle message for Unknown Channel")
 		}
 		clearMsg = api.Msg{Name: channelName, IsChan: true}
-		tagOK, clear, err = v.Privkey.DecryptMessage(message)
+		tagOK, clear, err = v.DecryptMessage(message)
 	} else {
 		clearMsg = api.Msg{Name: "[content]", IsChan: false}
 		tagOK, clear, err = node.contentKey.DecryptMessage(message)
@@ -65,7 +52,6 @@ func (node *Node) Handle(channelName string, message []byte) (bool, error) {
 	if !tagOK || err != nil {
 		return tagOK, err
 	}
-
 	clearMsg.Content = bytes.NewBuffer(clear)
 
 	select {
@@ -75,6 +61,14 @@ func (node *Node) Handle(channelName string, message []byte) (bool, error) {
 		node.debugMsg("No message sent")
 	}
 	return tagOK, nil
+}
+
+func (node *Node) refreshChannels() { // todo: this could be selective or somehow less heavy
+	// refresh the channelKeys map
+	channels, _ := node.dbGetChannelPrivs()
+	for _, element := range channels {
+		node.channelKeys[element.Name] = element.Privkey
+	}
 }
 
 func (node *Node) signalMonitor() {
@@ -118,4 +112,6 @@ func (node *Node) errMsg(err error, fatal bool) {
 	if msg.IsChan {
 		node.Stop()
 	}
+
+	log.Fatal(err) //todo: remove me
 }

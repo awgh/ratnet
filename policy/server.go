@@ -57,3 +57,9 @@ func (s *Server) RunPolicy() error {
 func (s *Server) Stop() {
 	s.Transport.Stop()
 }
+
+// GetTransport : Returns the transports associated with this policy
+//
+func (s *Server) GetTransport() api.Transport {
+	return s.Transport
+}

@@ -1,19 +1,13 @@
 package ram
 
 import (
-	"time"
+	"github.com/awgh/bencrypt/ecc"
 
 	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/ratnet/api"
 	"github.com/awgh/ratnet/nodes"
 	"github.com/awgh/ratnet/router"
 )
-
-type outboxMsg struct {
-	channel   string
-	msg       []byte
-	timeStamp int64
-}
 
 // Node : defines an instance of the API with a ql-DB backed Node
 type Node struct {
@@ -36,7 +30,7 @@ type Node struct {
 	channels map[string]*api.ChannelPriv
 	config   map[string]string
 	contacts map[string]*api.Contact
-	outbox   []*outboxMsg
+	outbox   outboxQueue
 	peers    map[string]*api.Peer
 	profiles map[string]*api.ProfilePriv
 }
@@ -54,6 +48,18 @@ func New(contentKey, routingKey bc.KeyPair) *Node {
 	node.profiles = make(map[string]*api.ProfilePriv)
 
 	// set crypto modes
+	if contentKey == nil {
+		contentKey = new(ecc.KeyPair)
+	}
+	if contentKey.GetPubKey() == contentKey.GetPubKey().Nil() {
+		contentKey.GenerateKey()
+	}
+	if routingKey == nil {
+		routingKey = new(ecc.KeyPair)
+	}
+	if routingKey.GetPubKey() == routingKey.GetPubKey().Nil() {
+		routingKey.GenerateKey()
+	}
 	node.contentKey = contentKey
 	node.routingKey = routingKey
 
@@ -66,6 +72,11 @@ func New(contentKey, routingKey bc.KeyPair) *Node {
 	node.router = router.NewDefaultRouter()
 
 	return node
+}
+
+// GetPolicies : returns the array of Policy objects for this Node
+func (node *Node) GetPolicies() []api.Policy {
+	return node.policies
 }
 
 // SetPolicy : set the array of Policy objects for this Node
@@ -85,12 +96,7 @@ func (node *Node) SetRouter(router api.Router) {
 
 // FlushOutbox : Deletes outbound messages older than maxAgeSeconds seconds
 func (node *Node) FlushOutbox(maxAgeSeconds int64) {
-	c := (time.Now().UnixNano()) - (maxAgeSeconds * 1000000000)
-	for index, mail := range node.outbox {
-		if mail.timeStamp < c {
-			node.outbox = append(node.outbox[:index], node.outbox[index+1:]...)
-		}
-	}
+	node.outbox.Flush(maxAgeSeconds)
 }
 
 // Channels

@@ -143,11 +143,12 @@ func (h *Module) Listen(listen string, adminMode bool) {
 func (h *Module) handleConnection(conn net.Conn, node api.Node, adminMode bool) {
 	defer conn.Close()
 
-	var a api.RemoteCall
 	reader := bufio.NewReader(conn)
 	writer := bufio.NewWriter(conn)
 
 	for h.isRunning { // read multiple messages on the same connection
+		var a api.RemoteCall
+
 		//use default gob encoder
 		dec := gob.NewDecoder(reader)
 		if err := dec.Decode(&a); err != nil {

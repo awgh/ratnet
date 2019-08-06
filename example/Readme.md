@@ -1,47 +1,54 @@
-#Ratnet API Example Utility
-This application's purpose is to showcase the capabilities of the ratnet network in a format that is simple for developers to understand so that they may esisaly use ratnet to develop their own applications. Each example usecase is coupled with the exact functions that an application would need to call to perform the same actions shown here.
+# Ratnet API Example Utility
+This application's purpose is to showcase the capabilities of the ratnet network in a format that is simple for developers to understand so that they may easily use ratnet to develop their own applications. Each example usecase is coupled with the exact functions that an application would need to call to perform the same actions shown here.
 ## getting started
 To get started, simply compile the example application found within this folder
 ```
 cd $GOPATH/src/github.com/awgh/ratnet/example
 go build
 ```
-The example application takes 2 mandatory parameters. hostname and or port designation (such as ":8080" or "192.168.0.14:8080"), and a node type (ram means the node will only exist in memory; ql means the node will create a sqlite database from which it will operate from). The usage syntax of these parameters is shown below.
-```
-Usage: ./example <port> <ram|ql>
-```
 
-##peer to peer messaging
-first, Bob starts a node.
+## peer to peer messaging
+First, Bob sets his node to utilize the UDP transport with a policy of "server".
 
 ```
-$ ./example 127.0.0.1:31337 ram
-start
+>>> SetServerTransport :8000
 ```
-then Alice starts a node.
+
+Alice sets her node to utilize the UDP transport with a policy of "polling".
 
 ```
-$ ./example 127.0.0.1:12345 ram
-start
+>>> SetClientTransport
 ```
-Bob then adds Alice's node as a peer.
+
+Next, Alice adds Bob as a peer
+
 ```
-addpeer Alice true 127.0.0.1:12345
+AddPeer Bob True 127.0.0.1:8000
 ```
-Alice then tells her node to display her content key so that she can share it with bob.
+
+Then, Bob tells his node to display his content key so that she can share it with Alice.
+
 ```
-cid
-ZSU6j+N/nInUuQTVMFOLW6TZgreGPEfyq96ZwK/EskU=
+>>> CID
+SqRHK39CyU3P7q8nBGQyPaMS2d65FkWKFC9rY4LjjSI=
 ```
-Bob then adds Alice as a contact.
+
+And, Alice then adds Bob as a contact.
+
 ```
-addcontact Alice ZSU6j+N/nInUuQTVMFOLW6TZgreGPEfyq96ZwK/EskU=
+AddContact Bob SqRHK39CyU3P7q8nBGQyPaMS2d65FkWKFC9rY4LjjSI=
 ```
-now Bob can send Alice messages using her content key.
+
+Finaly, Alice And Bob start their respective nodes.
 ```
---- Bob's screen ---
-send Alice this is a test message
+Start
+```
+
+At this point, Alice can send Bob messages.
 
 --- Alice's screen ---
-[content] this is a test
+SendMsg Bob this is a test
+
+--- Bob's screen ---
+[RX From [content] ]: this is a test
 ```

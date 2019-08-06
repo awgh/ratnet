@@ -1,434 +1,357 @@
 package main
 
 import (
-	"github.com/awgh/bencrypt/ecc"
-	"github.com/awgh/ratnet/api"
-	"github.com/awgh/ratnet/nodes/qldb"
-	"github.com/awgh/ratnet/nodes/ram"
-	"github.com/awgh/ratnet/policy"
+	"errors"
+	"fmt"
+	"io/ioutil"
+	"os"
+	"strings"
+
 	"github.com/awgh/ratnet/transports/udp"
 
-	"bufio"
-	"fmt"
-	"net"
-	"os"
-	"strconv"
-	"strings"
+	"github.com/AlexsJones/cli/cli"
+	"github.com/AlexsJones/cli/command"
+	"github.com/awgh/ratnet/nodes/ram"
+	"github.com/awgh/ratnet/policy"
 )
-
-var (
-	// RATNET : holds a ptr to our core instance of ratnet
-	RATNET api.Node
-
-	// internal program stuff
-	input *bufio.Reader
-	err   error
-)
-
-func init() {
-	input = bufio.NewReader(os.Stdin)
-}
 
 func main() {
-	// check arguments
-	if len(os.Args) < 3 {
-		fmt.Println("Usage: " + os.Args[0] + " <[address]:port> <ram|ql> [debug]")
-		os.Exit(0)
+
+	checkIfErr := func(err error) bool {
+		if err != nil {
+			fmt.Println(err)
+			return false
+		}
+		return true
 	}
 
-	/*
-		- create a new node
-		(a ram node is a node that will exist only in memmory and not create a database)
-		(a qldb node is a node that will create a ql database file in order to function and persist data over long periods and consistant shutdowns)
-	*/
-	if strings.ToLower(os.Args[2]) == "ram" {
-		RATNET = ram.New(new(ecc.KeyPair), new(ecc.KeyPair))
-	} else {
-		RATNET = qldb.New(new(ecc.KeyPair), new(ecc.KeyPair))
-		RATNET.(*qldb.Node).BootstrapDB(os.Args[0] + ".ql")
-		defer os.Remove(os.Args[0] + ".ql")
-		RATNET.(*qldb.Node).FlushOutbox(0)
+	checkIfArgsAreOK := func(min, max int, args []string) bool {
+		if min >= 0 && len(args) < min {
+			checkIfErr(errors.New("Not enough arguments"))
+			return false
+		}
+		if max >= 0 && len(args) > max {
+			checkIfErr(errors.New("Too many arguments"))
+			return false
+		}
+		return true
 	}
 
-	/*
-		- start the error server if appropiate
-		(this loop will read from the node's err channel and replay it's contents over a TCP/IP connection)
-		(a description of the message format is below):
-		type ratnet/api.message struct {
-			Name:		the error type (ERROR or DEBUG)
-			Content:	the error data itself
-			IsChan:		bool value that dictates whether or not this message is "fatal"
-			PubKey:		[TODO]
-		}
-	*/
-	if len(os.Args) > 3 {
-		if strings.Contains(os.Args[3], "debug") {
-			errListner, err := net.Listen("tcp", "localhost:9990")
-			if err != nil {
-				fmt.Println(err.Error())
-				os.Exit(1)
-			}
-			connection, err := errListner.Accept()
-			if err != nil {
-				fmt.Println(err.Error())
-			}
-			RATNET.SetDebug(true)
-			go func() {
-				for {
-					// write the error content to the connected socket
-					msg := <-RATNET.Err()
-					_, err := connection.Write([]byte(msg.Content.String() + "\n"))
-					if err != nil {
-						fmt.Println(err.Error())
-						os.Exit(1)
-					}
+	// make a new ram node
+	node := ram.New(nil, nil)
 
-					// if the error is a fatal error, exit the application
-					if msg.IsChan {
-						os.Exit(1)
-					}
-				}
-			}()
-		}
-	}
-
-	/*
-		- create transports and policies to use them
-		(a "transport" is a way of sending to, and or, reciving data from, a ratnet node)
-		(a "policy" defines the way in which a ratnet node will interact with a transport)
-		(in this case, we are using one "server" policy and one "poll" policy on the "udp" transport)
-	*/
-	transport := udp.New(RATNET)
-	RATNET.SetPolicy(policy.NewServer(transport, os.Args[1], false), policy.NewPoll(transport, RATNET, 500))
-
-	/*
-		- start the read loop
-		(this loop will read from the node's output channel. This is how we recive messages from other nodes)
-		(a description of the message format is below):
-		type ratnet/api.message struct {
-			Name:		the name of the "profile" this message is to
-			Content:	the message data itself
-			IsChan:		bool value that dictates whether or not this message is a "channel" message
-			PubKey:		[]byte value that holds the public key for the key pair used to create this message
-						(this is generally for use when the key used to encrypt the message exists outside the ratnet framework)
-		}
-	*/
+	// ... and route it's output to stdOut
 	go func() {
 		for {
-			// read a message from the output channel
-			msg := <-RATNET.Out()
-			fmt.Println(msg.Name + " " + msg.Content.String())
+			msg := <-node.Out()
+			fmt.Println("[RX From", msg.Name, "]:", msg.Content.String())
 		}
 	}()
 
-	/*
-		- start the main loop
-		(this loop contoniously reads user input and parses it into one of the commands isolated below as "case" values within the large switch statement)
-	*/
-mainLoop:
-	for {
-		// read user input
-		command, err := input.ReadString(0x0a)
-		if err != nil {
-			fmt.Println(err.Error())
-			continue
-		}
+	// make a new command line interface
+	cli := cli.NewCli()
 
-		commandSegments := strings.Split(command, " ")
-		for index, cmd := range commandSegments {
-			commandSegments[index] = strings.TrimSpace(cmd)
-		}
-		switch strings.ToLower(commandSegments[0]) {
+	// start
+	cli.AddCommand(command.Command{
+		Name: "Start",
+		Help: "Start Ratnet",
+		Func: func(args []string) {
+			checkIfErr(node.Start())
+		},
+	})
 
-		/*
-			### Admin functions ###
-		*/
+	// stop
+	cli.AddCommand(command.Command{
+		Name: "Stop",
+		Help: "Stop Ratnet",
+		Func: func(args []string) {
+			node.Stop()
+		},
+	})
 
-		case "cid":
-			pubkey, err := RATNET.CID()
-			if err != nil {
-				fmt.Println(err.Error())
+	// display content key
+	cli.AddCommand(command.Command{
+		Name: "CID",
+		Help: "Display content key",
+		Func: func(args []string) {
+			key, err := node.CID()
+			if checkIfErr(err) {
+				fmt.Println(key.ToB64())
 			}
-			fmt.Println(pubkey.ToB64())
+		},
+	})
 
-		case "getcontact":
-			if len(commandSegments) < 1 {
-				fmt.Println("Usage: GetContact(name)")
-				continue
+	// display routing key
+	cli.AddCommand(command.Command{
+		Name: "ID",
+		Help: "Display routing key",
+		Func: func(args []string) {
+			key, err := node.ID()
+			if checkIfErr(err) {
+				fmt.Println(key.ToB64())
 			}
-			contact, err := RATNET.GetContact(commandSegments[1])
-			if err != nil {
-				fmt.Println(err.Error())
-				continue
-			}
-			fmt.Println(contact.Name + " | " + contact.Pubkey)
+		},
+	})
 
-		case "getcontacts":
-			contacts, err := RATNET.GetContacts()
-			if err != nil {
-				fmt.Println(err.Error())
-				continue
+	// add contact
+	cli.AddCommand(command.Command{
+		Name: "AddContact",
+		Help: "Add a contact (name, key string)",
+		Func: func(args []string) {
+			if checkIfArgsAreOK(2, 2, args) {
+				checkIfErr(node.AddContact(args[0], args[1]))
 			}
-			for index, contact := range contacts {
-				fmt.Println(strconv.Itoa(index) + ") " + contact.Name + " | " + contact.Pubkey)
-			}
+		},
+	})
 
-		case "addcontact":
-			if len(commandSegments) < 3 {
-				fmt.Println("Usage: AddContact(name, key)")
-				continue
+	// delete contact
+	cli.AddCommand(command.Command{
+		Name: "DelContact",
+		Help: "Delete a contact (name string)",
+		Func: func(args []string) {
+			if checkIfArgsAreOK(1, 1, args) {
+				checkIfErr(node.DeleteContact(args[0]))
 			}
-			if err := RATNET.AddContact(commandSegments[1], commandSegments[2]); err != nil {
-				fmt.Println(err.Error())
-				continue
-			}
+		},
+	})
 
-		case "delcontact":
-			if len(commandSegments) < 2 {
-				fmt.Println("Usage: DeleteContact(name)")
-				continue
-			}
-			if err := RATNET.DeleteContact(commandSegments[1]); err != nil {
-				fmt.Println(err.Error())
-				continue
-			}
-
-		case "getchannel":
-			if len(commandSegments) < 2 {
-				fmt.Println("Usage: GetChannel(name)")
-				continue
-			}
-			channel, err := RATNET.GetChannel(commandSegments[1])
-			if err != nil {
-				fmt.Println(err.Error())
-				continue
-			}
-			fmt.Println(channel.Name + " | " + channel.Pubkey)
-
-		case "getchannels":
-			channels, err := RATNET.GetChannels()
-			if err != nil {
-				fmt.Println(err.Error())
-				continue
-			}
-			for index, channel := range channels {
-				fmt.Println(strconv.Itoa(index) + ") " + channel.Name + " | " + channel.Pubkey)
-			}
-
-		case "addchannel":
-			if len(commandSegments) < 3 {
-				fmt.Println("Usage: AddChannel(name, key)")
-				continue
-			}
-			if err := RATNET.AddChannel(commandSegments[1], commandSegments[2]); err != nil {
-				fmt.Println(err.Error())
-			}
-
-		case "delchannel":
-			if len(commandSegments) < 2 {
-				fmt.Println("Usage: DeleteChannel(name)")
-				continue
-			}
-			if err := RATNET.DeleteChannel(commandSegments[1]); err != nil {
-				fmt.Println(err.Error())
-			}
-
-		case "getprofile":
-			if len(commandSegments) < 2 {
-				fmt.Println("Usage: GetProfile(name)")
-				continue
-			}
-			profile, err := RATNET.GetProfile(commandSegments[1])
-			if err != nil {
-				fmt.Println(err.Error())
-				continue
-			}
-			fmt.Print(profile.Name + " | " + profile.Pubkey)
-			if profile.Enabled {
-				fmt.Println(" | Enabled")
-			} else {
-				fmt.Println("")
-			}
-
-		case "getprofiles":
-			profiles, err := RATNET.GetProfiles()
-			if err != nil {
-				fmt.Println(err.Error())
-				continue
-			}
-			for index, profile := range profiles {
-				fmt.Print(strconv.Itoa(index) + ") " + profile.Name + " | " + profile.Pubkey)
-				if profile.Enabled {
-					fmt.Println(" | Enabled")
-				} else {
-					fmt.Println("")
+	// display contacts
+	cli.AddCommand(command.Command{
+		Name: "ShowContacts",
+		Help: "Display a list of the current node contacts (name, key string)",
+		Func: func(args []string) {
+			contacts, err := node.GetContacts()
+			if checkIfErr(err) {
+				for index, contact := range contacts {
+					fmt.Printf("%d) %s\t\t%s\n", index, contact.Name, contact.Pubkey)
 				}
 			}
+		},
+	})
 
-		case "addprofile":
-			if len(commandSegments) < 3 {
-				fmt.Println("Usage: AddProfile(name, enabled? t/f)")
-				continue
+	// add channel
+	cli.AddCommand(command.Command{
+		Name: "AddChannel",
+		Help: "Add a channel (name, key string)",
+		Func: func(args []string) {
+			if checkIfArgsAreOK(2, 2, args) {
+				checkIfErr(node.AddChannel(args[0], args[1]))
 			}
-			enabled := false
-			if strings.ToLower(commandSegments[2]) == "true" {
-				enabled = true
-			}
-			if err := RATNET.AddProfile(commandSegments[1], enabled); err != nil {
-				fmt.Println(err.Error())
-			}
+		},
+	})
 
-		case "delprofile":
-			if len(commandSegments) < 2 {
-				fmt.Println("Usage: DeleteProfile(name)")
-				continue
+	// delete channel
+	cli.AddCommand(command.Command{
+		Name: "DelChannel",
+		Help: "Delete a channel (name string)",
+		Func: func(args []string) {
+			if checkIfArgsAreOK(1, 1, args) {
+				checkIfErr(node.DeleteContact(args[0]))
 			}
-			if err := RATNET.DeleteProfile(commandSegments[1]); err != nil {
-				fmt.Println(err.Error())
-			}
+		},
+	})
 
-		case "loadprofile":
-			if len(commandSegments) < 2 {
-				fmt.Println("Usage: LoadProfile(name)")
-				continue
-			}
-			profile, err := RATNET.LoadProfile(commandSegments[1])
-			if err != nil {
-				fmt.Println(err.Error())
-				continue
-			}
-			fmt.Println("Key => " + profile.ToB64())
-
-		case "getpeer":
-			if len(commandSegments) < 2 {
-				fmt.Println("Usage: GetPeer(name)")
-				continue
-			}
-			peer, err := RATNET.GetPeer(commandSegments[1])
-			if err != nil {
-				fmt.Println(err.Error())
-				continue
-			}
-			fmt.Print(peer.Name + " | " + peer.URI)
-			if peer.Enabled {
-				fmt.Println(" | Enabled")
-			} else {
-				fmt.Println("")
-			}
-
-		case "getpeers":
-			peers, err := RATNET.GetPeers()
-			if err != nil {
-				fmt.Println(err.Error())
-				continue
-			}
-			for index, peer := range peers {
-				fmt.Print(strconv.Itoa(index) + ") " + peer.Name + " | " + peer.URI)
-				if peer.Enabled {
-					fmt.Println(" | Enabled")
-				} else {
-					fmt.Println("")
+	// display channels
+	cli.AddCommand(command.Command{
+		Name: "ShowChannels",
+		Help: "Display a list of the current node channels (name, key string)",
+		Func: func(args []string) {
+			channels, err := node.GetChannels()
+			if checkIfErr(err) {
+				for index, channel := range channels {
+					fmt.Printf("%d) %s\t\t%s\n", index, channel.Name, channel.Pubkey)
 				}
 			}
+		},
+	})
 
-		case "addpeer":
-			if len(commandSegments) < 4 {
-				fmt.Println("Usage: AddPeer(name, enabled? t/f, uri)")
-				continue
+	// add profile
+	cli.AddCommand(command.Command{
+		Name: "AddProfile",
+		Help: "Add a profile (Name string, Enabled bool)",
+		Func: func(args []string) {
+			if checkIfArgsAreOK(2, 2, args) {
+				enabled := false
+				if strings.Contains(strings.ToLower(args[0]), "true") {
+					enabled = true
+				}
+				checkIfErr(node.AddProfile(args[0], enabled))
 			}
-			enabled := false
-			if strings.ToLower(commandSegments[2]) == "true" {
-				enabled = true
-			}
-			if err := RATNET.AddPeer(commandSegments[1], enabled, commandSegments[3]); err != nil {
-				fmt.Println(err.Error())
-			}
+		},
+	})
 
-		case "delpeer":
-			if len(commandSegments) < 2 {
-				fmt.Println("Usage: DeletePeer(name)")
-				continue
+	// delete profile
+	cli.AddCommand(command.Command{
+		Name: "DelProfile",
+		Help: "Delete a profile (name string)",
+		Func: func(args []string) {
+			if checkIfArgsAreOK(1, 1, args) {
+				checkIfErr(node.DeleteProfile(args[0]))
 			}
-			if err := RATNET.DeletePeer(commandSegments[1]); err != nil {
-				fmt.Println(err.Error())
-			}
+		},
+	})
 
-		case "send":
-			if len(commandSegments) < 3 {
-				fmt.Println("Usage: Send(name, message)")
-				continue
+	// display profiles
+	cli.AddCommand(command.Command{
+		Name: "ShowProfiles",
+		Help: "Display a list of the current node profiles (name, key string)",
+		Func: func(args []string) {
+			profiles, err := node.GetProfiles()
+			if checkIfErr(err) {
+				enabled := "False"
+				for index, profile := range profiles {
+					if profile.Enabled {
+						enabled = "True"
+					}
+					fmt.Printf("%d) %s\t\t%s\t%s\n", index, profile.Name, profile.Pubkey, enabled)
+				}
 			}
-			msg := strings.TrimSpace(strings.TrimSpace(command[len(commandSegments[0])+1+len(commandSegments[1])+1:]))
-			if err := RATNET.Send(commandSegments[1], []byte(msg)); err != nil {
-				fmt.Println(err.Error())
-			}
+		},
+	})
 
-		case "sendchannel":
-			if len(commandSegments) < 3 {
-				fmt.Println("Usage: SendChannel(channel, message)")
-				continue
+	// load profile
+	cli.AddCommand(command.Command{
+		Name: "LoadProfile",
+		Help: "Load a profile (name string)",
+		Func: func(args []string) {
+			if checkIfArgsAreOK(0, 0, args) {
+				key, err := node.LoadProfile(args[0])
+				if checkIfErr(err) {
+					fmt.Println("Key of loaded profile:", key.ToB64())
+				}
 			}
-			msg := strings.TrimSpace(strings.TrimSpace(command[len(commandSegments[0])+1+len(commandSegments[1])+1:]))
-			if err := RATNET.SendChannel(commandSegments[1], []byte(msg)); err != nil {
-				fmt.Println(err.Error())
-			}
+		},
+	})
 
-		case "start":
-			if err := RATNET.Start(); err != nil {
-				fmt.Println(err.Error())
-				os.Exit(1)
+	// add peer
+	cli.AddCommand(command.Command{
+		Name: "AddPeer",
+		Help: "Add a peer (name string, enabled bool, uri string)",
+		Func: func(args []string) {
+			if checkIfArgsAreOK(3, 3, args) {
+				enabled := false
+				if strings.Contains(strings.ToLower(args[1]), "true") {
+					enabled = true
+				}
+				checkIfErr(node.AddPeer(args[0], enabled, args[2]))
 			}
+		},
+	})
 
-		case "stop":
-			RATNET.Stop()
-
-		/*
-			### Public functions ###
-		*/
-
-		case "id":
-			key, err := RATNET.ID()
-			if err != nil {
-				fmt.Println(err.Error())
-				continue
+	// delete peer
+	cli.AddCommand(command.Command{
+		Name: "DelPeer",
+		Help: "Delete a peer (name string)",
+		Func: func(args []string) {
+			if checkIfArgsAreOK(1, 1, args) {
+				checkIfErr(node.DeletePeer(args[0]))
 			}
-			fmt.Println(key.ToB64())
+		},
+	})
 
-		case "getdebug":
-			fmt.Print("Debug mode for this node is ")
-			if RATNET.GetDebug() {
-				fmt.Println("on.")
-			} else {
-				fmt.Println("off.")
+	// display peers
+	cli.AddCommand(command.Command{
+		Name: "ShowPeers",
+		Help: "Display a list of the current node's peers (name, key string)",
+		Func: func(args []string) {
+			peers, err := node.GetPeers()
+			if checkIfErr(err) {
+				enabled := "False"
+				for index, peer := range peers {
+					if peer.Enabled {
+						enabled = "True"
+					}
+					fmt.Printf("%d) %s\t\t%s\t%s\n", index, peer.Name, peer.URI, enabled)
+				}
 			}
+		},
+	})
 
-		case "setdebug":
-			if len(commandSegments) < 2 {
-				fmt.Println("Usage: SetDebug(t/f)")
-				continue
+	// send message
+	cli.AddCommand(command.Command{
+		Name: "SendMsg",
+		Help: "Sends a message to a node (contact, message string)",
+		Func: func(args []string) {
+			if checkIfArgsAreOK(2, -1, args) {
+				msg := strings.Join(args[1:], " ")
+				contact, err := node.GetContact(args[0])
+				if checkIfErr(err) {
+					checkIfErr(node.Send(contact.Name, []byte(msg)))
+				}
 			}
-			mode := false
-			if strings.ToLower(commandSegments[1]) == "true" {
-				mode = true
-			}
-			RATNET.SetDebug(mode)
-		/*
-			### non ratnet functions ###
-		*/
+		},
+	})
 
-		case "exit":
-			fmt.Println("Are you sure you want to quit the application (y/n)?")
-			resp, err := input.ReadString(0x0a)
-			if err != nil {
-				fmt.Println(err.Error())
-				continue
+	// send channel message
+	cli.AddCommand(command.Command{
+		Name: "SendChanMsg",
+		Help: "Sends a message to a channel (channel, message string)",
+		Func: func(args []string) {
+			if checkIfArgsAreOK(2, -1, args) {
+				msg := strings.Join(args[1:], " ")
+				channel, err := node.GetChannel(args[0])
+				if checkIfErr(err) {
+					checkIfErr(node.SendChannel(channel.Name, []byte(msg)))
+				}
 			}
-			if strings.Contains(resp, "y") {
-				break mainLoop
-			}
+		},
+	})
 
-		default:
-			fmt.Println("Command not found.")
-		}
-	}
+	// show config
+	cli.AddCommand(command.Command{
+		Name: "ShowCfg",
+		Help: "Show the config file for this node",
+		Func: func(args []string) {
+			cfg, err := node.Export()
+			if checkIfErr(err) {
+				fmt.Println(string(cfg))
+			}
+		},
+	})
+
+	// load config
+	cli.AddCommand(command.Command{
+		Name: "LoadCfg",
+		Help: "Load a config file into this node (cfgFilePath string)",
+		Func: func(args []string) {
+			if checkIfArgsAreOK(1, 1, args) {
+				file, err := ioutil.ReadFile(args[0])
+				if checkIfErr(err) {
+					checkIfErr(node.Import(file))
+				}
+			}
+		},
+	})
+
+	// set UDP client transport
+	cli.AddCommand(command.Command{
+		Name: "SetClientTransport",
+		Help: "Enable a polling policy, UDP transport within this node",
+		Func: func(args []string) {
+			node.SetPolicy(policy.NewPoll(udp.New(node), node, 500))
+		},
+	})
+
+	// start UDP server transport
+	cli.AddCommand(command.Command{
+		Name: "SetServerTransport",
+		Help: "Enable a server policy, UDP transport within this node (uri string)",
+		Func: func(args []string) {
+			if checkIfArgsAreOK(1, 1, args) {
+				node.SetPolicy(policy.NewServer(udp.New(node), args[0], false))
+			}
+		},
+	})
+
+	// exit
+	cli.AddCommand(command.Command{
+		Name: "Exit",
+		Help: "Exit the command prompt",
+		Func: func(args []string) {
+			os.Exit(0)
+		},
+	})
+
+	// start the interface
+	cli.Run()
 }
