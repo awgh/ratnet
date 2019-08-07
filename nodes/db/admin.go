@@ -277,10 +277,18 @@ func (node *Node) SendChannelBulk(channelName string, data [][]byte, pubkey ...b
 
 func (node *Node) sendBulk(channelName string, destkey bc.PubKey, msg [][]byte) error {
 
-	// prepend a uint16 of channel name length, little-endian
-	t := uint16(len(channelName))
-	rxsum := []byte{byte(t >> 8), byte(t & 0xFF)}
-	rxsum = append(rxsum, []byte(channelName)...)
+	isChan := (channelName != "")
+	flags := uint8(0)
+	if isChan {
+		flags |= api.ChannelFlag
+	}
+	rxsum := []byte{flags} // prepend flags byte
+	if isChan {
+		// prepend a uint16 of channel name length, little-endian
+		t := uint16(len(channelName))
+		rxsum = append(rxsum, byte(t>>8), byte(t&0xFF))
+		rxsum = append(rxsum, []byte(channelName)...)
+	}
 
 	//todo: is this passing msg by reference or not???
 	data := make([][]byte, len(msg))
@@ -324,23 +332,13 @@ func (node *Node) Start() error {
 			if !node.isRunning {
 				break
 			}
-
 			// read message off the input channel
 			message, more := <-node.In()
 			if !more {
 				break
 			}
-
-			switch message.IsChan {
-			case true:
-				if err := node.SendChannel(message.Name, message.Content.Bytes(), message.PubKey); err != nil {
-					log.Fatal(err)
-				}
-
-			case false:
-				if err := node.Send(message.Name, message.Content.Bytes(), message.PubKey); err != nil {
-					log.Fatal(err)
-				}
+			if err := node.SendMsg(message); err != nil {
+				log.Fatal(err)
 			}
 		}
 	}()

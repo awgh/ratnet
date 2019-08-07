@@ -361,19 +361,11 @@ func (node *Node) Start() error {
 			if !node.isRunning {
 				break
 			}
-
 			// read message off the input channel
 			message := <-node.In()
 			node.debugMsg("Message accepted on input channel")
-			switch message.IsChan {
-			case true:
-				if err := node.SendChannel(message.Name, message.Content.Bytes(), message.PubKey); err != nil {
-					log.Fatal("SendChannel failed in input loop")
-				}
-			case false:
-				if err := node.Send(message.Name, message.Content.Bytes(), message.PubKey); err != nil {
-					log.Fatal("Send failed in input loop")
-				}
+			if err := node.SendMsg(message); err != nil {
+				log.Fatal(err)
 			}
 		}
 	}()

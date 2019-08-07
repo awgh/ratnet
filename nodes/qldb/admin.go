@@ -338,17 +338,8 @@ func (node *Node) Start() error {
 			if !more {
 				break
 			}
-
-			switch message.IsChan {
-			case true:
-				if err := node.SendChannel(message.Name, message.Content.Bytes(), message.PubKey); err != nil {
-					log.Fatal(err)
-				}
-
-			case false:
-				if err := node.Send(message.Name, message.Content.Bytes(), message.PubKey); err != nil {
-					log.Fatal(err)
-				}
+			if err := node.SendMsg(message); err != nil {
+				log.Fatal(err)
 			}
 		}
 	}()
