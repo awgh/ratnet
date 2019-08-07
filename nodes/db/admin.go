@@ -190,8 +190,8 @@ func (node *Node) SendMsg(msg api.Msg) error {
 	channelNameLen := uint32(0)
 	if msg.IsChan {
 		channelNameLen = uint32(len(msg.Name))
+		chunkSize -= (channelNameLen + 2) // +2 for channel length prefix
 	}
-	chunkSize -= (channelNameLen + 2) // +2 for channel length prefix
 
 	if msg.Content.Len() > 0 && uint32(msg.Content.Len()) > chunkSize { // we need to chunk
 		if msg.Chunked { // we're already chunked, freak out!
