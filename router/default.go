@@ -1,6 +1,7 @@
 package router
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 
@@ -80,19 +81,24 @@ func (r *DefaultRouter) GetPatches() []api.Patch {
 	return r.Patches
 }
 
-// forward - channel prefixes have been stripped from message when they get here
-func (r *DefaultRouter) forward(node api.Node, channelName string, message []byte) error {
+func (r *DefaultRouter) forward(node api.Node, msg api.Msg) error {
 	for _, p := range r.Patches { //todo: this could be constant-time
-		if channelName == p.From {
+		if msg.Name == p.From { // we don't check for IsChan here, we allow forwarding from "" chan to channels
 			for i := 0; i < len(p.To); i++ {
-				if err := node.Forward(p.To[i], message); err != nil {
+				msg.Name = p.To[i]
+				if msg.Name == "" {
+					msg.IsChan = false
+				} else {
+					msg.IsChan = true
+				}
+				if err := node.Forward(msg); err != nil {
 					return err
 				}
 			}
 			return nil
 		}
 	}
-	if err := node.Forward(channelName, message); err != nil {
+	if err := node.Forward(msg); err != nil {
 		return err
 	}
 	return nil
@@ -103,41 +109,47 @@ func (r *DefaultRouter) Route(node api.Node, message []byte) error {
 
 	//  Stuff Everything will need just about every time...
 	//
+	var msg api.Msg
+	flags := message[0]
+	idx := 1
+	msg.IsChan = ((flags & api.ChannelFlag) != 0)
+	msg.Chunked = ((flags & api.ChunkedFlag) != 0)
+	msg.StreamHeader = ((flags & api.StreamHeaderFlag) != 0)
 	var channelLen uint16 // beginning uint16 of message is channel name length
-	channelName := ""
-	channelLen = (uint16(message[0]) << 8) | uint16(message[1])
-	if len(message) < int(channelLen)+2+64 { // uint16 + LuggageTag
-		return errors.New("Incorrect channel name length")
+	if msg.IsChan {
+		channelLen = (uint16(message[0]) << 8) | uint16(message[1])
+		if len(message) < int(channelLen)+2+64 { // uint16 + LuggageTag
+			return errors.New("Incorrect channel name length")
+		}
+		msg.Name = string(message[3 : 3+channelLen]) // flags[0], chan name length[1,2]
+		idx += 2 + int(channelLen)                   //skip over the channel name
 	}
-	idx := 2 + channelLen          //skip over the channel name
 	nonce := message[idx : idx+16] // todo: this is truncating half the pubkey
 	if r.seenRecently(nonce) {     // LOOP PREVENTION before handling or forwarding
 		return nil
 	}
-
 	cid, err := node.CID() // we need this for cloning
 	if err != nil {
 		return err
 	}
-	//
+	msg.Content = bytes.NewBuffer(message[idx:])
 
-	// When the channel tag is set...
-	if channelLen > 0 { // channel message
-		channelName = string(message[2 : 2+channelLen])
+	// Routing Logic
+	if msg.IsChan { // channel message
 		consumed := false
 		if r.CheckChannels {
-			chn, err := node.GetChannel(channelName)
+			chn, err := node.GetChannel(msg.Name)
 			if chn != nil && err == nil { // this is a channel key we know
 				pubkey := cid.Clone()
 				pubkey.FromB64(chn.Pubkey)
-				consumed, err = node.Handle(channelName, message[idx:])
+				consumed, err = node.Handle(msg)
 				if err != nil {
 					return err
 				}
 			}
 		}
 		if (!consumed && r.ForwardUnknownChannels) || (consumed && r.ForwardConsumedChannels) {
-			if err := r.forward(node, channelName, message[idx:]); err != nil {
+			if err := r.forward(node, msg); err != nil {
 				return err
 			}
 		}
@@ -145,13 +157,13 @@ func (r *DefaultRouter) Route(node api.Node, message []byte) error {
 		// content key case (to be removed, deprecated)
 		consumed := false
 		if r.CheckContent {
-			consumed, err = node.Handle(channelName, message[idx:])
+			consumed, err = node.Handle(msg)
 			if err != nil {
 				return err
 			}
 		}
 		if (!consumed && r.ForwardUnknownContent) || (consumed && r.ForwardConsumedContent) {
-			if err := r.forward(node, channelName, message[idx:]); err != nil {
+			if err := r.forward(node, msg); err != nil {
 				return err
 			}
 		}
@@ -169,7 +181,7 @@ func (r *DefaultRouter) Route(node api.Node, message []byte) error {
 				}
 				pubkey := cid.Clone()
 				pubkey.FromB64(profile.Pubkey)
-				consumed, err = node.Handle(channelName, message[idx:])
+				consumed, err = node.Handle(msg)
 				if err != nil {
 					return err
 				}
@@ -179,7 +191,7 @@ func (r *DefaultRouter) Route(node api.Node, message []byte) error {
 			}
 		}
 		if (!consumed && r.ForwardUnknownProfiles) || (consumed && r.ForwardConsumedProfiles) {
-			if err := r.forward(node, channelName, message[idx:]); err != nil {
+			if err := r.forward(node, msg); err != nil {
 				return err
 			}
 		}
