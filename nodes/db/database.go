@@ -611,9 +611,11 @@ func (node *Node) BootstrapDB(dbAdapter, dbConnectionString string) sqlbuilder.D
 	_, err = node.db.Exec(fmt.Sprintf(`
 	CREATE TABLE IF NOT EXISTS streams (		
 		streamid		%s	NOT NULL,
-		parts			%s	NOT NULL		
+		parts			%s	NOT NULL,
+		channel			%s	NOT NULL,
+		pubkey			%s	NOT NULL
 	);
-	`, int64Name, int64Name))
+	`, int64Name, int64Name, strName, strName))
 	checkErr(err)
 
 	// Content Key Setup
