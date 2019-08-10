@@ -412,6 +412,97 @@ func (node *Node) dbGetMessages(lastTime, maxBytes int64, channelNames ...string
 	return msgs, lastTimeReturned, nil
 }
 
+func (node *Node) dbClearStream(streamID uint32) error {
+	col := node.db.Collection("chunks")
+	res := col.Find("streamid = ?", streamID)
+	_ = res.Delete()
+	col = node.db.Collection("streams")
+	res = col.Find("streamid = ?", streamID)
+	return res.Delete()
+}
+
+func (node *Node) dbAddStream(streamID uint32, totalChunks uint32, channelName string, pubkey string) error {
+	col := node.db.Collection("streams")
+	res := col.Find().Where("streamid = ?", streamID)
+	count, err := res.Count()
+	if err != nil {
+		return err
+	}
+	var stream api.StreamHeader
+	if count == 0 {
+		// insert new stream
+		stream.StreamID = streamID
+		stream.NumChunks = totalChunks
+		stream.ChannelName = channelName
+		stream.Pubkey = pubkey
+		_, err = col.Insert(stream)
+		return err
+	}
+	err = res.One(&stream)
+	if err != nil {
+		return err
+	}
+	log.Printf("warning: over-writing stream header: %x\n", streamID)
+	stream.StreamID = streamID
+	stream.NumChunks = totalChunks
+	stream.ChannelName = channelName
+	stream.Pubkey = pubkey
+	return res.Update(stream)
+}
+
+func (node *Node) dbAddChunk(streamID uint32, chunkNum uint32, data []byte) error {
+	col := node.db.Collection("chunks")
+	res := col.Find().Where("streamid = ?", streamID).And("chunknum = ?", chunkNum)
+	count, err := res.Count()
+	if err != nil {
+		return err
+	}
+	var chunk api.Chunk
+	if count == 0 {
+		// insert new chunk
+		chunk.StreamID = streamID
+		chunk.ChunkNum = chunkNum
+		chunk.Data = data
+		_, err = col.Insert(chunk)
+		return err
+	}
+	err = res.One(&chunk)
+	if err != nil {
+		return err
+	}
+	log.Printf("warning: over-writing chunk: %x:%x\n", streamID, chunkNum)
+	chunk.StreamID = streamID
+	chunk.ChunkNum = chunkNum
+	chunk.Data = data
+	return res.Update(chunk)
+}
+
+func (node *Node) dbGetStreams() ([]api.StreamHeader, error) {
+	col := node.db.Collection("streams")
+	res := col.Find()
+	var streams []api.StreamHeader
+	if err := res.All(&streams); err != nil {
+		return nil, err
+	}
+	return streams, nil
+}
+
+func (node *Node) dbGetChunkCount(streamID uint32) (uint64, error) {
+	col := node.db.Collection("chunks")
+	res := col.Find().Where("streamid = ?", streamID)
+	return res.Count()
+}
+
+func (node *Node) dbGetChunks(streamID uint32) ([]api.Chunk, error) {
+	col := node.db.Collection("chunks")
+	res := col.Find().Where("streamid = ?", streamID).OrderBy("chunknum")
+	var chunks []api.Chunk
+	if err := res.All(&chunks); err != nil {
+		return nil, err
+	}
+	return chunks, nil
+}
+
 // FlushOutbox : Deletes outbound messages older than maxAgeSeconds seconds
 func (node *Node) FlushOutbox(maxAgeSeconds int64) {
 	ts := time.Now().UnixNano()
@@ -506,6 +597,23 @@ func (node *Node) BootstrapDB(dbAdapter, dbConnectionString string) sqlbuilder.D
 			enabled	bool	NOT NULL
 		);
 	`, strName, strName))
+	checkErr(err)
+
+	_, err = node.db.Exec(fmt.Sprintf(`
+	CREATE TABLE IF NOT EXISTS chunks (		
+		streamid	%s	NOT NULL,
+		chunknum	%s	NOT NULL,
+		data		%s	NOT NULL
+	);
+	`, int64Name, int64Name, blobName))
+	checkErr(err)
+
+	_, err = node.db.Exec(fmt.Sprintf(`
+	CREATE TABLE IF NOT EXISTS streams (		
+		streamid		%s	NOT NULL,
+		parts			%s	NOT NULL		
+	);
+	`, int64Name, int64Name))
 	checkErr(err)
 
 	// Content Key Setup

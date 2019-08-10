@@ -342,6 +342,52 @@ func (node *Node) Start() error {
 			}
 		}
 	}()
+	// dechunking loop
+	go func() {
+		for {
+			time.Sleep(10 * time.Millisecond)
+			// check if we should stop running
+			if !node.isRunning {
+				break
+			}
+			// get all streams
+			streams, err := node.dbGetStreams()
+			if err != nil {
+				log.Fatal(err)
+			}
+			// for each stream, count chunks for that header
+			for _, stream := range streams {
+				count, err := node.dbGetChunkCount(stream.StreamID)
+				if err != nil {
+					log.Fatal(err)
+				}
+				// if chunks == total chunks, re-assemble Msg and call Handle
+				if count == uint64(stream.NumChunks) {
+					chunks, err := node.dbGetChunks(stream.StreamID)
+					if err != nil {
+						log.Fatal(err)
+					}
+					buf := bytes.NewBuffer([]byte{})
+					for _, chunk := range chunks {
+						buf.Write(chunk.Data)
+					}
+					var msg api.Msg
+					if len(stream.ChannelName) > 0 {
+						msg.IsChan = true
+						msg.Name = stream.ChannelName
+					}
+					pk := node.contentKey.GetPubKey().Clone()
+					err = pk.FromB64(stream.Pubkey)
+					if err != nil {
+						log.Fatal(err)
+					}
+					msg.Content = buf
+					node.Handle(msg)
+
+				}
+			}
+		}
+	}()
 
 	return nil
 }

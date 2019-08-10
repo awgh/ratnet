@@ -12,16 +12,19 @@ const (
 //chunkMagic uint32 = 0xF114
 )
 
-// StreamHeader manifest for a chunked transfer
+// StreamHeader manifest for a chunked transfer (database version)
 type StreamHeader struct {
-	StreamID  uint32
-	NumChunks uint32
+	StreamID    uint32 `db:"streamid"`
+	NumChunks   uint32 `db:"parts"`
+	ChannelName string `db:"channel"`
+	Pubkey      string `db:"pubkey"`
 }
 
-// ChunkHeader header for each chunk
-type ChunkHeader struct {
-	StreamID uint32
-	ChunkNum uint32
+// Chunk header for each chunk
+type Chunk struct {
+	StreamID uint32 `db:"streamid"`
+	ChunkNum uint32 `db:"chunknum"`
+	Data     []byte `db:"data"`
 }
 
 // ChunkSize - calculates the minimum chunk size from all active transports

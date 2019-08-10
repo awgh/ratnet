@@ -2,8 +2,10 @@ package db
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 	"os/signal"
@@ -49,6 +51,14 @@ func (node *Node) Handle(msg api.Msg) (bool, error) {
 	var tagOK bool
 	var clearMsg api.Msg // msg to out channel
 
+	if msg.Chunked {
+		err := node.HandleChunk(msg)
+		if err != nil {
+			return false, err
+		}
+		return true, err
+	}
+
 	if msg.IsChan {
 		v, ok := node.channelKeys[msg.Name]
 		if !ok {
@@ -73,6 +83,33 @@ func (node *Node) Handle(msg api.Msg) (bool, error) {
 		node.debugMsg("No message sent")
 	}
 	return tagOK, nil
+}
+
+// HandleChunk - store a partial message (chunk) in the node for later reconstruction
+func (node *Node) HandleChunk(msg api.Msg) error {
+
+	if msg.StreamHeader {
+		// save totalChunks by streamID
+		var streamID, totalChunks uint32
+		binary.Read(msg.Content, binary.LittleEndian, &streamID)
+		binary.Read(msg.Content, binary.LittleEndian, &totalChunks)
+		channel := ""
+		if msg.IsChan {
+			channel = msg.Name
+		}
+		return node.dbAddStream(streamID, totalChunks, channel, msg.PubKey.ToB64())
+	} else if msg.Chunked {
+		// save chunk
+		var streamID, chunkNum uint32
+		binary.Read(msg.Content, binary.LittleEndian, &streamID)
+		binary.Read(msg.Content, binary.LittleEndian, &chunkNum)
+		data, err := ioutil.ReadAll(msg.Content)
+		if err != nil {
+			return err
+		}
+		return node.dbAddChunk(streamID, chunkNum, data)
+	}
+	return errors.New("HandleChunk called on a non-chunk")
 }
 
 func (node *Node) refreshChannels() { // todo: this could be selective or somehow less heavy
