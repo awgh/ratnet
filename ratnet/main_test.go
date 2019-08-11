@@ -495,6 +495,34 @@ func Test_server_SendChannel_1(t *testing.T) {
 	}
 }
 
+var randmessage []byte
+
+func Test_server_SendChannel_2(t *testing.T) { // now with chunking
+	server1 = initNode(1, server1, nodeType, transportType, false)
+
+	randmessage, err := bc.GenerateRandomBytes(8675)
+	if err != nil {
+		t.Error(err.Error())
+	}
+	//override byte limit to trigger chunking
+	oldByteLimit := server1.Public.ByteLimit()
+	server1.Public.SetByteLimit(4096)
+
+	// should not work on public interface
+	_, err = server1.Public.RPC("localhost:30001", "SendChannel", "channel1", []byte(randmessage))
+	if err == nil {
+		t.Error(errors.New("SendChannel was accessible on Public network interface"))
+	}
+
+	_, err = server1.Admin.RPC("localhost:30101", "SendChannel", "channel1", []byte(randmessage))
+	if err != nil {
+		t.Error(err.Error())
+	}
+
+	//restore byte limit
+	server1.Public.SetByteLimit(oldByteLimit)
+}
+
 func Test_server_PickupDropoff_1(t *testing.T) {
 	server1 = initNode(1, server1, nodeType, transportType, false)
 	server2 = initNode(2, server2, nodeType, transportType, false)

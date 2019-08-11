@@ -117,8 +117,8 @@ func (r *DefaultRouter) Route(node api.Node, message []byte) error {
 	msg.StreamHeader = ((flags & api.StreamHeaderFlag) != 0)
 	var channelLen uint16 // beginning uint16 of message is channel name length
 	if msg.IsChan {
-		channelLen = (uint16(message[0]) << 8) | uint16(message[1])
-		if len(message) < int(channelLen)+2+64 { // uint16 + LuggageTag
+		channelLen = (uint16(message[1]) << 8) | uint16(message[2])
+		if len(message) < int(channelLen)+1+2+64 { // flags + uint16 + LuggageTag
 			return errors.New("Incorrect channel name length")
 		}
 		msg.Name = string(message[3 : 3+channelLen]) // flags[0], chan name length[1,2]
