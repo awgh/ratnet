@@ -91,8 +91,12 @@ func (node *Node) HandleChunk(msg api.Msg) error {
 	if msg.StreamHeader {
 		// save totalChunks by streamID
 		var streamID, totalChunks uint32
-		binary.Read(msg.Content, binary.LittleEndian, &streamID)
-		binary.Read(msg.Content, binary.LittleEndian, &totalChunks)
+		//if msg.Content.Len() != 8 {2019/08/15 10:43:51 Dropoff decoded: [
+		//	log.Fatal("something is messed up")
+		//}
+		tmpb := bytes.NewBuffer(msg.Content.Bytes()[:8])
+		binary.Read(tmpb, binary.LittleEndian, &streamID)
+		binary.Read(tmpb, binary.LittleEndian, &totalChunks)
 		channel := ""
 		if msg.IsChan {
 			channel = msg.Name
@@ -105,8 +109,9 @@ func (node *Node) HandleChunk(msg api.Msg) error {
 	} else if msg.Chunked {
 		// save chunk
 		var streamID, chunkNum uint32
-		binary.Read(msg.Content, binary.LittleEndian, &streamID)
-		binary.Read(msg.Content, binary.LittleEndian, &chunkNum)
+		tmpb := bytes.NewBuffer(msg.Content.Bytes()[:8])
+		binary.Read(tmpb, binary.LittleEndian, &streamID)
+		binary.Read(tmpb, binary.LittleEndian, &chunkNum)
 		data, err := ioutil.ReadAll(msg.Content)
 		if err != nil {
 			return err

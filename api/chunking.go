@@ -7,11 +7,6 @@ import (
 	"github.com/awgh/bencrypt/bc"
 )
 
-const (
-//hdrMagic   uint32 = 0xF113
-//chunkMagic uint32 = 0xF114
-)
-
 // StreamHeader manifest for a chunked transfer (database version)
 type StreamHeader struct {
 	StreamID    uint32 `db:"streamid"`
@@ -86,42 +81,3 @@ func SendChunked(node Node, chunkSize uint32, msg Msg) (err error) {
 	}
 	return
 }
-
-/*
-// ReadChunked - utility function to rebuild chunks into the original buffer
-// 					returns: ended (bool) - true when last chunk has been read
-//							 Msg - set to the reconstructed message, only set when ended is true
-func ReadChunked(chunks *map[int][]byte, rxMsgBuffer *api.Msg) (bool, *Msg) {
-	rxMsg := new(Msg)
-	var chunkId uint32
-	binary.Read(rxMsgBuffer.Content, binary.LittleEndian, &chunkId)
-	log.Printf("chunkId read at server: %x  len(rx): %d\n", chunkId, rxMsgBuffer.Content.Len())
-
-	if chunkId != 0xFFFFFFFF {
-		(*chunks)[int(chunkId)] = rxMsgBuffer.Content.Bytes()
-		log.Println("chunkId cached", chunkId)
-		return false, nil
-	}
-	// re-assemble johnny 5
-	var buf bytes.Buffer
-	var keys []int
-	for k, _ := range *chunks {
-		keys = append(keys, k)
-	}
-	sort.Ints(keys)
-	for _, k := range keys {
-		log.Println("reassembled chunk", k)
-		buf.Write((*chunks)[k])
-	}
-	log.Println("reassembled remainder")
-	buf.Write(rxMsgBuffer.Content.Bytes())
-
-	//Use default gob decoder
-	dec := gob.NewDecoder(bytes.NewReader(buf.Bytes()))
-	if err := dec.Decode(&rxMsg); err != nil {
-		log.Println("[INCOMING MSG ERR c2 224]:", err.Error(), rxMsg, rxMsgBuffer)
-	}
-	//chunks = new(map[int][]byte)
-	return true, rxMsg
-}
-*/
