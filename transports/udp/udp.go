@@ -93,7 +93,7 @@ func (m *Module) Listen(listen string, adminMode bool) {
 				continue
 			}
 
-			//log.Println("UDP accepted new connection")
+			log.Println("UDP accepted new connection")
 
 			c.SetReadDeadline(time.Now().Add(35 * time.Second))
 			c.SetWriteDeadline(time.Now().Add(35 * time.Second))

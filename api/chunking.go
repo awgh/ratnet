@@ -45,9 +45,10 @@ func SendChunked(node Node, chunkSize uint32, msg Msg) (err error) {
 
 	buf := msg.Content.Bytes()
 	buflen := uint32(len(buf))
+	chunkSizeMinusHeader := chunkSize - 8 // chunk header is two uint32's -> 8 bytes
 
-	wholeLoops := buflen / chunkSize
-	remainder := buflen % chunkSize
+	wholeLoops := buflen / chunkSizeMinusHeader
+	remainder := buflen % chunkSizeMinusHeader
 	totalChunks := wholeLoops
 	if remainder != 0 {
 		totalChunks++
@@ -61,13 +62,13 @@ func SendChunked(node Node, chunkSize uint32, msg Msg) (err error) {
 		}
 		b := bytes.NewBuffer(streamID)                            // StreamID
 		binary.Write(b, binary.LittleEndian, uint32(totalChunks)) // NumChunks
-		if err = node.SendMsg(Msg{Name: msg.Name, Content: b, IsChan: msg.IsChan, PubKey: msg.PubKey, Chunked: true}); err != nil {
+		if err = node.SendMsg(Msg{Name: msg.Name, Content: b, IsChan: msg.IsChan, PubKey: msg.PubKey, Chunked: true, StreamHeader: true}); err != nil {
 			return
 		}
 		for i := uint32(0); i < wholeLoops; i++ {
 			b := bytes.NewBuffer(streamID)                  // StreamID
 			binary.Write(b, binary.LittleEndian, uint32(i)) // ChunkNum
-			b.Write(buf[i*chunkSize : (i*chunkSize)+chunkSize])
+			b.Write(buf[i*chunkSizeMinusHeader : (i*chunkSizeMinusHeader)+chunkSizeMinusHeader])
 			//log.Println("chunk loop", i, buflen, len(tbuf))
 			if err = node.SendMsg(Msg{Name: msg.Name, Content: b, IsChan: msg.IsChan, PubKey: msg.PubKey, Chunked: true}); err != nil {
 				return
@@ -76,7 +77,7 @@ func SendChunked(node Node, chunkSize uint32, msg Msg) (err error) {
 		if remainder > 0 {
 			b := bytes.NewBuffer(streamID)                           // StreamID
 			binary.Write(b, binary.LittleEndian, uint32(wholeLoops)) // ChunkNum
-			b.Write(buf[wholeLoops*chunkSize:])
+			b.Write(buf[wholeLoops*chunkSizeMinusHeader:])
 			//log.Println("chunk remainder", len(buf[wholeLoops*chunkSize:]))
 			if err = node.SendMsg(Msg{Name: msg.Name, Content: b, IsChan: msg.IsChan, PubKey: msg.PubKey, Chunked: true}); err != nil {
 				return

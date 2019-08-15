@@ -97,7 +97,11 @@ func (node *Node) HandleChunk(msg api.Msg) error {
 		if msg.IsChan {
 			channel = msg.Name
 		}
-		return node.dbAddStream(streamID, totalChunks, channel, msg.PubKey.ToB64())
+		pk := ""
+		if msg.PubKey != nil {
+			pk = msg.PubKey.ToB64()
+		}
+		return node.dbAddStream(streamID, totalChunks, channel, pk)
 	} else if msg.Chunked {
 		// save chunk
 		var streamID, chunkNum uint32

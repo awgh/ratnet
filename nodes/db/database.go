@@ -409,6 +409,7 @@ func (node *Node) dbGetMessages(lastTime, maxBytes int64, channelNames ...string
 		offset += rowsPerRequest
 		args[len(args)-1] = offset
 	}
+	log.Println("last time/returned:", lastTime, lastTimeReturned)
 	return msgs, lastTimeReturned, nil
 }
 

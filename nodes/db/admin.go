@@ -190,12 +190,16 @@ func (node *Node) SendMsg(msg api.Msg) error {
 		if msg.Chunked { // we're already chunked, freak out!
 			return errors.New("Chunked message needs to be chunked, bailing out")
 		}
-		return api.SendChunked(node, chunkSize-8, msg)
+		return api.SendChunked(node, chunkSize, msg)
 	}
 
 	data, err := node.contentKey.EncryptMessage(msg.Content.Bytes(), msg.PubKey)
 	if err != nil {
 		return err
+	}
+
+	if msg.StreamHeader {
+		log.Println("Sent Msg after encrypt:", msg.Content.Bytes(), data)
 	}
 
 	flags := uint8(0)
@@ -218,6 +222,10 @@ func (node *Node) SendMsg(msg api.Msg) error {
 	}
 	data = append(rxsum, data...)
 	ts := time.Now().UnixNano()
+
+	if msg.StreamHeader {
+		log.Println("Sent Msg:", msg.Content.Bytes(), data)
+	}
 	if msg.IsChan {
 		return node.dbOutboxEnqueue(msg.Name, data, ts, false)
 	}

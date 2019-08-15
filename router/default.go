@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"log"
 
 	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
@@ -118,11 +119,19 @@ func (r *DefaultRouter) Route(node api.Node, message []byte) error {
 	var channelLen uint16 // beginning uint16 of message is channel name length
 	if msg.IsChan {
 		channelLen = (uint16(message[1]) << 8) | uint16(message[2])
-		if len(message) < int(channelLen)+1+2+64 { // flags + uint16 + LuggageTag
-			return errors.New("Incorrect channel name length")
-		}
+		/*
+			if len(message) < int(channelLen)+1+2+56 { //+64 { // flags + uint16 + LuggageTag
+
+				log.Println(message)
+				return errors.New("Incorrect channel name length")
+			}
+		*/
 		msg.Name = string(message[3 : 3+channelLen]) // flags[0], chan name length[1,2]
 		idx += 2 + int(channelLen)                   //skip over the channel name
+	}
+	if idx+16 >= len(message) {
+		log.Println(message)
+		return errors.New("Malformed message")
 	}
 	nonce := message[idx : idx+16] // todo: this is truncating half the pubkey
 	if r.seenRecently(nonce) {     // LOOP PREVENTION before handling or forwarding
