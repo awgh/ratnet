@@ -616,13 +616,13 @@ func Test_p2p_Chunking_1(t *testing.T) {
 		time.Sleep(1 * time.Second)
 	}
 
-	done := make(chan bool)
+	done := make(chan []byte)
 
 	go func() {
 		msg := <-p2p4.Node.Out()
-		t.Log("p2p4.Out Got: ")
-		t.Log(msg)
-		done <- true
+		t.Log("p2p4.Out Returned Data!")
+		//t.Log(msg)
+		done <- msg.Content.Bytes()
 	}()
 
 	if err := p2p3.Node.AddChannel("test1", pubprivkeyb64Ecc); err != nil {
@@ -642,10 +642,14 @@ func Test_p2p_Chunking_1(t *testing.T) {
 		t.Error(err.Error())
 	}
 
-	_ = <-done
-
+	gotbytes := <-done
 	p2p3.Public.SetByteLimit(oldByteLimit)
 
+	if bytes.Compare(gotbytes, randmessage) == 0 {
+		t.Log("PASS:  Byte arrays were an exact match!!!")
+	} else {
+		t.Error("Byte arrays did not match")
+	}
 }
 
 // Test Messages
