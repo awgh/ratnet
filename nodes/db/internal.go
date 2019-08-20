@@ -51,14 +51,6 @@ func (node *Node) Handle(msg api.Msg) (bool, error) {
 	var tagOK bool
 	var clearMsg api.Msg // msg to out channel
 
-	if msg.Chunked {
-		err := node.HandleChunk(msg)
-		if err != nil {
-			return false, err
-		}
-		return true, err
-	}
-
 	if msg.IsChan {
 		v, ok := node.channelKeys[msg.Name]
 		if !ok {
@@ -76,6 +68,18 @@ func (node *Node) Handle(msg api.Msg) (bool, error) {
 	}
 	clearMsg.Content = bytes.NewBuffer(clear)
 
+	if msg.Chunked {
+		if !msg.StreamHeader {
+			err = node.HandleChunk(clearMsg)
+		} else {
+			err = node.HandleStreamHeader(clearMsg)
+		}
+		if err != nil {
+			return false, err
+		}
+		return true, err
+	}
+
 	select {
 	case node.Out() <- clearMsg:
 		node.debugMsg("Sent message " + fmt.Sprint(msg.Content.Bytes()))
@@ -85,40 +89,38 @@ func (node *Node) Handle(msg api.Msg) (bool, error) {
 	return tagOK, nil
 }
 
+// HandleStreamHeader - store a header for a partial message
+func (node *Node) HandleStreamHeader(msg api.Msg) error {
+	// save totalChunks by streamID
+	var streamID, totalChunks uint32
+	tmpb := bytes.NewBuffer(msg.Content.Bytes()[:8])
+	binary.Read(tmpb, binary.LittleEndian, &streamID)
+	binary.Read(tmpb, binary.LittleEndian, &totalChunks)
+	channel := ""
+	if msg.IsChan {
+		channel = msg.Name
+	}
+	pk := ""
+	if msg.PubKey != nil {
+		pk = msg.PubKey.ToB64()
+	}
+	log.Printf("adding stream: %x  totalChunks: %x (%d)\n", streamID, totalChunks, totalChunks)
+	return node.dbAddStream(streamID, totalChunks, channel, pk)
+}
+
 // HandleChunk - store a partial message (chunk) in the node for later reconstruction
 func (node *Node) HandleChunk(msg api.Msg) error {
-
-	if msg.StreamHeader {
-		// save totalChunks by streamID
-		var streamID, totalChunks uint32
-		//if msg.Content.Len() != 8 {2019/08/15 10:43:51 Dropoff decoded: [
-		//	log.Fatal("something is messed up")
-		//}
-		tmpb := bytes.NewBuffer(msg.Content.Bytes()[:8])
-		binary.Read(tmpb, binary.LittleEndian, &streamID)
-		binary.Read(tmpb, binary.LittleEndian, &totalChunks)
-		channel := ""
-		if msg.IsChan {
-			channel = msg.Name
-		}
-		pk := ""
-		if msg.PubKey != nil {
-			pk = msg.PubKey.ToB64()
-		}
-		return node.dbAddStream(streamID, totalChunks, channel, pk)
-	} else if msg.Chunked {
-		// save chunk
-		var streamID, chunkNum uint32
-		tmpb := bytes.NewBuffer(msg.Content.Bytes()[:8])
-		binary.Read(tmpb, binary.LittleEndian, &streamID)
-		binary.Read(tmpb, binary.LittleEndian, &chunkNum)
-		data, err := ioutil.ReadAll(msg.Content)
-		if err != nil {
-			return err
-		}
-		return node.dbAddChunk(streamID, chunkNum, data)
+	// save chunk
+	var streamID, chunkNum uint32
+	tmpb := bytes.NewBuffer(msg.Content.Bytes()[:8])
+	binary.Read(tmpb, binary.LittleEndian, &streamID)
+	binary.Read(tmpb, binary.LittleEndian, &chunkNum)
+	data, err := ioutil.ReadAll(msg.Content)
+	if err != nil {
+		return err
 	}
-	return errors.New("HandleChunk called on a non-chunk")
+	log.Printf("adding chunk: %x  chunkNum: %x (%d)\n", streamID, chunkNum, chunkNum)
+	return node.dbAddChunk(streamID, chunkNum, data)
 }
 
 func (node *Node) refreshChannels() { // todo: this could be selective or somehow less heavy
