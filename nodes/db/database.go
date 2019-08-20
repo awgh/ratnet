@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -345,11 +346,6 @@ func (node *Node) dbGetMessages(lastTime, maxBytes int64, channelNames ...string
 	var args []interface{}
 	var msgs [][]byte
 	var bytesRead int64
-	offset := 0
-	if maxBytes < 1 {
-		maxBytes = 10000000 // todo:  make a global maximum for all transports
-	}
-	rowsPerRequest := int((maxBytes / (64 * 1024)) + 1) // this is DB-specific, based on row-size limits
 
 	// Build the query
 	wildcard := false
@@ -375,41 +371,33 @@ func (node *Node) dbGetMessages(lastTime, maxBytes int64, channelNames ...string
 		}
 		sqlq = sqlq + " )"
 	}
-	sqlq = sqlq + " ORDER BY timestamp ASC LIMIT ? OFFSET ?;"
-	args = append(args, rowsPerRequest)
-	args = append(args, offset)
+	sqlq = sqlq + " ORDER BY timestamp ASC;"
+	res, err := node.db.Query(sqlq, args...)
 
-	for bytesRead < maxBytes {
-		res, err := node.db.Query(sqlq, args...)
-
-		if res == nil || err != nil {
-			return nil, lastTimeReturned, err
-		}
-		isEmpty := true //todo: must be an official way to do this
-		for res.Next() {
-			isEmpty = false
-			var msg []byte
-			var ts int64
-			res.Scan(&msg, &ts)
-			if bytesRead+int64(len(msg)) >= maxBytes { // no room for next msg
-				isEmpty = true
-				break
-			}
-			if ts > lastTimeReturned {
-				lastTimeReturned = ts
-			} else {
-				log.Printf("Timestamps not increasing - prev: %d  cur: %d\n", lastTimeReturned, ts)
-			}
-			msgs = append(msgs, msg)
-			bytesRead += int64(len(msg))
-		}
-		if isEmpty {
-			break
-		}
-		offset += rowsPerRequest
-		args[len(args)-1] = offset
+	if res == nil || err != nil {
+		return nil, lastTimeReturned, err
 	}
-	log.Println("last time/returned:", lastTime, lastTimeReturned)
+	n := 0
+	for res.Next() {
+		n++
+		var msg []byte
+		var ts int64
+		res.Scan(&msg, &ts)
+		if bytesRead+int64(len(msg)) >= maxBytes { // no room for next msg
+			log.Printf("skipping messages after %d results\n", n)
+			if n == 0 {
+				return nil, lastTimeReturned, errors.New("Result too big to be fetched on this transport! Flush and rechunk")
+			}
+		}
+		if ts > lastTimeReturned {
+			lastTimeReturned = ts
+		} else {
+			log.Printf("Timestamps not increasing - prev: %d  cur: %d\n", lastTimeReturned, ts)
+		}
+		msgs = append(msgs, msg)
+		bytesRead += int64(len(msg))
+	}
+	//log.Println("last time/returned:", lastTime, lastTimeReturned)
 	return msgs, lastTimeReturned, nil
 }
 

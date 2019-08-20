@@ -199,10 +199,6 @@ func (node *Node) SendMsg(msg api.Msg) error {
 		return err
 	}
 
-	if msg.StreamHeader {
-		log.Println("Sent Msg after encrypt:", msg.Content.Bytes(), data)
-	}
-
 	flags := uint8(0)
 	if msg.IsChan {
 		flags |= api.ChannelFlag
@@ -224,9 +220,6 @@ func (node *Node) SendMsg(msg api.Msg) error {
 	data = append(rxsum, data...)
 	ts := time.Now().UnixNano()
 
-	if msg.StreamHeader {
-		log.Println("Sent Msg:", msg.Content.Bytes(), data)
-	}
 	if msg.IsChan {
 		return node.dbOutboxEnqueue(msg.Name, data, ts, false)
 	}
