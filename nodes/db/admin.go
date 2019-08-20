@@ -3,6 +3,7 @@ package db
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -377,14 +378,15 @@ func (node *Node) Start() error {
 						msg.IsChan = true
 						msg.Name = stream.ChannelName
 					}
-					pk := node.contentKey.GetPubKey().Clone()
-					err = pk.FromB64(stream.Pubkey)
-					if err != nil {
-						log.Fatal(err)
-					}
 					msg.Content = buf
-					node.Handle(msg)
 
+					select {
+					case node.Out() <- msg:
+						node.debugMsg("Sent message " + fmt.Sprint(msg.Content.Bytes()))
+						node.dbClearStream(stream.StreamID)
+					default:
+						node.debugMsg("No message sent")
+					}
 				}
 			}
 		}

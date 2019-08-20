@@ -100,27 +100,24 @@ func (node *Node) HandleStreamHeader(msg api.Msg) error {
 	if msg.IsChan {
 		channel = msg.Name
 	}
-	pk := ""
-	if msg.PubKey != nil {
-		pk = msg.PubKey.ToB64()
-	}
 	log.Printf("adding stream: %x  totalChunks: %x (%d)\n", streamID, totalChunks, totalChunks)
-	return node.dbAddStream(streamID, totalChunks, channel, pk)
+	return node.dbAddStream(streamID, totalChunks, channel)
 }
 
 // HandleChunk - store a partial message (chunk) in the node for later reconstruction
 func (node *Node) HandleChunk(msg api.Msg) error {
 	// save chunk
 	var streamID, chunkNum uint32
-	tmpb := bytes.NewBuffer(msg.Content.Bytes()[:8])
-	binary.Read(tmpb, binary.LittleEndian, &streamID)
-	binary.Read(tmpb, binary.LittleEndian, &chunkNum)
 	data, err := ioutil.ReadAll(msg.Content)
 	if err != nil {
 		return err
 	}
+	tmpb := bytes.NewBuffer(data[:8])
+	binary.Read(tmpb, binary.LittleEndian, &streamID)
+	binary.Read(tmpb, binary.LittleEndian, &chunkNum)
+
 	log.Printf("adding chunk: %x  chunkNum: %x (%d)\n", streamID, chunkNum, chunkNum)
-	return node.dbAddChunk(streamID, chunkNum, data)
+	return node.dbAddChunk(streamID, chunkNum, data[8:])
 }
 
 func (node *Node) refreshChannels() { // todo: this could be selective or somehow less heavy

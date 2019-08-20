@@ -422,7 +422,7 @@ func (node *Node) dbClearStream(streamID uint32) error {
 	return res.Delete()
 }
 
-func (node *Node) dbAddStream(streamID uint32, totalChunks uint32, channelName string, pubkey string) error {
+func (node *Node) dbAddStream(streamID uint32, totalChunks uint32, channelName string) error {
 	col := node.db.Collection("streams")
 	res := col.Find().Where("streamid = ?", streamID)
 	count, err := res.Count()
@@ -435,7 +435,6 @@ func (node *Node) dbAddStream(streamID uint32, totalChunks uint32, channelName s
 		stream.StreamID = streamID
 		stream.NumChunks = totalChunks
 		stream.ChannelName = channelName
-		stream.Pubkey = pubkey
 		_, err = col.Insert(stream)
 		return err
 	}
@@ -447,7 +446,6 @@ func (node *Node) dbAddStream(streamID uint32, totalChunks uint32, channelName s
 	stream.StreamID = streamID
 	stream.NumChunks = totalChunks
 	stream.ChannelName = channelName
-	stream.Pubkey = pubkey
 	return res.Update(stream)
 }
 
@@ -613,10 +611,9 @@ func (node *Node) BootstrapDB(dbAdapter, dbConnectionString string) sqlbuilder.D
 	CREATE TABLE IF NOT EXISTS streams (		
 		streamid		%s	NOT NULL,
 		parts			%s	NOT NULL,
-		channel			%s	NOT NULL,
-		pubkey			%s	NOT NULL
+		channel			%s	NOT NULL
 	);
-	`, int64Name, int64Name, strName, strName))
+	`, int64Name, int64Name, strName))
 	checkErr(err)
 
 	// Content Key Setup

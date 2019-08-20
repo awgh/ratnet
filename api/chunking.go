@@ -12,7 +12,6 @@ type StreamHeader struct {
 	StreamID    uint32 `db:"streamid"`
 	NumChunks   uint32 `db:"parts"`
 	ChannelName string `db:"channel"`
-	Pubkey      string `db:"pubkey"`
 }
 
 // Chunk header for each chunk

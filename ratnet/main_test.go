@@ -616,10 +616,13 @@ func Test_p2p_Chunking_1(t *testing.T) {
 		time.Sleep(1 * time.Second)
 	}
 
+	done := make(chan bool)
+
 	go func() {
 		msg := <-p2p4.Node.Out()
 		t.Log("p2p4.Out Got: ")
 		t.Log(msg)
+		done <- true
 	}()
 
 	if err := p2p3.Node.AddChannel("test1", pubprivkeyb64Ecc); err != nil {
@@ -639,7 +642,8 @@ func Test_p2p_Chunking_1(t *testing.T) {
 		t.Error(err.Error())
 	}
 
-	time.Sleep(30 * time.Second)
+	_ = <-done
+
 	p2p3.Public.SetByteLimit(oldByteLimit)
 
 }
