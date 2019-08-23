@@ -18,6 +18,12 @@ type Node interface {
 	Handle(msg Msg) (bool, error)
 	Forward(msg Msg) error
 
+	// Chunking
+	// AddStream - inform node of receipt of a stream header
+	AddStream(streamID uint32, totalChunks uint32, channelName string) error
+	// AddChunk - inform node of receipt of a chunk
+	AddChunk(streamID uint32, chunkNum uint32, data []byte) error
+
 	// FlushOutbox : Empties the outbox of messages older than maxAgeSeconds
 	FlushOutbox(maxAgeSeconds int64)
 

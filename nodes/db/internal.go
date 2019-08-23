@@ -2,10 +2,8 @@ package db
 
 import (
 	"bytes"
-	"encoding/binary"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"os/signal"
@@ -69,11 +67,7 @@ func (node *Node) Handle(msg api.Msg) (bool, error) {
 	clearMsg.Content = bytes.NewBuffer(clear)
 
 	if msg.Chunked {
-		if !msg.StreamHeader {
-			err = node.HandleChunk(clearMsg)
-		} else {
-			err = node.HandleStreamHeader(clearMsg)
-		}
+		err = api.HandleChunked(node, clearMsg)
 		if err != nil {
 			return false, err
 		}
@@ -87,37 +81,6 @@ func (node *Node) Handle(msg api.Msg) (bool, error) {
 		node.debugMsg("No message sent")
 	}
 	return tagOK, nil
-}
-
-// HandleStreamHeader - store a header for a partial message
-func (node *Node) HandleStreamHeader(msg api.Msg) error {
-	// save totalChunks by streamID
-	var streamID, totalChunks uint32
-	tmpb := bytes.NewBuffer(msg.Content.Bytes()[:8])
-	binary.Read(tmpb, binary.LittleEndian, &streamID)
-	binary.Read(tmpb, binary.LittleEndian, &totalChunks)
-	channel := ""
-	if msg.IsChan {
-		channel = msg.Name
-	}
-	log.Printf("adding stream: %x  totalChunks: %x (%d)\n", streamID, totalChunks, totalChunks)
-	return node.dbAddStream(streamID, totalChunks, channel)
-}
-
-// HandleChunk - store a partial message (chunk) in the node for later reconstruction
-func (node *Node) HandleChunk(msg api.Msg) error {
-	// save chunk
-	var streamID, chunkNum uint32
-	data, err := ioutil.ReadAll(msg.Content)
-	if err != nil {
-		return err
-	}
-	tmpb := bytes.NewBuffer(data[:8])
-	binary.Read(tmpb, binary.LittleEndian, &streamID)
-	binary.Read(tmpb, binary.LittleEndian, &chunkNum)
-
-	log.Printf("adding chunk: %x  chunkNum: %x (%d)\n", streamID, chunkNum, chunkNum)
-	return node.dbAddChunk(streamID, chunkNum, data[8:])
 }
 
 func (node *Node) refreshChannels() { // todo: this could be selective or somehow less heavy

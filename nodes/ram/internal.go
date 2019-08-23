@@ -105,6 +105,26 @@ func (node *Node) signalMonitor() {
 	}()
 }
 
+// AddStream - adds a partial message header to internal storage
+func (node *Node) AddStream(streamID uint32, totalChunks uint32, channelName string) error {
+	stream := new(api.StreamHeader)
+	stream.StreamID = streamID
+	stream.NumChunks = totalChunks
+	stream.ChannelName = channelName
+	node.streams[streamID] = stream
+	return nil
+}
+
+// AddChunk - adds a chunk of a partial message to internal storage
+func (node *Node) AddChunk(streamID uint32, chunkNum uint32, data []byte) error {
+	chunk := new(api.Chunk)
+	chunk.StreamID = streamID
+	chunk.ChunkNum = chunkNum
+	chunk.Data = data
+	node.chunks[streamID][chunkNum] = chunk
+	return nil
+}
+
 /*
 	TODO:	encrypted debug and error messages?! yes please!
 			- you may want an application that can detect that messages have happend

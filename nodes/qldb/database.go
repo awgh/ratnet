@@ -611,6 +611,52 @@ func (node *Node) qlGetMessages(lastTime, maxBytes int64, channelNames ...string
 	return msgs, lastTimeReturned, nil
 }
 
+func (node *Node) AddStream(streamID uint32, totalChunks uint32, channelName string) error {
+	c := node.db()
+	defer closeDB(c)
+	sqlq := "SELECT streamid FROM streams WHERE streamid==$1;"
+	if sqlDebug {
+		log.Println(sqlq, streamID)
+	}
+	r := c.QueryRow(sqlq, streamID)
+	var n int64
+	if err := r.Scan(&n); err == sql.ErrNoRows {
+		node.debugMsg("New Stream Header")
+		node.transactExec("INSERT INTO streams (streamid,parts,channel) VALUES( $1, $2, $3 );",
+			streamID, totalChunks, channelName)
+	} else if err == nil {
+		node.debugMsg("Update Server")
+		node.transactExec("UPDATE streams SET parts=$1,channel=$2 WHERE streamid==$4;",
+			totalChunks, channelName, streamID)
+	} else {
+		return err
+	}
+	return nil
+}
+
+func (node *Node) AddChunk(streamID uint32, chunkNum uint32, data []byte) error {
+	c := node.db()
+	defer closeDB(c)
+	sqlq := "SELECT chunks FROM chunks WHERE streamid==$1 AND chunknum==$2;"
+	if sqlDebug {
+		log.Println(sqlq, streamID, chunkNum)
+	}
+	r := c.QueryRow(sqlq, streamID, chunkNum)
+	var n int64
+	if err := r.Scan(&n); err == sql.ErrNoRows {
+		node.debugMsg("New Chunk")
+		node.transactExec("INSERT INTO chunks (streamid,chunknum,data) VALUES( $1, $2, $3 );",
+			streamID, chunkNum, data)
+	} else if err == nil {
+		node.debugMsg("Update Chunk")
+		node.transactExec("UPDATE chunks SET data=$1 WHERE streamid==$2 AND chunknum==$3;",
+			data, streamID, chunkNum)
+	} else {
+		return err
+	}
+	return nil
+}
+
 // FlushOutbox : Deletes outbound messages older than maxAgeSeconds seconds
 func (node *Node) FlushOutbox(maxAgeSeconds int64) {
 	ts := time.Now().UnixNano()
@@ -694,6 +740,22 @@ func (node *Node) BootstrapDB(database string) func() *sql.DB {
 			privkey	string	NOT NULL,
 			enabled	bool	NOT NULL
 		);
+	`)
+
+	node.transactExec(`
+	CREATE TABLE IF NOT EXISTS chunks (		
+		streamid	int64	NOT NULL,
+		chunknum	int64	NOT NULL,
+		data		blob	NOT NULL
+	);
+	`)
+
+	node.transactExec(`
+	CREATE TABLE IF NOT EXISTS streams (		
+		streamid		int64	NOT NULL,
+		parts			int64	NOT NULL,
+		channel			string	NOT NULL
+	);
 	`)
 
 	var n, s string

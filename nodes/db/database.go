@@ -410,7 +410,7 @@ func (node *Node) dbClearStream(streamID uint32) error {
 	return res.Delete()
 }
 
-func (node *Node) dbAddStream(streamID uint32, totalChunks uint32, channelName string) error {
+func (node *Node) AddStream(streamID uint32, totalChunks uint32, channelName string) error {
 	col := node.db.Collection("streams")
 	res := col.Find().Where("streamid = ?", streamID)
 	count, err := res.Count()
@@ -437,7 +437,7 @@ func (node *Node) dbAddStream(streamID uint32, totalChunks uint32, channelName s
 	return res.Update(stream)
 }
 
-func (node *Node) dbAddChunk(streamID uint32, chunkNum uint32, data []byte) error {
+func (node *Node) AddChunk(streamID uint32, chunkNum uint32, data []byte) error {
 	col := node.db.Collection("chunks")
 	res := col.Find().Where("streamid = ?", streamID).And("chunknum = ?", chunkNum)
 	count, err := res.Count()

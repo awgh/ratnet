@@ -3,6 +3,8 @@ package api
 import (
 	"bytes"
 	"encoding/binary"
+	"io/ioutil"
+	"log"
 
 	"github.com/awgh/bencrypt/bc"
 )
@@ -79,4 +81,33 @@ func SendChunked(node Node, chunkSize uint32, msg Msg) (err error) {
 		}
 	}
 	return
+}
+
+// HandleChunked - shared handler for Nodes that deals with chunks and stream headers
+func HandleChunked(node Node, msg Msg) error {
+	if !msg.StreamHeader {
+		// save chunk
+		var streamID, chunkNum uint32
+		data, err := ioutil.ReadAll(msg.Content)
+		if err != nil {
+			return err
+		}
+		tmpb := bytes.NewBuffer(data[:8])
+		binary.Read(tmpb, binary.LittleEndian, &streamID)
+		binary.Read(tmpb, binary.LittleEndian, &chunkNum)
+
+		log.Printf("adding chunk: %x  chunkNum: %x (%d)\n", streamID, chunkNum, chunkNum)
+		return node.AddChunk(streamID, chunkNum, data[8:])
+	}
+	// save totalChunks by streamID
+	var streamID, totalChunks uint32
+	tmpb := bytes.NewBuffer(msg.Content.Bytes()[:8])
+	binary.Read(tmpb, binary.LittleEndian, &streamID)
+	binary.Read(tmpb, binary.LittleEndian, &totalChunks)
+	channel := ""
+	if msg.IsChan {
+		channel = msg.Name
+	}
+	log.Printf("adding stream: %x  totalChunks: %x (%d)\n", streamID, totalChunks, totalChunks)
+	return node.AddStream(streamID, totalChunks, channel)
 }

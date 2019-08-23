@@ -33,6 +33,8 @@ type Node struct {
 	outbox   outboxQueue
 	peers    map[string]*api.Peer
 	profiles map[string]*api.ProfilePriv
+	streams  map[uint32]*api.StreamHeader
+	chunks   map[uint32]map[uint32]*api.Chunk
 }
 
 // New : creates a new instance of API
@@ -46,6 +48,9 @@ func New(contentKey, routingKey bc.KeyPair) *Node {
 	node.contacts = make(map[string]*api.Contact)
 	node.peers = make(map[string]*api.Peer)
 	node.profiles = make(map[string]*api.ProfilePriv)
+
+	node.streams = make(map[uint32]*api.StreamHeader)
+	node.chunks = make(map[uint32]map[uint32]*api.Chunk)
 
 	// set crypto modes
 	if contentKey == nil {
