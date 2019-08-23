@@ -3,6 +3,7 @@ package ram
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"log"
 	"time"
 
@@ -339,6 +340,8 @@ func (node *Node) Start() error {
 		}
 	}
 
+	node.isRunning = true
+
 	// input loop
 	go func() {
 		for {
@@ -356,7 +359,48 @@ func (node *Node) Start() error {
 		}
 	}()
 
-	node.isRunning = true
+	// dechunking loop
+	go func() {
+		for {
+			time.Sleep(10 * time.Millisecond)
+			// check if we should stop running
+			if !node.isRunning {
+				break
+			}
+			// for each stream, count chunks for that header
+			for _, stream := range node.streams {
+				count := len(node.chunks[stream.StreamID])
+				// if chunks == total chunks, re-assemble Msg and call Handle
+				if uint32(count) == uint32(stream.NumChunks) {
+					buf := bytes.NewBuffer([]byte{})
+					for i := uint32(0); i < stream.NumChunks; i++ {
+						chunk, ok := node.chunks[stream.StreamID][i]
+						if !ok {
+							log.Fatal("Chunk count miscalculated - code broken")
+						}
+						buf.Write(chunk.Data)
+					}
+
+					var msg api.Msg
+					if len(stream.ChannelName) > 0 {
+						msg.IsChan = true
+						msg.Name = stream.ChannelName
+					}
+					msg.Content = buf
+
+					select {
+					case node.Out() <- msg:
+						node.debugMsg("Sent message " + fmt.Sprint(msg.Content.Bytes()))
+						node.streams[stream.StreamID] = nil
+						node.chunks[stream.StreamID] = make(map[uint32]*api.Chunk)
+					default:
+						node.debugMsg("No message sent")
+					}
+				}
+			}
+		}
+	}()
+
 	return nil
 }
 
