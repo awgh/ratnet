@@ -266,14 +266,7 @@ func (node *Node) SendChannel(channelName string, data []byte, pubkey ...bc.PubK
 func (node *Node) SendMsg(msg api.Msg) error {
 
 	// determine if we need to chunk
-	chunkSize := api.ChunkSize(node)
-	chunkSize -= (96 + 1) // todo: 96 is hardcoded overhead from assuming ECC but this needs an abstract method, +1 for flags
-	channelNameLen := uint32(0)
-	if msg.IsChan {
-		channelNameLen = uint32(len(msg.Name))
-		chunkSize -= (channelNameLen + 2) // +2 for channel length prefix
-	}
-
+	chunkSize := api.ChunkSize(node)                                    // finds the minimum transport byte limit
 	if msg.Content.Len() > 0 && uint32(msg.Content.Len()) > chunkSize { // we need to chunk
 		if msg.Chunked { // we're already chunked, freak out!
 			return errors.New("Chunked message needs to be chunked, bailing out")

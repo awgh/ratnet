@@ -657,6 +657,74 @@ func (node *Node) AddChunk(streamID uint32, chunkNum uint32, data []byte) error 
 	return nil
 }
 
+func (node *Node) qlClearStream(streamID uint32) error {
+	node.transactExec("DELETE FROM chunks WHERE streamid == $1;", streamID)
+	node.transactExec("DELETE FROM streams WHERE streamid == $1;", streamID)
+	return nil
+}
+
+func (node *Node) qlGetStreams() ([]api.StreamHeader, error) {
+	c := node.db()
+	defer closeDB(c)
+	sqlq := "SELECT streamid,parts,channel FROM streams;"
+	if sqlDebug {
+		log.Println(sqlq)
+	}
+	r, err := c.Query(sqlq)
+	if r == nil || err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	var streams []api.StreamHeader
+	for r.Next() {
+		var s api.StreamHeader
+		if err := r.Scan(&s.StreamID, &s.NumChunks, &s.ChannelName); err != nil {
+			return nil, err
+		}
+		streams = append(streams, s)
+	}
+	return streams, nil
+}
+
+func (node *Node) qlGetChunkCount(streamID uint32) (uint64, error) {
+	c := node.db()
+	defer closeDB(c)
+	sqlq := "SELECT count() FROM chunks WHERE streamid==$1;"
+	if sqlDebug {
+		log.Println(sqlq, streamID)
+	}
+	r := c.QueryRow(sqlq, streamID)
+
+	var count int
+	if err := r.Scan(&count); err != nil {
+		return 0, err
+	}
+	return uint64(count), nil
+}
+
+func (node *Node) qlGetChunks(streamID uint32) ([]api.Chunk, error) {
+	c := node.db()
+	defer closeDB(c)
+	sqlq := "SELECT streamid,chunknum,data FROM streams WHERE streamid==$1;"
+	if sqlDebug {
+		log.Println(sqlq, streamID)
+	}
+	r, err := c.Query(sqlq, streamID)
+	if r == nil || err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	var chunks []api.Chunk
+	for r.Next() {
+		var s api.Chunk
+		if err := r.Scan(&s.StreamID, &s.ChunkNum, &s.Data); err != nil {
+			return nil, err
+		}
+		chunks = append(chunks, s)
+	}
+	return chunks, nil
+}
+
 // FlushOutbox : Deletes outbound messages older than maxAgeSeconds seconds
 func (node *Node) FlushOutbox(maxAgeSeconds int64) {
 	ts := time.Now().UnixNano()

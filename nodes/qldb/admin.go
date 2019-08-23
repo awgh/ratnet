@@ -3,6 +3,7 @@ package qldb
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -185,21 +186,13 @@ func (node *Node) SendChannel(channelName string, data []byte, pubkey ...bc.PubK
 func (node *Node) SendMsg(msg api.Msg) error {
 
 	// determine if we need to chunk
-	chunkSize := api.ChunkSize(node)
-	chunkSize -= (96 + 1) // todo: 96 is hardcoded overhead from assuming ECC but this needs an abstract method, +1 for flags
-	channelNameLen := uint32(0)
-	if msg.IsChan {
-		channelNameLen = uint32(len(msg.Name))
-		chunkSize -= (channelNameLen + 2) // +2 for channel length prefix
-	}
-
+	chunkSize := api.ChunkSize(node)                                    // finds the minimum transport byte limit
 	if msg.Content.Len() > 0 && uint32(msg.Content.Len()) > chunkSize { // we need to chunk
 		if msg.Chunked { // we're already chunked, freak out!
 			return errors.New("Chunked message needs to be chunked, bailing out")
 		}
 		return api.SendChunked(node, chunkSize, msg)
 	}
-
 	data, err := node.contentKey.EncryptMessage(msg.Content.Bytes(), msg.PubKey)
 	if err != nil {
 		return err
@@ -340,6 +333,54 @@ func (node *Node) Start() error {
 			}
 			if err := node.SendMsg(message); err != nil {
 				log.Fatal(err)
+			}
+		}
+	}()
+
+	// dechunking loop
+	go func() {
+		for {
+			time.Sleep(10 * time.Millisecond)
+			// check if we should stop running
+			if !node.isRunning {
+				break
+			}
+			// get all streams
+			streams, err := node.qlGetStreams()
+			if err != nil {
+				log.Fatal(err)
+			}
+			// for each stream, count chunks for that header
+			for _, stream := range streams {
+				count, err := node.qlGetChunkCount(stream.StreamID)
+				if err != nil {
+					log.Fatal(err)
+				}
+				// if chunks == total chunks, re-assemble Msg and call Handle
+				if count == uint64(stream.NumChunks) {
+					chunks, err := node.qlGetChunks(stream.StreamID)
+					if err != nil {
+						log.Fatal(err)
+					}
+					buf := bytes.NewBuffer([]byte{})
+					for _, chunk := range chunks {
+						buf.Write(chunk.Data)
+					}
+					var msg api.Msg
+					if len(stream.ChannelName) > 0 {
+						msg.IsChan = true
+						msg.Name = stream.ChannelName
+					}
+					msg.Content = buf
+
+					select {
+					case node.Out() <- msg:
+						node.debugMsg("Sent message " + fmt.Sprint(msg.Content.Bytes()))
+						node.qlClearStream(stream.StreamID)
+					default:
+						node.debugMsg("No message sent")
+					}
+				}
 			}
 		}
 	}()
