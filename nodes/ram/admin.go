@@ -369,7 +369,11 @@ func (node *Node) Start() error {
 			}
 			// for each stream, count chunks for that header
 			for _, stream := range node.streams {
-				count := len(node.chunks[stream.StreamID])
+				count := 0
+				if node.chunks[stream.StreamID] != nil {
+					count = len(node.chunks[stream.StreamID])
+				}
+
 				// if chunks == total chunks, re-assemble Msg and call Handle
 				if uint32(count) == uint32(stream.NumChunks) {
 					buf := bytes.NewBuffer([]byte{})

@@ -627,7 +627,7 @@ func (node *Node) AddStream(streamID uint32, totalChunks uint32, channelName str
 func (node *Node) AddChunk(streamID uint32, chunkNum uint32, data []byte) error {
 	c := node.db()
 	defer closeDB(c)
-	sqlq := "SELECT chunks FROM chunks WHERE streamid==$1 AND chunknum==$2;"
+	sqlq := "SELECT chunknum FROM chunks WHERE streamid==$1 AND chunknum==$2;"
 	if sqlDebug {
 		log.Println(sqlq, streamID, chunkNum)
 	}
@@ -695,7 +695,7 @@ func (node *Node) qlGetChunkCount(streamID uint32) (uint64, error) {
 func (node *Node) qlGetChunks(streamID uint32) ([]api.Chunk, error) {
 	c := node.db()
 	defer closeDB(c)
-	sqlq := "SELECT streamid,chunknum,data FROM streams WHERE streamid==$1;"
+	sqlq := "SELECT streamid,chunknum,data FROM chunks WHERE streamid==$1 ORDER BY chunknum ASC;"
 	if sqlDebug {
 		log.Println(sqlq, streamID)
 	}

@@ -33,7 +33,11 @@ func ChunkSize(node Node) uint32 {
 			chunksize = limit
 		}
 	}
-	return chunksize
+	if chunksize <= 132 {
+		log.Fatal("Transport has invalid low byte limit")
+	}
+
+	return chunksize - 132 //todo: this is the overhead for ECC, what about RSA?
 }
 
 // SendChunked - utility function to break large messages into smaller ones for transports that can't handle arbitrarily large messages

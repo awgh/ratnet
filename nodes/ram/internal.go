@@ -129,6 +129,9 @@ func (node *Node) AddChunk(streamID uint32, chunkNum uint32, data []byte) error 
 	chunk.StreamID = streamID
 	chunk.ChunkNum = chunkNum
 	chunk.Data = data
+	if node.chunks[streamID] == nil {
+		node.chunks[streamID] = make(map[uint32]*api.Chunk)
+	}
 	node.chunks[streamID][chunkNum] = chunk
 	return nil
 }
