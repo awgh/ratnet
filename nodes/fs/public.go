@@ -83,6 +83,7 @@ func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, maxBytes int64, channel
 			if fileTime == retval.Time {
 				log.Println("Identical filetimes, attempting to exceed recommended protocol buffer size")
 			} else if bytesRead+int64(len(b)) >= maxBytes { // no room for next msg
+				log.Println("Result too big to be fetched on this transport! Flush and rechunk")
 				return io.EOF
 			}
 

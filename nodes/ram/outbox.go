@@ -81,7 +81,7 @@ func (o *outboxQueue) MsgsSince(lastTime int64, maxBytes int64, channelNames ...
 
 				if maxBytes > 0 && int64(proposedSize) > maxBytes {
 					if msgsSize == 0 {
-						log.Fatal("Bailing with zero return results!", proposedSize, len(mail.msg), msgsSize, maxBytes)
+						log.Fatal("Result too big to be fetched on this transport! Flush and rechunk")
 					}
 					break
 				}

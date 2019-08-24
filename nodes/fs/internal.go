@@ -94,6 +94,14 @@ func (node *Node) Handle(msg api.Msg) (bool, error) {
 	}
 	clearMsg.Content = bytes.NewBuffer(clear)
 
+	if msg.Chunked {
+		err = api.HandleChunked(node, clearMsg)
+		if err != nil {
+			return false, err
+		}
+		return true, err
+	}
+
 	select {
 	case node.Out() <- clearMsg:
 		node.debugMsg("Sent message " + fmt.Sprint(msg.Content.Bytes()))

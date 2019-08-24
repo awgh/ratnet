@@ -566,48 +566,38 @@ func (node *Node) qlGetMessages(lastTime, maxBytes int64, channelNames ...string
 		}
 		sqlq = sqlq + " )"
 	}
-	sqlq = sqlq + " ORDER BY timestamp ASC LIMIT $1 OFFSET $2;"
+	sqlq = sqlq + " ORDER BY timestamp ASC;"
 
 	var msgs [][]byte
 	var bytesRead int64
 
-	offset := 0
-	if maxBytes < 1 {
-		maxBytes = 10000000 // todo:  make a global maximum for all transports
+	r, err := c.Query(sqlq)
+	if r == nil || err != nil {
+		return nil, lastTimeReturned, err
 	}
-	rowsPerRequest := int((maxBytes / (64 * 1024)) + 1) // this is QL-specific, based on row-size limits
+	defer r.Close()
 
-	for bytesRead < maxBytes {
-		r, err := c.Query(sqlq, rowsPerRequest, offset)
-		if r == nil || err != nil {
-			return nil, lastTimeReturned, err
-		}
-		defer r.Close()
-
-		//log.Printf("Rows per request: %d\n", rowsPerRequest)
-		isEmpty := true //todo: must be an official way to do this
-		for r.Next() {
-			isEmpty = false
-			var msg []byte
-			var ts int64
-			r.Scan(&msg, &ts)
-			if bytesRead+int64(len(msg)) >= maxBytes { // no room for next msg
-				isEmpty = true
-				break
+	n := 0
+	for r.Next() {
+		n++
+		var msg []byte
+		var ts int64
+		r.Scan(&msg, &ts)
+		if bytesRead+int64(len(msg)) >= maxBytes { // no room for next msg
+			log.Printf("skipping messages after %d results\n", n)
+			if n == 0 {
+				return nil, lastTimeReturned, errors.New("Result too big to be fetched on this transport! Flush and rechunk")
 			}
-			if ts > lastTimeReturned {
-				lastTimeReturned = ts
-			} else {
-				log.Printf("Timestamps not increasing - prev: %d  cur: %d\n", lastTimeReturned, ts)
-			}
-			msgs = append(msgs, msg)
-			bytesRead += int64(len(msg))
 		}
-		if isEmpty {
-			break
+		if ts > lastTimeReturned {
+			lastTimeReturned = ts
+		} else {
+			log.Printf("Timestamps not increasing - prev: %d  cur: %d\n", lastTimeReturned, ts)
 		}
-		offset += rowsPerRequest
+		msgs = append(msgs, msg)
+		bytesRead += int64(len(msg))
 	}
+
 	return msgs, lastTimeReturned, nil
 }
 
