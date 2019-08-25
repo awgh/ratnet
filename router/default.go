@@ -5,19 +5,91 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"sync"
 
 	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
 )
+
+const (
+	recentBufferSize = 8
+	cacheSize        = 256
+	entriesPerTable  = cacheSize / recentBufferSize
+	nonceSize        = 32
+)
+
+type recentPage map[[nonceSize]byte]bool
+
+type recentBuffer struct {
+	mtx           sync.Mutex
+	recentPageIdx int32
+	recentBuffer  [recentBufferSize]recentPage
+}
+
+func newRecentBuffer() (r recentBuffer) {
+	for i := range r.recentBuffer {
+		r.recentBuffer[i] = make(recentPage, entriesPerTable)
+	}
+	return
+}
+
+func (r *recentBuffer) hasMsgBeenSeen(nonce [nonceSize]byte) bool {
+	for i := range r.recentBuffer {
+		if _, ok := r.recentBuffer[i][nonce]; ok {
+			return ok
+		}
+	}
+	return false
+}
+
+func (r *recentBuffer) resetRecentPageIfFull() bool {
+	isFull := len(r.recentBuffer[r.recentPageIdx]) >= entriesPerTable
+
+	if isFull {
+		r.recentBuffer[r.recentPageIdx] = make(recentPage, entriesPerTable)
+	}
+	return isFull
+}
+
+func (r *recentBuffer) setMsgSeen(nonce [nonceSize]byte) {
+	r.recentBuffer[r.recentPageIdx][nonce] = true
+}
+
+// seenRecently : Returns whether this message should be filtered out by loop detection
+func (r *recentBuffer) seenRecently(nonce []byte) bool {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+
+	if len(nonce) != nonceSize {
+		log.Fatalf("invalid nonce size %d", len(nonce))
+	}
+
+	var nonceVal [nonceSize]byte
+	copy(nonceVal[:], nonce[:nonceSize])
+
+	seen := r.hasMsgBeenSeen(nonceVal)
+
+	if reset := r.resetRecentPageIfFull(); reset {
+		if r.recentPageIdx < recentBufferSize-1 {
+			r.recentPageIdx++
+		} else {
+			r.recentPageIdx = 0
+		}
+	}
+
+	if !seen {
+		r.setMsgSeen(nonceVal)
+	}
+
+	return seen
+}
 
 // DefaultRouter - The Default router makes no changes at all,
 //                 every message is sent out on the same channel it came in on,
 //                 and non-channel messages are consumed but not forwarded
 type DefaultRouter struct {
 	// Internal
-	recentPageIdx int
-	recentPage1   map[[16]byte]byte
-	recentPage2   map[[16]byte]byte
+	recentBuffer
 
 	Patches []api.Patch
 
@@ -67,8 +139,7 @@ func NewDefaultRouter() *DefaultRouter {
 	r.ForwardConsumedChannels = true
 	r.ForwardConsumedProfiles = false
 	// init page maps
-	r.recentPage1 = make(map[[16]byte]byte)
-	r.recentPage2 = make(map[[16]byte]byte)
+	r.recentBuffer = newRecentBuffer()
 	return r
 }
 
@@ -133,8 +204,8 @@ func (r *DefaultRouter) Route(node api.Node, message []byte) error {
 		log.Println(message)
 		return errors.New("Malformed message")
 	}
-	nonce := message[idx : idx+16] // todo: this is truncating half the pubkey
-	if r.seenRecently(nonce) {     // LOOP PREVENTION before handling or forwarding
+	nonce := message[idx : idx+nonceSize]
+	if r.seenRecently(nonce) { // LOOP PREVENTION before handling or forwarding
 		return nil
 	}
 	cid, err := node.CID() // we need this for cloning
@@ -206,48 +277,6 @@ func (r *DefaultRouter) Route(node api.Node, message []byte) error {
 		}
 	}
 	return nil
-}
-
-// seenRecently : Returns whether this message should be filtered out by loop detection
-func (r *DefaultRouter) seenRecently(hdr []byte) bool {
-
-	halfCacheSize := 50
-
-	var shdr [16]byte // todo: truncating half of shared key
-	copy(shdr[:], hdr[:16])
-	_, aok := r.recentPage1[shdr]
-	_, bok := r.recentPage2[shdr]
-	retval := aok || bok
-
-	//log.Printf("seen: %+v len1: %d len2: %d\n", shdr, len(r.recentPage1), len(r.recentPage2))
-
-	switch r.recentPageIdx {
-	default:
-		fallthrough
-	case 0:
-		if len(r.recentPage1) >= halfCacheSize {
-			if len(r.recentPage2) >= halfCacheSize {
-				r.recentPage2 = nil
-				r.recentPage2 = make(map[[16]byte]byte)
-			}
-			r.recentPageIdx = 1
-			r.recentPage2[shdr] = 1
-		} else {
-			r.recentPage1[shdr] = 1
-		}
-	case 1:
-		if len(r.recentPage2) >= halfCacheSize {
-			if len(r.recentPage1) >= halfCacheSize {
-				r.recentPage1 = nil
-				r.recentPage1 = make(map[[16]byte]byte)
-			}
-			r.recentPageIdx = 0
-			r.recentPage1[shdr] = 1
-		} else {
-			r.recentPage2[shdr] = 1
-		}
-	}
-	return retval
 }
 
 // MarshalJSON : Create a serialized JSON blob out of the config of this router
