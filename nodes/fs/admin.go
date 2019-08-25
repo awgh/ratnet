@@ -2,7 +2,9 @@ package fs
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -236,8 +238,7 @@ func (node *Node) Send(contactName string, data []byte, pubkey ...bc.PubKey) err
 			return err
 		}
 	}
-
-	return node.send("", destkey, data)
+	return node.SendMsg(api.Msg{Name: contactName, Content: bytes.NewBuffer(data), IsChan: false, PubKey: destkey, Chunked: false})
 }
 
 // SendChannelBulk : Transmit messages to a channel
@@ -266,35 +267,61 @@ func (node *Node) SendChannel(channelName string, data []byte, pubkey ...bc.PubK
 		destkey = c.Privkey.GetPubKey()
 	}
 
-	return node.send(channelName, destkey, data)
+	return node.SendMsg(api.Msg{Name: channelName, Content: bytes.NewBuffer(data), IsChan: true, PubKey: destkey, Chunked: false})
 }
 
-func (node *Node) send(channelName string, destkey bc.PubKey, msg []byte) error {
+// SendMsg : Transmits a message
+func (node *Node) SendMsg(msg api.Msg) error {
 
-	data, err := node.contentKey.EncryptMessage(msg, destkey)
+	// determine if we need to chunk
+	chunkSize := api.ChunkSize(node)                                    // finds the minimum transport byte limit
+	if msg.Content.Len() > 0 && uint32(msg.Content.Len()) > chunkSize { // we need to chunk
+		if msg.Chunked { // we're already chunked, freak out!
+			return errors.New("Chunked message needs to be chunked, bailing out")
+		}
+		return api.SendChunked(node, chunkSize, msg)
+	}
+
+	data, err := node.contentKey.EncryptMessage(msg.Content.Bytes(), msg.PubKey)
 	if err != nil {
 		return err
 	}
 
-	// prepend a uint16 of channel name length, little-endian
-	t := uint16(len(channelName))
-	rxsum := []byte{byte(t >> 8), byte(t & 0xFF)}
-	rxsum = append(rxsum, []byte(channelName)...)
+	flags := uint8(0)
+	if msg.IsChan {
+		flags |= api.ChannelFlag
+	}
+	if msg.Chunked {
+		flags |= api.ChunkedFlag
+	}
+	if msg.StreamHeader {
+		flags |= api.StreamHeaderFlag
+	}
+	rxsum := []byte{flags} // prepend flags byte
+
+	path := node.basePath
+
+	if msg.IsChan {
+		// prepend a uint16 of channel name length, little-endian
+		t := uint16(len(msg.Name))
+		rxsum = append(rxsum, byte(t>>8), byte(t&0xFF))
+		rxsum = append(rxsum, []byte(msg.Name)...)
+
+		// create channel dir if not exist
+		path = filepath.Join(path, msg.Name)
+		os.Mkdir(path, os.FileMode(int(0700)))
+	}
 	data = append(rxsum, data...)
 
-	// create channel dir if not exist
-	chanDir := filepath.Join(node.basePath, channelName)
-	os.Mkdir(chanDir, os.FileMode(int(0700)))
-	f, err := os.Create(filepath.Join(chanDir, hex(node.outboxIndex)))
+	f, err := os.Create(filepath.Join(path, hex(node.outboxIndex)))
 	if err != nil {
 		return err
 	}
-	node.outboxIndex += 1
+	node.outboxIndex++
 	defer f.Close()
 	w := bufio.NewWriter(f)
 	w.Write(data)
 	w.Flush()
-
 	return nil
 }
 
@@ -312,6 +339,8 @@ func (node *Node) Start() error {
 	// start the signal monitor
 	node.signalMonitor()
 
+	node.isRunning = true
+
 	// start the policies
 	if node.policies != nil {
 		for i := 0; i < len(node.policies); i++ {
@@ -328,24 +357,57 @@ func (node *Node) Start() error {
 			if !node.isRunning {
 				break
 			}
-
 			// read message off the input channel
 			message := <-node.In()
 			node.debugMsg("Message accepted on input channel")
-			switch message.IsChan {
-			case true:
-				if err := node.SendChannel(message.Name, message.Content.Bytes(), message.PubKey); err != nil {
-					log.Fatal("SendChannel failed in input loop")
-				}
-			case false:
-				if err := node.Send(message.Name, message.Content.Bytes(), message.PubKey); err != nil {
-					log.Fatal("Send failed in input loop")
+			if err := node.SendMsg(message); err != nil {
+				log.Fatal(err)
+			}
+		}
+	}()
+
+	// dechunking loop
+	go func() {
+		for {
+			time.Sleep(10 * time.Millisecond)
+			// check if we should stop running
+			if !node.isRunning {
+				break
+			}
+			// for each stream, count chunks for that header
+			for _, stream := range node.streams {
+				count := len(node.chunks[stream.StreamID])
+				// if chunks == total chunks, re-assemble Msg and call Handle
+				if uint32(count) == uint32(stream.NumChunks) {
+					buf := bytes.NewBuffer([]byte{})
+					for i := uint32(0); i < stream.NumChunks; i++ {
+						chunk, ok := node.chunks[stream.StreamID][i]
+						if !ok {
+							log.Fatal("Chunk count miscalculated - code broken")
+						}
+						buf.Write(chunk.Data)
+					}
+
+					var msg api.Msg
+					if len(stream.ChannelName) > 0 {
+						msg.IsChan = true
+						msg.Name = stream.ChannelName
+					}
+					msg.Content = buf
+
+					select {
+					case node.Out() <- msg:
+						node.debugMsg("Sent message " + fmt.Sprint(msg.Content.Bytes()))
+						node.streams[stream.StreamID] = nil
+						node.chunks[stream.StreamID] = make(map[uint32]*api.Chunk)
+					default:
+						node.debugMsg("No message sent")
+					}
 				}
 			}
 		}
 	}()
 
-	node.isRunning = true
 	return nil
 }
 

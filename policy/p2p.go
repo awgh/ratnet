@@ -241,7 +241,9 @@ func (s *P2P) mdnsListen() error {
 					for s.IsListening {
 						//st := time.Now()
 						if happy, err := PollServer(trans, s.Node, target[len(u.Scheme)+3:], pubsrv); !happy {
-							log.Println(err.Error())
+							if err != nil {
+								log.Println(err.Error())
+							}
 						}
 						//st2 := time.Now()
 						//log.Printf("p2p PollServer took: %s\n", st2.Sub(st).String())

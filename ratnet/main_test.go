@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"log"
+	"net"
 	"os"
 	"strconv"
 	"testing"
@@ -51,7 +52,7 @@ var transportType int
 
 func init() {
 	nodeType = DB
-	transportType = UDP
+	transportType = TLS
 }
 
 var (
@@ -61,11 +62,26 @@ var (
 
 	p2p1 TestNode
 	p2p2 TestNode
+	p2p3 TestNode
+	p2p4 TestNode
 
 	server6 TestNode
 	server7 TestNode
 	server8 TestNode
 )
+
+// Get preferred outbound ip of this machine
+func GetOutboundIP() net.IP {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer conn.Close()
+
+	localAddr := conn.LocalAddr().(*net.UDPAddr)
+
+	return localAddr.IP
+}
 
 func initNode(n int64, testNode TestNode, nodeType int, transportType int, p2pMode bool) TestNode {
 	num := strconv.FormatInt(n, 10)
@@ -112,7 +128,8 @@ func initNode(n int64, testNode TestNode, nodeType int, transportType int, p2pMo
 			testNode.Admin = https.New("tmp/cert"+num+".pem", "tmp/key"+num+".pem", testNode.Node, true)
 		}
 		if p2pMode {
-			go p2p(testNode.Public, testNode.Admin, testNode.Node, "localhost:3000"+num, "localhost:30"+num+"0"+num)
+			ip := GetOutboundIP().String()
+			go p2p(testNode.Public, testNode.Admin, testNode.Node, ip+":3000"+num, ip+":30"+num+"0"+num)
 		} else {
 			go serve(testNode.Public, testNode.Admin, testNode.Node, "localhost:3000"+num, "localhost:30"+num+"0"+num)
 		}
@@ -564,11 +581,12 @@ func Test_server_PickupDropoff_2(t *testing.T) {
 	}
 }
 
+var randmessage []byte
+
 func Test_p2p_Basic_1(t *testing.T) {
 
 	p2p1 = initNode(4, p2p1, nodeType, transportType, true)
 	p2p2 = initNode(5, p2p2, nodeType, transportType, true)
-
 	for p2p1.Node == nil || p2p2.Node == nil {
 		time.Sleep(1 * time.Second)
 	}
@@ -585,9 +603,52 @@ func Test_p2p_Basic_1(t *testing.T) {
 	if err := p2p2.Node.AddChannel("test1", pubprivkeyb64Ecc); err != nil {
 		t.Error(err.Error())
 	}
-
 	if err := p2p1.Node.SendChannel("test1", []byte(testMessage1)); err != nil {
 		t.Error(err.Error())
+	}
+}
+
+func Test_p2p_Chunking_1(t *testing.T) {
+
+	p2p3 = initNode(6, p2p3, nodeType, transportType, true)
+	p2p4 = initNode(7, p2p4, nodeType, transportType, true)
+	for p2p3.Node == nil || p2p4.Node == nil {
+		time.Sleep(1 * time.Second)
+	}
+
+	done := make(chan []byte)
+
+	go func() {
+		msg := <-p2p4.Node.Out()
+		t.Log("p2p4.Out Returned Data!")
+		//t.Log(msg)
+		done <- msg.Content.Bytes()
+	}()
+
+	if err := p2p3.Node.AddChannel("test1", pubprivkeyb64Ecc); err != nil {
+		t.Error(err.Error())
+	}
+	if err := p2p4.Node.AddChannel("test1", pubprivkeyb64Ecc); err != nil {
+		t.Error(err.Error())
+	}
+	randmessage, err := bc.GenerateRandomBytes(8675)
+	if err != nil {
+		t.Error(err.Error())
+	}
+	//override byte limit to trigger chunking
+	oldByteLimit := p2p3.Public.ByteLimit()
+	p2p3.Public.SetByteLimit(4096)
+	if err := p2p3.Node.SendChannel("test1", randmessage); err != nil {
+		t.Error(err.Error())
+	}
+
+	gotbytes := <-done
+	p2p3.Public.SetByteLimit(oldByteLimit)
+
+	if bytes.Compare(gotbytes, randmessage) == 0 {
+		t.Log("PASS:  Byte arrays were an exact match!!!")
+	} else {
+		t.Error("Byte arrays did not match")
 	}
 }
 

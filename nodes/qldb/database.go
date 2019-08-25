@@ -566,49 +566,153 @@ func (node *Node) qlGetMessages(lastTime, maxBytes int64, channelNames ...string
 		}
 		sqlq = sqlq + " )"
 	}
-	sqlq = sqlq + " ORDER BY timestamp ASC LIMIT $1 OFFSET $2;"
+	sqlq = sqlq + " ORDER BY timestamp ASC;"
 
 	var msgs [][]byte
 	var bytesRead int64
 
-	offset := 0
-	if maxBytes < 1 {
-		maxBytes = 10000000 // todo:  make a global maximum for all transports
+	r, err := c.Query(sqlq)
+	if r == nil || err != nil {
+		return nil, lastTimeReturned, err
 	}
-	rowsPerRequest := int((maxBytes / (64 * 1024)) + 1) // this is QL-specific, based on row-size limits
+	defer r.Close()
 
-	for bytesRead < maxBytes {
-		r, err := c.Query(sqlq, rowsPerRequest, offset)
-		if r == nil || err != nil {
-			return nil, lastTimeReturned, err
-		}
-		defer r.Close()
-
-		//log.Printf("Rows per request: %d\n", rowsPerRequest)
-		isEmpty := true //todo: must be an official way to do this
-		for r.Next() {
-			isEmpty = false
-			var msg []byte
-			var ts int64
-			r.Scan(&msg, &ts)
-			if bytesRead+int64(len(msg)) >= maxBytes { // no room for next msg
-				isEmpty = true
-				break
+	n := 0
+	for r.Next() {
+		n++
+		var msg []byte
+		var ts int64
+		r.Scan(&msg, &ts)
+		if bytesRead+int64(len(msg)) >= maxBytes { // no room for next msg
+			log.Printf("skipping messages after %d results\n", n)
+			if n == 0 {
+				return nil, lastTimeReturned, errors.New("Result too big to be fetched on this transport! Flush and rechunk")
 			}
-			if ts > lastTimeReturned {
-				lastTimeReturned = ts
-			} else {
-				log.Printf("Timestamps not increasing - prev: %d  cur: %d\n", lastTimeReturned, ts)
-			}
-			msgs = append(msgs, msg)
-			bytesRead += int64(len(msg))
 		}
-		if isEmpty {
-			break
+		if ts > lastTimeReturned {
+			lastTimeReturned = ts
+		} else {
+			log.Printf("Timestamps not increasing - prev: %d  cur: %d\n", lastTimeReturned, ts)
 		}
-		offset += rowsPerRequest
+		msgs = append(msgs, msg)
+		bytesRead += int64(len(msg))
 	}
+
 	return msgs, lastTimeReturned, nil
+}
+
+func (node *Node) AddStream(streamID uint32, totalChunks uint32, channelName string) error {
+	c := node.db()
+	defer closeDB(c)
+	sqlq := "SELECT streamid FROM streams WHERE streamid==$1;"
+	if sqlDebug {
+		log.Println(sqlq, streamID)
+	}
+	r := c.QueryRow(sqlq, streamID)
+	var n int64
+	if err := r.Scan(&n); err == sql.ErrNoRows {
+		node.debugMsg("New Stream Header")
+		node.transactExec("INSERT INTO streams (streamid,parts,channel) VALUES( $1, $2, $3 );",
+			streamID, totalChunks, channelName)
+	} else if err == nil {
+		node.debugMsg("Update Server")
+		node.transactExec("UPDATE streams SET parts=$1,channel=$2 WHERE streamid==$4;",
+			totalChunks, channelName, streamID)
+	} else {
+		return err
+	}
+	return nil
+}
+
+func (node *Node) AddChunk(streamID uint32, chunkNum uint32, data []byte) error {
+	c := node.db()
+	defer closeDB(c)
+	sqlq := "SELECT chunknum FROM chunks WHERE streamid==$1 AND chunknum==$2;"
+	if sqlDebug {
+		log.Println(sqlq, streamID, chunkNum)
+	}
+	r := c.QueryRow(sqlq, streamID, chunkNum)
+	var n int64
+	if err := r.Scan(&n); err == sql.ErrNoRows {
+		node.debugMsg("New Chunk")
+		node.transactExec("INSERT INTO chunks (streamid,chunknum,data) VALUES( $1, $2, $3 );",
+			streamID, chunkNum, data)
+	} else if err == nil {
+		node.debugMsg("Update Chunk")
+		node.transactExec("UPDATE chunks SET data=$1 WHERE streamid==$2 AND chunknum==$3;",
+			data, streamID, chunkNum)
+	} else {
+		return err
+	}
+	return nil
+}
+
+func (node *Node) qlClearStream(streamID uint32) error {
+	node.transactExec("DELETE FROM chunks WHERE streamid == $1;", streamID)
+	node.transactExec("DELETE FROM streams WHERE streamid == $1;", streamID)
+	return nil
+}
+
+func (node *Node) qlGetStreams() ([]api.StreamHeader, error) {
+	c := node.db()
+	defer closeDB(c)
+	sqlq := "SELECT streamid,parts,channel FROM streams;"
+	if sqlDebug {
+		log.Println(sqlq)
+	}
+	r, err := c.Query(sqlq)
+	if r == nil || err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	var streams []api.StreamHeader
+	for r.Next() {
+		var s api.StreamHeader
+		if err := r.Scan(&s.StreamID, &s.NumChunks, &s.ChannelName); err != nil {
+			return nil, err
+		}
+		streams = append(streams, s)
+	}
+	return streams, nil
+}
+
+func (node *Node) qlGetChunkCount(streamID uint32) (uint64, error) {
+	c := node.db()
+	defer closeDB(c)
+	sqlq := "SELECT count() FROM chunks WHERE streamid==$1;"
+	if sqlDebug {
+		log.Println(sqlq, streamID)
+	}
+	r := c.QueryRow(sqlq, streamID)
+
+	var count int
+	if err := r.Scan(&count); err != nil {
+		return 0, err
+	}
+	return uint64(count), nil
+}
+
+func (node *Node) qlGetChunks(streamID uint32) ([]api.Chunk, error) {
+	c := node.db()
+	defer closeDB(c)
+	sqlq := "SELECT streamid,chunknum,data FROM chunks WHERE streamid==$1 ORDER BY chunknum ASC;"
+	if sqlDebug {
+		log.Println(sqlq, streamID)
+	}
+	r, err := c.Query(sqlq, streamID)
+	if r == nil || err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	var chunks []api.Chunk
+	for r.Next() {
+		var s api.Chunk
+		if err := r.Scan(&s.StreamID, &s.ChunkNum, &s.Data); err != nil {
+			return nil, err
+		}
+		chunks = append(chunks, s)
+	}
+	return chunks, nil
 }
 
 // FlushOutbox : Deletes outbound messages older than maxAgeSeconds seconds
@@ -694,6 +798,22 @@ func (node *Node) BootstrapDB(database string) func() *sql.DB {
 			privkey	string	NOT NULL,
 			enabled	bool	NOT NULL
 		);
+	`)
+
+	node.transactExec(`
+	CREATE TABLE IF NOT EXISTS chunks (		
+		streamid	int64	NOT NULL,
+		chunknum	int64	NOT NULL,
+		data		blob	NOT NULL
+	);
+	`)
+
+	node.transactExec(`
+	CREATE TABLE IF NOT EXISTS streams (		
+		streamid		int64	NOT NULL,
+		parts			int64	NOT NULL,
+		channel			string	NOT NULL
+	);
 	`)
 
 	var n, s string

@@ -1,7 +1,9 @@
 package qldb
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -157,8 +159,7 @@ func (node *Node) Send(contactName string, data []byte, pubkey ...bc.PubKey) err
 			return err
 		}
 	}
-
-	return node.send("", destkey, data)
+	return node.SendMsg(api.Msg{Name: contactName, Content: bytes.NewBuffer(data), IsChan: false, PubKey: destkey, Chunked: false})
 }
 
 // SendChannel : Transmit a message to a channel
@@ -178,25 +179,49 @@ func (node *Node) SendChannel(channelName string, data []byte, pubkey ...bc.PubK
 	if destkey == nil {
 		log.Fatal("nil DestKey in SendChannel")
 	}
-
-	return node.send(channelName, destkey, data)
+	return node.SendMsg(api.Msg{Name: channelName, Content: bytes.NewBuffer(data), IsChan: true, PubKey: destkey, Chunked: false})
 }
 
-func (node *Node) send(channelName string, destkey bc.PubKey, msg []byte) error {
+// SendMsg : Transmits a message
+func (node *Node) SendMsg(msg api.Msg) error {
 
-	data, err := node.contentKey.EncryptMessage(msg, destkey)
+	// determine if we need to chunk
+	chunkSize := api.ChunkSize(node)                                    // finds the minimum transport byte limit
+	if msg.Content.Len() > 0 && uint32(msg.Content.Len()) > chunkSize { // we need to chunk
+		if msg.Chunked { // we're already chunked, freak out!
+			return errors.New("Chunked message needs to be chunked, bailing out")
+		}
+		return api.SendChunked(node, chunkSize, msg)
+	}
+	data, err := node.contentKey.EncryptMessage(msg.Content.Bytes(), msg.PubKey)
 	if err != nil {
 		return err
 	}
 
-	// prepend a uint16 of channel name length, little-endian
-	t := uint16(len(channelName))
-	rxsum := []byte{byte(t >> 8), byte(t & 0xFF)}
-	rxsum = append(rxsum, []byte(channelName)...)
-	data = append(rxsum, data...)
+	flags := uint8(0)
+	if msg.IsChan {
+		flags |= api.ChannelFlag
+	}
+	if msg.Chunked {
+		flags |= api.ChunkedFlag
+	}
+	if msg.StreamHeader {
+		flags |= api.StreamHeaderFlag
+	}
+	rxsum := []byte{flags} // prepend flags byte
 
+	if msg.IsChan {
+		// prepend a uint16 of channel name length, little-endian
+		t := uint16(len(msg.Name))
+		rxsum = append(rxsum, byte(t>>8), byte(t&0xFF))
+		rxsum = append(rxsum, []byte(msg.Name)...)
+	}
+	data = append(rxsum, data...)
 	ts := time.Now().UnixNano()
-	return node.qlOutboxEnqueue(channelName, data, ts, false) // todo: not checking if exists here?
+	if msg.IsChan {
+		return node.qlOutboxEnqueue(msg.Name, data, ts, false)
+	}
+	return node.qlOutboxEnqueue("", data, ts, false)
 }
 
 // SendBulk : Transmit messages to a single key
@@ -245,10 +270,18 @@ func (node *Node) SendChannelBulk(channelName string, data [][]byte, pubkey ...b
 
 func (node *Node) sendBulk(channelName string, destkey bc.PubKey, msg [][]byte) error {
 
-	// prepend a uint16 of channel name length, little-endian
-	t := uint16(len(channelName))
-	rxsum := []byte{byte(t >> 8), byte(t & 0xFF)}
-	rxsum = append(rxsum, []byte(channelName)...)
+	isChan := (channelName != "")
+	flags := uint8(0)
+	if isChan {
+		flags |= api.ChannelFlag
+	}
+	rxsum := []byte{flags} // prepend flags byte
+	if isChan {
+		// prepend a uint16 of channel name length, little-endian
+		t := uint16(len(channelName))
+		rxsum = append(rxsum, byte(t>>8), byte(t&0xFF))
+		rxsum = append(rxsum, []byte(channelName)...)
+	}
 
 	//todo: is this passing msg by reference or not???
 	data := make([][]byte, len(msg))
@@ -298,16 +331,55 @@ func (node *Node) Start() error {
 			if !more {
 				break
 			}
+			if err := node.SendMsg(message); err != nil {
+				log.Fatal(err)
+			}
+		}
+	}()
 
-			switch message.IsChan {
-			case true:
-				if err := node.SendChannel(message.Name, message.Content.Bytes(), message.PubKey); err != nil {
+	// dechunking loop
+	go func() {
+		for {
+			time.Sleep(10 * time.Millisecond)
+			// check if we should stop running
+			if !node.isRunning {
+				break
+			}
+			// get all streams
+			streams, err := node.qlGetStreams()
+			if err != nil {
+				log.Fatal(err)
+			}
+			// for each stream, count chunks for that header
+			for _, stream := range streams {
+				count, err := node.qlGetChunkCount(stream.StreamID)
+				if err != nil {
 					log.Fatal(err)
 				}
+				// if chunks == total chunks, re-assemble Msg and call Handle
+				if count == uint64(stream.NumChunks) {
+					chunks, err := node.qlGetChunks(stream.StreamID)
+					if err != nil {
+						log.Fatal(err)
+					}
+					buf := bytes.NewBuffer([]byte{})
+					for _, chunk := range chunks {
+						buf.Write(chunk.Data)
+					}
+					var msg api.Msg
+					if len(stream.ChannelName) > 0 {
+						msg.IsChan = true
+						msg.Name = stream.ChannelName
+					}
+					msg.Content = buf
 
-			case false:
-				if err := node.Send(message.Name, message.Content.Bytes(), message.PubKey); err != nil {
-					log.Fatal(err)
+					select {
+					case node.Out() <- msg:
+						node.debugMsg("Sent message " + fmt.Sprint(msg.Content.Bytes()))
+						node.qlClearStream(stream.StreamID)
+					default:
+						node.debugMsg("No message sent")
+					}
 				}
 			}
 		}

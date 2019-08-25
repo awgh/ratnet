@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -345,11 +346,6 @@ func (node *Node) dbGetMessages(lastTime, maxBytes int64, channelNames ...string
 	var args []interface{}
 	var msgs [][]byte
 	var bytesRead int64
-	offset := 0
-	if maxBytes < 1 {
-		maxBytes = 10000000 // todo:  make a global maximum for all transports
-	}
-	rowsPerRequest := int((maxBytes / (64 * 1024)) + 1) // this is DB-specific, based on row-size limits
 
 	// Build the query
 	wildcard := false
@@ -375,41 +371,123 @@ func (node *Node) dbGetMessages(lastTime, maxBytes int64, channelNames ...string
 		}
 		sqlq = sqlq + " )"
 	}
-	sqlq = sqlq + " ORDER BY timestamp ASC LIMIT ? OFFSET ?;"
-	args = append(args, rowsPerRequest)
-	args = append(args, offset)
+	sqlq = sqlq + " ORDER BY timestamp ASC;"
+	res, err := node.db.Query(sqlq, args...)
 
-	for bytesRead < maxBytes {
-		res, err := node.db.Query(sqlq, args...)
-
-		if res == nil || err != nil {
-			return nil, lastTimeReturned, err
-		}
-		isEmpty := true //todo: must be an official way to do this
-		for res.Next() {
-			isEmpty = false
-			var msg []byte
-			var ts int64
-			res.Scan(&msg, &ts)
-			if bytesRead+int64(len(msg)) >= maxBytes { // no room for next msg
-				isEmpty = true
-				break
-			}
-			if ts > lastTimeReturned {
-				lastTimeReturned = ts
-			} else {
-				log.Printf("Timestamps not increasing - prev: %d  cur: %d\n", lastTimeReturned, ts)
-			}
-			msgs = append(msgs, msg)
-			bytesRead += int64(len(msg))
-		}
-		if isEmpty {
-			break
-		}
-		offset += rowsPerRequest
-		args[len(args)-1] = offset
+	if res == nil || err != nil {
+		return nil, lastTimeReturned, err
 	}
+	n := 0
+	for res.Next() {
+		n++
+		var msg []byte
+		var ts int64
+		res.Scan(&msg, &ts)
+		if bytesRead+int64(len(msg)) >= maxBytes { // no room for next msg
+			log.Printf("skipping messages after %d results\n", n)
+			if n == 0 {
+				return nil, lastTimeReturned, errors.New("Result too big to be fetched on this transport! Flush and rechunk")
+			}
+		}
+		if ts > lastTimeReturned {
+			lastTimeReturned = ts
+		} else {
+			log.Printf("Timestamps not increasing - prev: %d  cur: %d\n", lastTimeReturned, ts)
+		}
+		msgs = append(msgs, msg)
+		bytesRead += int64(len(msg))
+	}
+	//log.Println("last time/returned:", lastTime, lastTimeReturned)
 	return msgs, lastTimeReturned, nil
+}
+
+func (node *Node) dbClearStream(streamID uint32) error {
+	col := node.db.Collection("chunks")
+	res := col.Find("streamid = ?", streamID)
+	_ = res.Delete()
+	col = node.db.Collection("streams")
+	res = col.Find("streamid = ?", streamID)
+	return res.Delete()
+}
+
+func (node *Node) AddStream(streamID uint32, totalChunks uint32, channelName string) error {
+	col := node.db.Collection("streams")
+	res := col.Find().Where("streamid = ?", streamID)
+	count, err := res.Count()
+	if err != nil {
+		return err
+	}
+	var stream api.StreamHeader
+	if count == 0 {
+		// insert new stream
+		stream.StreamID = streamID
+		stream.NumChunks = totalChunks
+		stream.ChannelName = channelName
+		_, err = col.Insert(stream)
+		return err
+	}
+	err = res.One(&stream)
+	if err != nil {
+		return err
+	}
+	log.Printf("warning: over-writing stream header: %x\n", streamID)
+	stream.StreamID = streamID
+	stream.NumChunks = totalChunks
+	stream.ChannelName = channelName
+	return res.Update(stream)
+}
+
+func (node *Node) AddChunk(streamID uint32, chunkNum uint32, data []byte) error {
+	col := node.db.Collection("chunks")
+	res := col.Find().Where("streamid = ?", streamID).And("chunknum = ?", chunkNum)
+	count, err := res.Count()
+	if err != nil {
+		return err
+	}
+	var chunk api.Chunk
+	if count == 0 {
+		// insert new chunk
+		chunk.StreamID = streamID
+		chunk.ChunkNum = chunkNum
+		chunk.Data = data
+		_, err = col.Insert(chunk)
+		return err
+	}
+	err = res.One(&chunk)
+	if err != nil {
+		return err
+	}
+	log.Printf("warning: over-writing chunk: %x:%x\n", streamID, chunkNum)
+	chunk.StreamID = streamID
+	chunk.ChunkNum = chunkNum
+	chunk.Data = data
+	return res.Update(chunk)
+}
+
+func (node *Node) dbGetStreams() ([]api.StreamHeader, error) {
+	col := node.db.Collection("streams")
+	res := col.Find()
+	var streams []api.StreamHeader
+	if err := res.All(&streams); err != nil {
+		return nil, err
+	}
+	return streams, nil
+}
+
+func (node *Node) dbGetChunkCount(streamID uint32) (uint64, error) {
+	col := node.db.Collection("chunks")
+	res := col.Find().Where("streamid = ?", streamID)
+	return res.Count()
+}
+
+func (node *Node) dbGetChunks(streamID uint32) ([]api.Chunk, error) {
+	col := node.db.Collection("chunks")
+	res := col.Find().Where("streamid = ?", streamID).OrderBy("chunknum")
+	var chunks []api.Chunk
+	if err := res.All(&chunks); err != nil {
+		return nil, err
+	}
+	return chunks, nil
 }
 
 // FlushOutbox : Deletes outbound messages older than maxAgeSeconds seconds
@@ -506,6 +584,24 @@ func (node *Node) BootstrapDB(dbAdapter, dbConnectionString string) sqlbuilder.D
 			enabled	bool	NOT NULL
 		);
 	`, strName, strName))
+	checkErr(err)
+
+	_, err = node.db.Exec(fmt.Sprintf(`
+	CREATE TABLE IF NOT EXISTS chunks (		
+		streamid	%s	NOT NULL,
+		chunknum	%s	NOT NULL,
+		data		%s	NOT NULL
+	);
+	`, int64Name, int64Name, blobName))
+	checkErr(err)
+
+	_, err = node.db.Exec(fmt.Sprintf(`
+	CREATE TABLE IF NOT EXISTS streams (		
+		streamid		%s	NOT NULL,
+		parts			%s	NOT NULL,
+		channel			%s	NOT NULL
+	);
+	`, int64Name, int64Name, strName))
 	checkErr(err)
 
 	// Content Key Setup
