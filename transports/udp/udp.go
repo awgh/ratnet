@@ -93,7 +93,7 @@ func (m *Module) Listen(listen string, adminMode bool) {
 				continue
 			}
 
-			//log.Println("UDP accepted new connection")
+			log.Println("UDP accepted new connection")
 
 			c.SetReadDeadline(time.Now().Add(35 * time.Second))
 			c.SetWriteDeadline(time.Now().Add(35 * time.Second))
@@ -106,7 +106,7 @@ func (m *Module) Listen(listen string, adminMode bool) {
 
 					// read
 					blen := make([]byte, 4)
-					n, err := reader.Read(blen)
+					n, err := io.ReadFull(reader, blen)
 					if n != 4 {
 						log.Println("Listen remote read len underflow: n =", n)
 						break
@@ -117,7 +117,7 @@ func (m *Module) Listen(listen string, adminMode bool) {
 					}
 					rlen := binary.LittleEndian.Uint32(blen)
 					buf := make([]byte, rlen)
-					n, err = reader.Read(buf)
+					n, err = io.ReadFull(reader, buf)
 					if uint32(n) != rlen {
 						log.Println("Listen remote read underflow: n =", n)
 						break
@@ -214,7 +214,7 @@ func (m *Module) RPC(host string, method string, args ...interface{}) (interface
 
 	// read
 	blen := make([]byte, 4)
-	n, err := reader.Read(blen)
+	n, err := io.ReadFull(reader, blen)
 	if n != 4 {
 		log.Println("RPC remote read len underflow: n =", n)
 		delete(cachedSessions, host) // something's wrong, make a new session next attempt
@@ -229,7 +229,7 @@ func (m *Module) RPC(host string, method string, args ...interface{}) (interface
 	}
 	wlen := binary.LittleEndian.Uint32(blen)
 	buf := make([]byte, wlen)
-	n, err = reader.Read(buf)
+	n, err = io.ReadFull(reader, buf)
 	if uint32(n) != wlen {
 		log.Println("RPC remote read underflow: n =", n)
 		delete(cachedSessions, host) // something's wrong, make a new session next attempt

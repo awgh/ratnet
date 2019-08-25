@@ -2,12 +2,26 @@ package policy
 
 import (
 	"log"
+	"sync"
 
 	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/ratnet/api"
 )
 
 var peerTable map[string]*api.PeerInfo
+var lock = sync.RWMutex{}
+
+func readPeerTable(key string) (*api.PeerInfo, bool) {
+	lock.RLock()
+	defer lock.RUnlock()
+	v, ok := peerTable[key]
+	return v, ok
+}
+func writePeerTable(key string, val *api.PeerInfo) {
+	lock.Lock()
+	defer lock.Unlock()
+	peerTable[key] = val
+}
 
 func init() {
 	peerTable = make(map[string]*api.PeerInfo)
@@ -16,10 +30,10 @@ func init() {
 // PollServer does a Push/Pull between a local and remote Node
 func PollServer(transport api.Transport, node api.Node, host string, pubsrv bc.PubKey) (bool, error) {
 	// make PeerInfo for this host if doesn't exist
-	if _, ok := peerTable[host]; !ok {
-		peerTable[host] = new(api.PeerInfo)
+	if _, ok := readPeerTable(host); !ok {
+		writePeerTable(host, new(api.PeerInfo))
 	}
-	peer := peerTable[host]
+	peer, _ := readPeerTable(host)
 	//log.Printf("pollServer using peer %+v\n", peer)
 
 	if peer.RoutingPub == nil {
@@ -50,15 +64,17 @@ func PollServer(transport api.Transport, node api.Node, host string, pubsrv bc.P
 		log.Println("remote pickup error: " + err.Error())
 		return false, err
 	}
-	toLocal, ok := toLocalRaw.(api.Bundle)
-	if !ok {
-		log.Printf("pollServer type assertion tolocalRaw failed")
-		return false, err
+	var toLocal api.Bundle
+	var ok bool
+	if toLocalRaw != nil {
+		toLocal, ok = toLocalRaw.(api.Bundle)
+		if !ok {
+			log.Printf("pollServer type assertion tolocalRaw failed")
+			return false, err
+		}
+		//log.Printf("pollServer Pickup Remote len: %d ", len(toLocal.Data))
+		peer.TotalBytesRX = peer.TotalBytesRX + int64(len(toLocal.Data))
 	}
-	//log.Printf("pollServer Pickup Remote len: %d ", len(toLocal.Data))
-
-	peer.TotalBytesRX = peer.TotalBytesRX + int64(len(toLocal.Data))
-
 	// Dropoff Remote
 	if len(toRemote.Data) > 0 {
 		if _, err := transport.RPC(host, "Dropoff", toRemote); err != nil {
@@ -72,7 +88,7 @@ func PollServer(transport api.Transport, node api.Node, host string, pubsrv bc.P
 		peer.TotalBytesTX = peer.TotalBytesTX + int64(len(toRemote.Data))
 	}
 	// Dropoff Local
-	if len(toLocal.Data) > 0 {
+	if toLocalRaw != nil && len(toLocal.Data) > 0 {
 		if err := node.Dropoff(toLocal); err != nil {
 			return false, err
 		}

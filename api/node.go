@@ -15,8 +15,14 @@ type Node interface {
 	Router() Router
 	SetRouter(router Router)
 	GetChannelPrivKey(name string) (string, error)
-	Handle(channelName string, message []byte) (bool, error)
-	Forward(channelName string, message []byte) error
+	Handle(msg Msg) (bool, error)
+	Forward(msg Msg) error
+
+	// Chunking
+	// AddStream - inform node of receipt of a stream header
+	AddStream(streamID uint32, totalChunks uint32, channelName string) error
+	// AddChunk - inform node of receipt of a chunk
+	AddChunk(streamID uint32, chunkNum uint32, data []byte) error
 
 	// FlushOutbox : Empties the outbox of messages older than maxAgeSeconds
 	FlushOutbox(maxAgeSeconds int64)
@@ -87,10 +93,13 @@ type Node interface {
 	// DeletePeer : Remove a peer from this node's database (33)
 	DeletePeer(name string) error
 
-	// Send : Transmit a message to a single key (34)
+	// Send : Transmit a message to a single key (34) <deprecated>
 	Send(contactName string, data []byte, pubkey ...bc.PubKey) error
-	// SendChannel : Transmit a message to a channel (35)
+	// SendChannel : Transmit a message to a channel (35) <deprecated>
 	SendChannel(channelName string, data []byte, pubkey ...bc.PubKey) error
+
+	// SendMsg : Transmit a message object (36)
+	SendMsg(msg Msg) error
 
 	//  End of Admin API Functions
 

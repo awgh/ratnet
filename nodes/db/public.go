@@ -36,6 +36,7 @@ func (node *Node) Dropoff(bundle api.Bundle) error {
 		log.Printf("dropoff gob decode failed, len %d\n", len(data))
 		return erra
 	}
+
 	for i := 0; i < len(msgs); i++ {
 		if len(msgs[i]) < 16 { // aes.BlockSize == 16
 			continue //todo: remove padding before here?
@@ -59,7 +60,7 @@ func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, maxBytes int64, channel
 	if err != nil {
 		return retval, err
 	}
-	//log.Printf("maxBytes = %d, bytesRead = %d\n", maxBytes, bytesRead)
+	//log.Printf("maxBytes = %d", maxBytes)
 
 	// Return things
 
