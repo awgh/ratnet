@@ -42,17 +42,17 @@ func (r *recentBuffer) hasMsgBeenSeen(nonce [nonceSize]byte) bool {
 	return false
 }
 
-func (r *recentBuffer) resetRecentPageIfFull(idx int32) bool {
-	isFull := len(r.recentBuffer[idx]) >= entriesPerTable
+func (r *recentBuffer) resetRecentPageIfFull() bool {
+	isFull := len(r.recentBuffer[r.recentPageIdx]) >= entriesPerTable
 
 	if isFull {
-		r.recentBuffer[idx] = make(recentPage, entriesPerTable)
+		r.recentBuffer[r.recentPageIdx] = make(recentPage, entriesPerTable)
 	}
 	return isFull
 }
 
-func (r *recentBuffer) setMsgSeen(idx int32, nonce [nonceSize]byte) {
-	r.recentBuffer[idx][nonce] = true
+func (r *recentBuffer) setMsgSeen(nonce [nonceSize]byte) {
+	r.recentBuffer[r.recentPageIdx][nonce] = true
 }
 
 // seenRecently : Returns whether this message should be filtered out by loop detection
@@ -60,24 +60,25 @@ func (r *recentBuffer) seenRecently(nonce []byte) bool {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 
+	if len(nonce) != nonceSize {
+		log.Fatalf("invalid nonce size %d", len(nonce))
+	}
+
 	var nonceVal [nonceSize]byte
 	copy(nonceVal[:], nonce[:nonceSize])
 
 	seen := r.hasMsgBeenSeen(nonceVal)
-	idx := r.recentPageIdx
 
-	if reset := r.resetRecentPageIfFull(idx); reset {
-		if idx < recentBufferSize-1 {
+	if reset := r.resetRecentPageIfFull(); reset {
+		if r.recentPageIdx < recentBufferSize-1 {
 			r.recentPageIdx++
-			idx++
 		} else {
 			r.recentPageIdx = 0
-			idx = 0
 		}
 	}
 
 	if !seen {
-		r.setMsgSeen(idx, nonceVal)
+		r.setMsgSeen(nonceVal)
 	}
 
 	return seen
