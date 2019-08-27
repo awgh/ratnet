@@ -10,6 +10,7 @@ import (
 
 	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/ratnet/api"
+	"github.com/awgh/ratnet/api/events"
 )
 
 // CID : Return content key
@@ -109,11 +110,12 @@ func (node *Node) LoadProfile(name string) (bc.PubKey, error) {
 	pk := node.qlGetProfilePrivateKey(name)
 	profileKey := node.contentKey.Clone()
 	if err := profileKey.FromB64(pk); err != nil {
-		node.errMsg(err, false)
+
+		events.Error(node, err)
 		return nil, err
 	}
 	node.contentKey = profileKey
-	node.debugMsg("Profile Loaded: " + profileKey.GetPubKey().ToB64())
+	events.Debug(node, "Profile Loaded: "+profileKey.GetPubKey().ToB64())
 	return profileKey.GetPubKey(), nil
 }
 
@@ -375,10 +377,10 @@ func (node *Node) Start() error {
 
 					select {
 					case node.Out() <- msg:
-						node.debugMsg("Sent message " + fmt.Sprint(msg.Content.Bytes()))
+						events.Debug(node, "Sent message "+fmt.Sprint(msg.Content.Bytes()))
 						node.qlClearStream(stream.StreamID)
 					default:
-						node.debugMsg("No message sent")
+						events.Debug(node, "No message sent")
 					}
 				}
 			}
@@ -397,5 +399,5 @@ func (node *Node) Stop() {
 
 	close(node.in)
 	close(node.out)
-	close(node.err)
+	close(node.events)
 }

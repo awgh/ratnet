@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/awgh/ratnet/api"
+	"github.com/awgh/ratnet/api/events"
 
 	"upper.io/db.v3"
 	"upper.io/db.v3/lib/sqlbuilder"
@@ -609,8 +610,7 @@ func (node *Node) BootstrapDB(dbAdapter, dbConnectionString string) sqlbuilder.D
 	res1 := col.Find("name = ?", "contentkey")
 	cnt, err := res1.Count()
 	if err != nil {
-		node.errMsg(err, true)
-		log.Fatal(err)
+		events.Critical(node, err)
 	} else if cnt == 0 {
 		node.contentKey.GenerateKey()
 		bs := node.contentKey.ToB64()
@@ -622,14 +622,14 @@ func (node *Node) BootstrapDB(dbAdapter, dbConnectionString string) sqlbuilder.D
 		err = node.contentKey.FromB64(cv.Value)
 	}
 	if err != nil {
-		node.errMsg(err, true)
+		events.Critical(node, err)
 	}
 
 	// Routing Key Setup
 	res2 := col.Find("name = ?", "routingkey")
 	cnt, err = res2.Count()
 	if err != nil {
-		node.errMsg(err, true)
+		events.Critical(node, err)
 	} else if cnt == 0 {
 		node.routingKey.GenerateKey()
 		bs := node.routingKey.ToB64()
@@ -641,7 +641,7 @@ func (node *Node) BootstrapDB(dbAdapter, dbConnectionString string) sqlbuilder.D
 		err = node.routingKey.FromB64(cv.Value)
 	}
 	if err != nil {
-		node.errMsg(err, true)
+		events.Critical(node, err)
 	}
 
 	node.refreshChannels()

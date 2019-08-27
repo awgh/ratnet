@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/awgh/ratnet/api"
+	"github.com/awgh/ratnet/api/events"
 )
 
 var sqlDebug = false
@@ -119,7 +120,6 @@ func (node *Node) qlGetContactPubKey(name string) (string, error) {
 	if err := r.Scan(&pubs); err == sql.ErrNoRows {
 		return "", nil
 	} else if err != nil {
-		node.errMsg(err, true)
 		return "", err
 	}
 	return pubs, nil
@@ -168,12 +168,12 @@ func (node *Node) qlAddContact(name, pubkey string) error {
 		log.Println(sqlq)
 	}
 	if err != nil {
-		node.errMsg(err, true)
+		events.Error(node, err)
 		return err
 	}
 	err = tx.Commit()
 	if err != nil {
-		node.errMsg(err, true)
+		events.Error(node, err)
 		return err
 	}
 	return nil
@@ -195,7 +195,7 @@ func (node *Node) qlGetChannelPrivKey(name string) (string, error) {
 	if err := r.Scan(&privkey); err == sql.ErrNoRows {
 		return "", nil
 	} else if err != nil {
-		node.errMsg(err, true)
+		events.Error(node, err)
 		return "", err
 	}
 	return privkey, nil
@@ -446,11 +446,11 @@ func (node *Node) qlAddPeer(name string, enabled bool, uri string, group string)
 	r := c.QueryRow(sqlq, name, group)
 	var n string
 	if err := r.Scan(&n); err == sql.ErrNoRows {
-		node.debugMsg("New Server")
+		events.Debug(node, "New Server")
 		node.transactExec("INSERT INTO peers (name,uri,enabled,peergroup) VALUES( $1, $2, $3, $4 );",
 			name, uri, enabled, group)
 	} else if err == nil {
-		node.debugMsg("Update Server")
+		events.Debug(node, "Update Server")
 		node.transactExec("UPDATE peers SET enabled=$1,uri=$2,peergroup=$3 WHERE name==$4;",
 			enabled, uri, group, name)
 	} else {
@@ -611,11 +611,11 @@ func (node *Node) AddStream(streamID uint32, totalChunks uint32, channelName str
 	r := c.QueryRow(sqlq, streamID)
 	var n int64
 	if err := r.Scan(&n); err == sql.ErrNoRows {
-		node.debugMsg("New Stream Header")
+		events.Debug(node, "New Stream Header")
 		node.transactExec("INSERT INTO streams (streamid,parts,channel) VALUES( $1, $2, $3 );",
 			streamID, totalChunks, channelName)
 	} else if err == nil {
-		node.debugMsg("Update Server")
+		events.Debug(node, "Update Server")
 		node.transactExec("UPDATE streams SET parts=$1,channel=$2 WHERE streamid==$4;",
 			totalChunks, channelName, streamID)
 	} else {
@@ -634,11 +634,11 @@ func (node *Node) AddChunk(streamID uint32, chunkNum uint32, data []byte) error 
 	r := c.QueryRow(sqlq, streamID, chunkNum)
 	var n int64
 	if err := r.Scan(&n); err == sql.ErrNoRows {
-		node.debugMsg("New Chunk")
+		events.Debug(node, "New Chunk")
 		node.transactExec("INSERT INTO chunks (streamid,chunknum,data) VALUES( $1, $2, $3 );",
 			streamID, chunkNum, data)
 	} else if err == nil {
-		node.debugMsg("Update Chunk")
+		events.Debug(node, "Update Chunk")
 		node.transactExec("UPDATE chunks SET data=$1 WHERE streamid==$2 AND chunknum==$3;",
 			data, streamID, chunkNum)
 	} else {
@@ -740,7 +740,7 @@ func (node *Node) BootstrapDB(database string) func() *sql.DB {
 		//log.Println("db: " + database) //todo: why does this trigger so much?
 		c, err := sql.Open("ql", database)
 		if err != nil {
-			node.errMsg(errors.New("DB Error Opening: "+database+" => "+err.Error()), true)
+			events.Critical(node, errors.New("DB Error Opening: "+database+" => "+err.Error()))
 		}
 		return c
 	}
@@ -829,11 +829,11 @@ func (node *Node) BootstrapDB(database string) func() *sql.DB {
 		bs := node.contentKey.ToB64()
 		node.transactExec("INSERT INTO config VALUES( `contentkey`, $1 );", bs)
 	} else if err != nil {
-		node.errMsg(err, true)
+		events.Critical(node, err)
 	} else {
 		err = node.contentKey.FromB64(s)
 		if err != nil {
-			node.errMsg(err, true)
+			events.Critical(node, err)
 		}
 	}
 	// Routing Key Setup
@@ -843,11 +843,11 @@ func (node *Node) BootstrapDB(database string) func() *sql.DB {
 		bs := node.routingKey.ToB64()
 		node.transactExec("INSERT INTO config VALUES( `routingkey`, $1 );", bs)
 	} else if err != nil {
-		node.errMsg(err, true)
+		events.Critical(node, err)
 	} else {
 		err = node.routingKey.FromB64(s)
 		if err != nil {
-			node.errMsg(err, true)
+			events.Critical(node, err)
 		}
 	}
 	node.refreshChannels()

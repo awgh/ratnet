@@ -110,8 +110,8 @@ type Node interface {
 	In() chan Msg
 	// Out : Returns the Out channel of this node
 	Out() chan Msg
-	// Err : Returns the Err channel of this node
-	Err() chan Msg
+	// Events : Returns the Err channel of this node
+	Events() chan Event
 
 	// Debug
 	GetDebug() bool

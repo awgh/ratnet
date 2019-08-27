@@ -12,6 +12,7 @@ import (
 
 	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/ratnet/api"
+	"github.com/awgh/ratnet/api/events"
 )
 
 // CID : Return content key
@@ -165,7 +166,7 @@ func (node *Node) LoadProfile(name string) (bc.PubKey, error) {
 		return nil, errors.New("Profile not found")
 	}
 	node.contentKey = node.profiles[name].Privkey
-	node.debugMsg("Profile Loaded: " + node.contentKey.GetPubKey().ToB64())
+	events.Debug(node, "Profile Loaded: "+node.contentKey.GetPubKey().ToB64())
 	return node.contentKey.GetPubKey(), nil
 }
 
@@ -359,7 +360,7 @@ func (node *Node) Start() error {
 			}
 			// read message off the input channel
 			message := <-node.In()
-			node.debugMsg("Message accepted on input channel")
+			events.Debug(node, "Message accepted on input channel")
 			if err := node.SendMsg(message); err != nil {
 				log.Fatal(err)
 			}
@@ -397,11 +398,11 @@ func (node *Node) Start() error {
 
 					select {
 					case node.Out() <- msg:
-						node.debugMsg("Sent message " + fmt.Sprint(msg.Content.Bytes()))
+						events.Debug(node, "Sent message "+fmt.Sprint(msg.Content.Bytes()))
 						node.streams[stream.StreamID] = nil
 						node.chunks[stream.StreamID] = make(map[uint32]*api.Chunk)
 					default:
-						node.debugMsg("No message sent")
+						events.Debug(node, "No message sent")
 					}
 				}
 			}
