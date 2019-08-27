@@ -13,6 +13,7 @@ import (
 	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/bencrypt/ecc"
 	"github.com/awgh/ratnet/api"
+	"github.com/awgh/ratnet/api/events/defaultlogger"
 	"github.com/awgh/ratnet/nodes/db"
 	"github.com/awgh/ratnet/nodes/fs"
 	"github.com/awgh/ratnet/nodes/qldb"
@@ -127,6 +128,7 @@ func initNode(n int64, testNode TestNode, nodeType int, transportType int, p2pMo
 			testNode.Public = https.New("tmp/cert"+num+".pem", "tmp/key"+num+".pem", testNode.Node, true)
 			testNode.Admin = https.New("tmp/cert"+num+".pem", "tmp/key"+num+".pem", testNode.Node, true)
 		}
+		defaultlogger.StartDefaultLogger(testNode.Node, api.Info)
 		if p2pMode {
 			ip := GetOutboundIP().String()
 			go p2p(testNode.Public, testNode.Admin, testNode.Node, ip+":3000"+num, ip+":30"+num+"0"+num)
