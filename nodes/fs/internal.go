@@ -8,9 +8,9 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"runtime/debug"
 
 	"github.com/awgh/ratnet/api"
+	"github.com/awgh/ratnet/api/events"
 )
 
 // GetChannelPrivKey : Return the private key of a given channel
@@ -104,9 +104,9 @@ func (node *Node) Handle(msg api.Msg) (bool, error) {
 
 	select {
 	case node.Out() <- clearMsg:
-		node.debugMsg("Sent message " + fmt.Sprint(msg.Content.Bytes()))
+		events.Debug(node, "Sent message "+fmt.Sprint(msg.Content.Bytes()))
 	default:
-		node.debugMsg("No message sent")
+		events.Debug(node, "No message sent")
 	}
 	return tagOK, nil
 }
@@ -146,33 +146,4 @@ func (node *Node) AddChunk(streamID uint32, chunkNum uint32, data []byte) error 
 	}
 	node.chunks[streamID][chunkNum] = chunk
 	return nil
-}
-
-/*
-	TODO:	encrypted debug and error messages?! yes please!
-			- you may want an application that can detect that messages have happend
-			  while only being able to read them within the admin context
-*/
-func (node *Node) debugMsg(content string) {
-	if node.debugMode {
-		msg := new(api.Msg)
-		msg.Name = "[DEBUG]"
-		msg.Content = bytes.NewBufferString(content)
-		node.Err() <- *msg
-	}
-}
-
-func (node *Node) errMsg(err error, fatal bool) {
-	msg := new(api.Msg)
-	if node.debugMode {
-		msg.Content = bytes.NewBufferString(err.Error() + "\n---\n" + string(debug.Stack()))
-	} else {
-		msg.Content = bytes.NewBufferString(err.Error())
-	}
-	msg.Name = "[ERROR]"
-	msg.IsChan = fatal // use the "is channel" message flag as the "is fatal" flag
-	node.Err() <- *msg
-	if msg.IsChan {
-		node.Stop()
-	}
 }

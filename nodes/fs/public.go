@@ -12,6 +12,7 @@ import (
 
 	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/ratnet/api"
+	"github.com/awgh/ratnet/api/events"
 )
 
 // ID : Return routing key
@@ -21,7 +22,7 @@ func (node *Node) ID() (bc.PubKey, error) {
 
 // Dropoff : Deliver a batch of  messages to a remote node
 func (node *Node) Dropoff(bundle api.Bundle) error {
-	node.debugMsg("Dropoff called")
+	events.Debug(node, "Dropoff called")
 	if len(bundle.Data) < 1 { // todo: correct min length
 		return errors.New("Dropoff called with no data")
 	}
@@ -52,13 +53,13 @@ func (node *Node) Dropoff(bundle api.Bundle) error {
 		}
 	}
 
-	node.debugMsg("Dropoff returned")
+	events.Debug(node, "Dropoff returned")
 	return nil
 }
 
 // Pickup : Get messages from a remote node
 func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, maxBytes int64, channelNames ...string) (api.Bundle, error) {
-	node.debugMsg("Pickup called")
+	events.Debug(node, "Pickup called")
 	var retval api.Bundle
 	var msgs [][]byte
 	retval.Time = lastTime
@@ -116,6 +117,6 @@ func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, maxBytes int64, channel
 		retval.Data = cipher
 		return retval, err
 	}
-	node.debugMsg("Pickup returned")
+	events.Debug(node, "Pickup returned")
 	return retval, nil
 }
