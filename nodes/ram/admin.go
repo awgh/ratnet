@@ -355,7 +355,7 @@ func (node *Node) Start() error {
 			message := <-node.In()
 			events.Debug(node, "Message accepted on input channel")
 			if err := node.SendMsg(message); err != nil {
-				events.Critical(node, err.Error())
+				events.Error(node, err.Error())
 			}
 		}
 	}()

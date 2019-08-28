@@ -334,7 +334,7 @@ func (node *Node) Start() error {
 				break
 			}
 			if err := node.SendMsg(message); err != nil {
-				events.Critical(node, err.Error())
+				events.Error(node, err.Error())
 			}
 		}
 	}()
