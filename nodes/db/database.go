@@ -456,7 +456,7 @@ func (node *Node) AddChunk(streamID uint32, chunkNum uint32, data []byte) error 
 	if err != nil {
 		return err
 	}
-	events.Critical(node, "Over-writing chunk: %x:%x\n", streamID, chunkNum)
+	events.Warning(node, "Over-writing chunk: %x:%x\n", streamID, chunkNum)
 	chunk.StreamID = streamID
 	chunk.ChunkNum = chunkNum
 	chunk.Data = data
