@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/gob"
 	"errors"
-	"log"
 
 	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/ratnet/api"
@@ -35,7 +34,7 @@ func (node *Node) Dropoff(bundle api.Bundle) error {
 	reader := bytes.NewReader(data)
 	dec := gob.NewDecoder(reader)
 	if err := dec.Decode(&msgs); err != nil {
-		log.Printf("dropoff gob decode failed, len %d\n", len(data))
+		events.Warning(node, "dropoff gob decode failed, len %d\n", len(data))
 		return err
 	}
 	for i := 0; i < len(msgs); i++ {
@@ -44,7 +43,7 @@ func (node *Node) Dropoff(bundle api.Bundle) error {
 		}
 		err = node.router.Route(node, msgs[i])
 		if err != nil {
-			log.Println("error in dropoff: " + err.Error())
+			events.Warning(node, "error in dropoff: "+err.Error())
 			continue // we don't want to return routing errors back out the remote public interface
 		}
 	}

@@ -6,7 +6,6 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"errors"
-	"log"
 	"net"
 	"net/http"
 	"sync"
@@ -15,6 +14,7 @@ import (
 	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
+	"github.com/awgh/ratnet/api/events"
 )
 
 func init() {
@@ -100,7 +100,7 @@ func (h *Module) SetByteLimit(limit int64) { h.byteLimit = limit }
 func (h *Module) Listen(listen string, adminMode bool) {
 	// make sure we are not already running
 	if h.isRunning {
-		log.Println("This listener is already running.")
+		events.Warning(h.node, "This listener is already running.")
 		return
 	}
 
@@ -108,7 +108,7 @@ func (h *Module) Listen(listen string, adminMode bool) {
 	bc.InitSSL(h.Certfile, h.Keyfile, h.EccMode)
 	cert, err := tls.LoadX509KeyPair(h.Certfile, h.Keyfile)
 	if err != nil {
-		log.Println(err.Error())
+		events.Error(h.node, err.Error())
 		return
 	}
 
@@ -121,7 +121,7 @@ func (h *Module) Listen(listen string, adminMode bool) {
 	// setup Listener
 	listener, err := net.Listen("tcp", listen)
 	if err != nil {
-		log.Println(err.Error())
+		events.Error(h.node, err.Error())
 		return
 	}
 
@@ -139,7 +139,7 @@ func (h *Module) Listen(listen string, adminMode bool) {
 	go func() {
 		defer h.wg.Done()
 		if err := http.Serve(tlsListener, serveMux); err != nil {
-			log.Print(err.Error())
+			events.Error(h.node, err.Error())
 		}
 	}()
 	h.isRunning = true
@@ -151,7 +151,7 @@ func (h *Module) handleResponse(w http.ResponseWriter, r *http.Request, node api
 
 	dec := gob.NewDecoder(r.Body)
 	if err := dec.Decode(&a); err != nil {
-		log.Println("https handleResponse gob decode failed: " + err.Error())
+		events.Warning(h.node, "https handleResponse gob decode failed: "+err.Error())
 		return
 	}
 
@@ -162,7 +162,6 @@ func (h *Module) handleResponse(w http.ResponseWriter, r *http.Request, node api
 	} else {
 		result, err = node.PublicRPC(h, a)
 	}
-	//log.Printf("result type %T \n", result)
 
 	rr := api.RemoteResponse{}
 	if err != nil {
@@ -174,7 +173,7 @@ func (h *Module) handleResponse(w http.ResponseWriter, r *http.Request, node api
 
 	enc := gob.NewEncoder(w)
 	if err := enc.Encode(rr); err != nil {
-		log.Println("https listen gob encode failed: " + err.Error())
+		events.Warning(h.node, "https listen gob encode failed: "+err.Error())
 	}
 }
 
@@ -188,7 +187,7 @@ func (h *Module) RPC(host string, method string, args ...interface{}) (interface
 	//use default gob encoder
 	enc := gob.NewEncoder(&buf)
 	if err := enc.Encode(a); err != nil {
-		log.Println("https rpc gob encode failed: " + err.Error())
+		events.Error(h.node, "https rpc gob encode failed: "+err.Error())
 		return nil, err
 	}
 
@@ -204,11 +203,9 @@ func (h *Module) RPC(host string, method string, args ...interface{}) (interface
 	var rr api.RemoteResponse
 	dec := gob.NewDecoder(resp.Body)
 	if err := dec.Decode(&rr); err != nil {
-		log.Println("https rpc gob decode failed: " + err.Error())
+		events.Warning(h.node, "https rpc gob decode failed: "+err.Error())
 		return nil, err
 	}
-
-	//log.Printf("https dirty rx in rpc: %+v\n", rr.Value)
 
 	if rr.IsErr() {
 		return nil, errors.New(rr.Error)

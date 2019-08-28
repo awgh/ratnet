@@ -1,30 +1,17 @@
-package api
+package chunking
 
 import (
 	"bytes"
 	"encoding/binary"
 	"io/ioutil"
-	"log"
 
 	"github.com/awgh/bencrypt/bc"
+	"github.com/awgh/ratnet/api"
+	"github.com/awgh/ratnet/api/events"
 )
 
-// StreamHeader manifest for a chunked transfer (database version)
-type StreamHeader struct {
-	StreamID    uint32 `db:"streamid"`
-	NumChunks   uint32 `db:"parts"`
-	ChannelName string `db:"channel"`
-}
-
-// Chunk header for each chunk
-type Chunk struct {
-	StreamID uint32 `db:"streamid"`
-	ChunkNum uint32 `db:"chunknum"`
-	Data     []byte `db:"data"`
-}
-
 // ChunkSize - calculates the minimum chunk size from all active transports
-func ChunkSize(node Node) uint32 {
+func ChunkSize(node api.Node) uint32 {
 	var chunksize uint32 = 64 * 1024
 	policies := node.GetPolicies()
 	for _, p := range policies {
@@ -34,14 +21,14 @@ func ChunkSize(node Node) uint32 {
 		}
 	}
 	if chunksize <= 132 {
-		log.Fatal("Transport has invalid low byte limit")
+		events.Critical(node, "Transport has invalid low byte limit")
 	}
 
 	return chunksize - 132 //todo: this is the overhead for ECC, what about RSA?
 }
 
 // SendChunked - utility function to break large messages into smaller ones for transports that can't handle arbitrarily large messages
-func SendChunked(node Node, chunkSize uint32, msg Msg) (err error) {
+func SendChunked(node api.Node, chunkSize uint32, msg api.Msg) (err error) {
 
 	buf := msg.Content.Bytes()
 	buflen := uint32(len(buf))
@@ -62,15 +49,14 @@ func SendChunked(node Node, chunkSize uint32, msg Msg) (err error) {
 		}
 		b := bytes.NewBuffer(streamID)                            // StreamID
 		binary.Write(b, binary.LittleEndian, uint32(totalChunks)) // NumChunks
-		if err = node.SendMsg(Msg{Name: msg.Name, Content: b, IsChan: msg.IsChan, PubKey: msg.PubKey, Chunked: true, StreamHeader: true}); err != nil {
+		if err = node.SendMsg(api.Msg{Name: msg.Name, Content: b, IsChan: msg.IsChan, PubKey: msg.PubKey, Chunked: true, StreamHeader: true}); err != nil {
 			return
 		}
 		for i := uint32(0); i < wholeLoops; i++ {
 			b := bytes.NewBuffer(streamID)                  // StreamID
 			binary.Write(b, binary.LittleEndian, uint32(i)) // ChunkNum
 			b.Write(buf[i*chunkSizeMinusHeader : (i*chunkSizeMinusHeader)+chunkSizeMinusHeader])
-			//log.Println("chunk loop", i, buflen, len(tbuf))
-			if err = node.SendMsg(Msg{Name: msg.Name, Content: b, IsChan: msg.IsChan, PubKey: msg.PubKey, Chunked: true}); err != nil {
+			if err = node.SendMsg(api.Msg{Name: msg.Name, Content: b, IsChan: msg.IsChan, PubKey: msg.PubKey, Chunked: true}); err != nil {
 				return
 			}
 		}
@@ -78,8 +64,7 @@ func SendChunked(node Node, chunkSize uint32, msg Msg) (err error) {
 			b := bytes.NewBuffer(streamID)                           // StreamID
 			binary.Write(b, binary.LittleEndian, uint32(wholeLoops)) // ChunkNum
 			b.Write(buf[wholeLoops*chunkSizeMinusHeader:])
-			//log.Println("chunk remainder", len(buf[wholeLoops*chunkSize:]))
-			if err = node.SendMsg(Msg{Name: msg.Name, Content: b, IsChan: msg.IsChan, PubKey: msg.PubKey, Chunked: true}); err != nil {
+			if err = node.SendMsg(api.Msg{Name: msg.Name, Content: b, IsChan: msg.IsChan, PubKey: msg.PubKey, Chunked: true}); err != nil {
 				return
 			}
 		}
@@ -88,7 +73,7 @@ func SendChunked(node Node, chunkSize uint32, msg Msg) (err error) {
 }
 
 // HandleChunked - shared handler for Nodes that deals with chunks and stream headers
-func HandleChunked(node Node, msg Msg) error {
+func HandleChunked(node api.Node, msg api.Msg) error {
 	if !msg.StreamHeader {
 		// save chunk
 		var streamID, chunkNum uint32
@@ -100,7 +85,7 @@ func HandleChunked(node Node, msg Msg) error {
 		binary.Read(tmpb, binary.LittleEndian, &streamID)
 		binary.Read(tmpb, binary.LittleEndian, &chunkNum)
 
-		log.Printf("adding chunk: %x  chunkNum: %x (%d)\n", streamID, chunkNum, chunkNum)
+		events.Debug(node, "adding chunk: %x  chunkNum: %x (%d)\n", streamID, chunkNum, chunkNum)
 		return node.AddChunk(streamID, chunkNum, data[8:])
 	}
 	// save totalChunks by streamID
@@ -112,6 +97,6 @@ func HandleChunked(node Node, msg Msg) error {
 	if msg.IsChan {
 		channel = msg.Name
 	}
-	log.Printf("adding stream: %x  totalChunks: %x (%d)\n", streamID, totalChunks, totalChunks)
+	events.Debug(node, "adding stream: %x  totalChunks: %x (%d)\n", streamID, totalChunks, totalChunks)
 	return node.AddStream(streamID, totalChunks, channel)
 }

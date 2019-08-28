@@ -5,13 +5,13 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/ratnet/api"
+	"github.com/awgh/ratnet/api/chunking"
 	"github.com/awgh/ratnet/api/events"
 )
 
@@ -275,12 +275,12 @@ func (node *Node) SendChannel(channelName string, data []byte, pubkey ...bc.PubK
 func (node *Node) SendMsg(msg api.Msg) error {
 
 	// determine if we need to chunk
-	chunkSize := api.ChunkSize(node)                                    // finds the minimum transport byte limit
+	chunkSize := chunking.ChunkSize(node)                               // finds the minimum transport byte limit
 	if msg.Content.Len() > 0 && uint32(msg.Content.Len()) > chunkSize { // we need to chunk
 		if msg.Chunked { // we're already chunked, freak out!
 			return errors.New("Chunked message needs to be chunked, bailing out")
 		}
-		return api.SendChunked(node, chunkSize, msg)
+		return chunking.SendChunked(node, chunkSize, msg)
 	}
 
 	data, err := node.contentKey.EncryptMessage(msg.Content.Bytes(), msg.PubKey)
@@ -362,7 +362,7 @@ func (node *Node) Start() error {
 			message := <-node.In()
 			events.Debug(node, "Message accepted on input channel")
 			if err := node.SendMsg(message); err != nil {
-				log.Fatal(err)
+				events.Critical(node, err.Error())
 			}
 		}
 	}()
@@ -384,7 +384,7 @@ func (node *Node) Start() error {
 					for i := uint32(0); i < stream.NumChunks; i++ {
 						chunk, ok := node.chunks[stream.StreamID][i]
 						if !ok {
-							log.Fatal("Chunk count miscalculated - code broken")
+							events.Critical(node, "Chunk count miscalculated - code broken")
 						}
 						buf.Write(chunk.Data)
 					}

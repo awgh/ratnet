@@ -74,6 +74,7 @@ func New(contentKey, routingKey bc.KeyPair) *Node {
 
 	// setup default router
 	node.router = router.NewDefaultRouter()
+	node.outbox.node = node
 
 	return node
 }

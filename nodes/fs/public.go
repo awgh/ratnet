@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"io/ioutil"
-	"log"
 	"os"
 	"path/filepath"
 
@@ -39,7 +38,7 @@ func (node *Node) Dropoff(bundle api.Bundle) error {
 	reader := bytes.NewReader(data)
 	dec := gob.NewDecoder(reader)
 	if err := dec.Decode(&msgs); err != nil {
-		log.Printf("dropoff gob decode failed, len %d\n", len(data))
+		events.Error(node, "dropoff gob decode failed, len:", len(data), err.Error())
 		return err
 	}
 	for i := 0; i < len(msgs); i++ {
@@ -48,7 +47,7 @@ func (node *Node) Dropoff(bundle api.Bundle) error {
 		}
 		err = node.router.Route(node, msgs[i])
 		if err != nil {
-			log.Println("error in dropoff: " + err.Error())
+			events.Error(node, "error in dropoff: "+err.Error())
 			continue // we don't want to return routing errors back out the remote public interface
 		}
 	}
@@ -67,24 +66,21 @@ func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, maxBytes int64, channel
 
 	err := filepath.Walk(node.basePath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			log.Printf("Pickup failure accessing a path %q: %v\n", path, err)
+			events.Error(node, "Pickup failure accessing a path:", path, err)
 			return err
 		}
 		fileTime := info.ModTime().UnixNano()
-		//if !info.IsDir() {
-		//	log.Printf("pickup t1: %d  t2: %d\n", fileTime, lastTime)
-		//}
 		if !info.IsDir() && fileTime > lastTime {
 			b, err := ioutil.ReadFile(path) //filepath.Join(node.basePath, path))
 			if err != nil {
-				log.Printf("prevent panic by handling failure reading a file %q: %v\n", path, err)
+				events.Error(node, "prevent panic by handling failure reading a file:", path, err)
 				return err
 			}
 
 			if fileTime == retval.Time {
-				log.Println("Identical filetimes, attempting to exceed recommended protocol buffer size")
+				events.Warning(node, "Identical filetimes, attempting to exceed recommended protocol buffer size")
 			} else if bytesRead+int64(len(b)) >= maxBytes { // no room for next msg
-				log.Println("Result too big to be fetched on this transport! Flush and rechunk")
+				events.Warning(node, "Result too big to be fetched on this transport! Flush and rechunk")
 				return io.EOF
 			}
 
@@ -94,7 +90,6 @@ func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, maxBytes int64, channel
 				retval.Time = fileTime
 			}
 		}
-		//fmt.Printf("visited file: %q\n", path)
 		return nil
 	})
 	if err != nil && err != io.EOF {

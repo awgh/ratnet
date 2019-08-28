@@ -1,11 +1,11 @@
 package policy
 
 import (
-	"log"
 	"sync"
 
 	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/ratnet/api"
+	"github.com/awgh/ratnet/api/events"
 )
 
 var peerTable map[string]*api.PeerInfo
@@ -34,17 +34,16 @@ func PollServer(transport api.Transport, node api.Node, host string, pubsrv bc.P
 		writePeerTable(host, new(api.PeerInfo))
 	}
 	peer, _ := readPeerTable(host)
-	//log.Printf("pollServer using peer %+v\n", peer)
 
 	if peer.RoutingPub == nil {
 		rpubkey, err := transport.RPC(host, "ID")
 		if err != nil {
-			log.Println(err.Error())
+			events.Error(node, err.Error())
 			return false, err
 		}
 		rpk, ok := rpubkey.(bc.PubKey)
 		if !ok {
-			log.Println("type assertion failed to bc.PubKey in p2p pollServer")
+			events.Error(node, "type assertion failed to bc.PubKey in p2p pollServer")
 			return false, err
 		}
 		peer.RoutingPub = rpk
@@ -53,15 +52,15 @@ func PollServer(transport api.Transport, node api.Node, host string, pubsrv bc.P
 	// Pickup Local
 	toRemote, err := node.Pickup(peer.RoutingPub, peer.LastPollLocal, transport.ByteLimit())
 	if err != nil {
-		log.Println("local pickup error: " + err.Error())
+		events.Error(node, "local pickup error: "+err.Error())
 		return false, err
 	}
-	//log.Println("pollServer Pickup Local result len: ", len(toRemote.Data))
+	events.Debug(node, "pollServer Pickup Local result len: ", len(toRemote.Data))
 
 	// Pickup Remote
 	toLocalRaw, err := transport.RPC(host, "Pickup", pubsrv, peer.LastPollRemote)
 	if err != nil {
-		log.Println("remote pickup error: " + err.Error())
+		events.Error(node, "remote pickup error: "+err.Error())
 		return false, err
 	}
 	var toLocal api.Bundle
@@ -69,16 +68,16 @@ func PollServer(transport api.Transport, node api.Node, host string, pubsrv bc.P
 	if toLocalRaw != nil {
 		toLocal, ok = toLocalRaw.(api.Bundle)
 		if !ok {
-			log.Printf("pollServer type assertion tolocalRaw failed")
+			events.Error(node, "pollServer type assertion tolocalRaw failed")
 			return false, err
 		}
-		//log.Printf("pollServer Pickup Remote len: %d ", len(toLocal.Data))
+		events.Debug(node, "pollServer Pickup Remote len: %d ", len(toLocal.Data))
 		peer.TotalBytesRX = peer.TotalBytesRX + int64(len(toLocal.Data))
 	}
 	// Dropoff Remote
 	if len(toRemote.Data) > 0 {
 		if _, err := transport.RPC(host, "Dropoff", toRemote); err != nil {
-			log.Println("remote dropoff error: " + err.Error())
+			events.Error(node, "remote dropoff error: "+err.Error())
 			return false, err
 		}
 		// only start tracking time once we start receiving data

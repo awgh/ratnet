@@ -11,3 +11,17 @@ type Transport interface {
 	ByteLimit() int64 // limit on bytes per bundle for this transport
 	SetByteLimit(limit int64)
 }
+
+// StreamHeader manifest for a chunked transfer (database version)
+type StreamHeader struct {
+	StreamID    uint32 `db:"streamid"`
+	NumChunks   uint32 `db:"parts"`
+	ChannelName string `db:"channel"`
+}
+
+// Chunk header for each chunk
+type Chunk struct {
+	StreamID uint32 `db:"streamid"`
+	ChunkNum uint32 `db:"chunknum"`
+	Data     []byte `db:"data"`
+}

@@ -2,9 +2,11 @@ package ram
 
 import (
 	"bytes"
-	"log"
 	"sync"
 	"time"
+
+	"github.com/awgh/ratnet/api"
+	"github.com/awgh/ratnet/api/events"
 )
 
 // Message Queue / Outbox
@@ -18,6 +20,7 @@ type outboxMsg struct {
 type outboxQueue struct {
 	mux    sync.Mutex
 	outbox []*outboxMsg
+	node   api.Node
 }
 
 // Append : Adds an outbound message to queue
@@ -81,7 +84,7 @@ func (o *outboxQueue) MsgsSince(lastTime int64, maxBytes int64, channelNames ...
 
 				if maxBytes > 0 && int64(proposedSize) > maxBytes {
 					if msgsSize == 0 {
-						log.Fatal("Result too big to be fetched on this transport! Flush and rechunk")
+						events.Critical(o.node, "Result too big to be fetched on this transport! Flush and rechunk")
 					}
 					break
 				}

@@ -3,12 +3,12 @@ package policy
 import (
 	"encoding/json"
 	"errors"
-	"log"
 	"sync"
 	"time"
 
 	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
+	"github.com/awgh/ratnet/api/events"
 )
 
 // Poll : defines a Polling Connection Policy, which will periodically connect to each remote Peer
@@ -83,7 +83,7 @@ func (p *Poll) RunPolicy() error {
 
 		pubsrv, err := p.node.ID()
 		if err != nil {
-			log.Fatal("Couldn't get routing key in Poll.RunPolicy:\n" + err.Error())
+			events.Critical(p.node, "Couldn't get routing key in Poll.RunPolicy:\n"+err.Error())
 		}
 		counter := 0
 		for {
@@ -96,14 +96,14 @@ func (p *Poll) RunPolicy() error {
 			// Get Server List for this Poll's assigned Group
 			peers, err := p.node.GetPeers(p.Group)
 			if err != nil {
-				log.Println("Poll.RunPolicy error in loop: ", err)
+				events.Warning(p.node, "Poll.RunPolicy error in loop: ", err)
 				continue
 			}
 			for _, element := range peers {
 				if element.Enabled {
 					_, err := PollServer(p.Transport, p.node, element.URI, pubsrv)
 					if err != nil {
-						log.Println("pollServer error: ", err.Error())
+						events.Warning(p.node, "pollServer error: ", err.Error())
 					}
 				}
 			}

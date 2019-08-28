@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/awgh/ratnet/api"
+	"github.com/awgh/ratnet/api/chunking"
 	"github.com/awgh/ratnet/api/events"
 )
 
@@ -66,7 +67,7 @@ func (node *Node) Handle(msg api.Msg) (bool, error) {
 	clearMsg.Content = bytes.NewBuffer(clear)
 
 	if msg.Chunked {
-		err = api.HandleChunked(node, clearMsg)
+		err = chunking.HandleChunked(node, clearMsg)
 		if err != nil {
 			return false, err
 		}

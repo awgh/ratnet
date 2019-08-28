@@ -6,13 +6,13 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"errors"
-	"log"
 	"net"
 	"sync"
 
 	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
+	"github.com/awgh/ratnet/api/events"
 )
 
 var cachedSessions map[string]*tls.Conn
@@ -95,7 +95,7 @@ func (h *Module) SetByteLimit(limit int64) {
 func (h *Module) Listen(listen string, adminMode bool) {
 	// make sure we are not already running
 	if h.isRunning {
-		log.Println("This listener is already running.")
+		events.Warning(h.node, "This listener is already running.")
 		return
 	}
 
@@ -103,14 +103,14 @@ func (h *Module) Listen(listen string, adminMode bool) {
 	bc.InitSSL(h.Certfile, h.Keyfile, h.EccMode)
 	cert, err := tls.LoadX509KeyPair(h.Certfile, h.Keyfile)
 	if err != nil {
-		log.Println(err.Error())
+		events.Error(h.node, err.Error())
 		return
 	}
 
 	// setup Listener
 	listener, err := net.Listen("tcp", listen)
 	if err != nil {
-		log.Println(err.Error())
+		events.Error(h.node, err.Error())
 		return
 	}
 
@@ -131,7 +131,7 @@ func (h *Module) Listen(listen string, adminMode bool) {
 		for h.isRunning {
 			conn, err := tlsListener.Accept()
 			if err != nil {
-				log.Println(err)
+				events.Error(h.node, err.Error())
 				continue
 			}
 			go h.handleConnection(conn, h.node, adminMode)
@@ -152,7 +152,7 @@ func (h *Module) handleConnection(conn net.Conn, node api.Node, adminMode bool) 
 		//use default gob encoder
 		dec := gob.NewDecoder(reader)
 		if err := dec.Decode(&a); err != nil {
-			log.Println("tls handleConnection gob decode failed: " + err.Error())
+			events.Warning(h.node, "tls handleConnection gob decode failed: "+err.Error())
 			break
 		}
 
@@ -163,7 +163,6 @@ func (h *Module) handleConnection(conn net.Conn, node api.Node, adminMode bool) 
 		} else {
 			result, err = node.PublicRPC(h, a)
 		}
-		//log.Printf("result type %T \n", result)
 
 		rr := api.RemoteResponse{}
 		if err != nil {
@@ -174,7 +173,7 @@ func (h *Module) handleConnection(conn net.Conn, node api.Node, adminMode bool) 
 		}
 		enc := gob.NewEncoder(writer)
 		if err := enc.Encode(rr); err != nil {
-			log.Println("tls handleConnection gob encode failed: " + err.Error())
+			events.Warning(h.node, "tls handleConnection gob encode failed: "+err.Error())
 			break
 		}
 		writer.Flush()
@@ -189,7 +188,7 @@ func (h *Module) RPC(host string, method string, args ...interface{}) (interface
 		conf := &tls.Config{InsecureSkipVerify: true}
 		conn, err = tls.Dial("tcp", host, conf)
 		if err != nil {
-			log.Println(err)
+			events.Error(h.node, err.Error())
 			return nil, err
 		}
 		cachedSessions[host] = conn
@@ -204,7 +203,7 @@ func (h *Module) RPC(host string, method string, args ...interface{}) (interface
 	//use default gob encoder
 	enc := gob.NewEncoder(writer)
 	if err := enc.Encode(a); err != nil {
-		log.Println("tls rpc gob encode failed: " + err.Error())
+		events.Warning(h.node, "tls rpc gob encode failed: "+err.Error())
 		delete(cachedSessions, host) // something's wrong, make a new session next attempt
 		_ = conn.Close()
 		return nil, err
@@ -213,7 +212,7 @@ func (h *Module) RPC(host string, method string, args ...interface{}) (interface
 	var rr api.RemoteResponse
 	dec := gob.NewDecoder(reader)
 	if err := dec.Decode(&rr); err != nil {
-		log.Println("tls rpc gob decode failed: " + err.Error())
+		events.Warning(h.node, "tls rpc gob decode failed: "+err.Error())
 		delete(cachedSessions, host) // something's wrong, make a new session next attempt
 		_ = conn.Close()
 		return nil, err

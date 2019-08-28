@@ -12,8 +12,8 @@ import (
 
 	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
+	"github.com/awgh/ratnet/api/events"
 
-	"log"
 	"net"
 
 	"math/rand"
@@ -95,11 +95,11 @@ func (s *P2P) MarshalJSON() (b []byte, e error) {
 func (s *P2P) initListenSocket() {
 	socket, err := net.ListenMulticastUDP("udp4", nil, multicastAddr)
 	if err != nil {
-		log.Fatal(err.Error())
+		events.Critical(s.Node, err.Error())
 	}
 	err = socket.SetReadBuffer(maxDatagramSize)
 	if err != nil {
-		log.Fatal(err.Error())
+		events.Critical(s.Node, err.Error())
 	}
 	s.listenSocket = socket
 }
@@ -107,7 +107,7 @@ func (s *P2P) initListenSocket() {
 func (s *P2P) initDialSocket() error {
 	socket, err := net.DialUDP("udp", nil, multicastAddr)
 	if err != nil {
-		log.Fatal(err.Error())
+		events.Critical(s.Node, err.Error())
 	}
 	s.dialSocket = socket
 
@@ -148,7 +148,7 @@ func (s *P2P) RunPolicy() error {
 	go func() {
 		for s.IsListening {
 			if err := s.mdnsAdvertise(); err != nil {
-				log.Println("mdnsAdvertise errored: ", err.Error())
+				events.Warning(s.Node, "mdnsAdvertise errored: "+err.Error())
 			}
 			time.Sleep(time.Duration(s.AdvertiseInterval) * time.Millisecond) // update interval
 		}
@@ -205,13 +205,6 @@ func (s *P2P) mdnsListen() error {
 			}
 		}
 		_, exists := peerlist[target]
-		//if exists {
-		//	log.Println("Ignoring peer we're already talking to.")
-		//}
-
-		//log.Println("Negotiation: " + s.localAddress + " " + target + " " +
-		//	strconv.FormatUint(targetNegRank, 10) + " " + strconv.FormatUint(s.negotiationRank, 10))
-
 		if !exists && (target != "" && targetNegRank > 0 && s.localAddress != target) {
 			/*
 				Negotiation:
@@ -223,10 +216,9 @@ func (s *P2P) mdnsListen() error {
 			if s.negotiationRank <= targetNegRank {
 				pubsrv, err := s.Node.ID()
 				if err != nil {
-					log.Fatal("Couldn't get routing key in P2P.RunPolicy:\n" + err.Error())
+					events.Critical(s.Node, "Couldn't get routing key in P2P.RunPolicy:\n"+err.Error())
 				}
-
-				log.Println("Won Negotiation, Push/Pulling target/me ", target, s.ListenURI)
+				events.Info(s.Node, "Won Negotiation, Push/Pulling target/me ", target, s.ListenURI)
 				u, err := url.Parse(target)
 				if err != nil {
 					return err
@@ -239,17 +231,17 @@ func (s *P2P) mdnsListen() error {
 				peerlist[target] = trans
 				go func() {
 					for s.IsListening {
-						//st := time.Now()
+						st := time.Now()
 						if happy, err := PollServer(trans, s.Node, target[len(u.Scheme)+3:], pubsrv); !happy {
 							if err != nil {
-								log.Println(err.Error())
+								events.Warning(s.Node, err.Error())
 							}
 						}
-						//st2 := time.Now()
-						//log.Printf("p2p PollServer took: %s\n", st2.Sub(st).String())
+						st2 := time.Now()
+						events.Debug(s.Node, "p2p PollServer took: %s\n", st2.Sub(st).String())
 						runtime.GC()
-						//st3 := time.Now()
-						//log.Printf("p2p GC took: %s\n", st3.Sub(st2).String())
+						st3 := time.Now()
+						events.Debug(s.Node, "p2p GC took: %s\n", st3.Sub(st2).String())
 						time.Sleep(time.Duration(s.ListenInterval) * time.Millisecond) // update interval
 					}
 				}()
@@ -261,7 +253,7 @@ func (s *P2P) mdnsListen() error {
 
 func (s *P2P) mdnsAdvertise() error {
 
-	//log.Println("mdns Advertising...")
+	events.Info(s.Node, "mdns Advertising...")
 	a := make([]byte, 8)
 	binary.LittleEndian.PutUint64(a, s.negotiationRank)
 	encodedStr := hex.EncodeToString([]byte(s.localAddress))
@@ -280,14 +272,14 @@ func (s *P2P) mdnsAdvertise() error {
 	m.Question[1] = dns.Question{Name: oneg, Qtype: dns.TypeSRV, Qclass: dns.ClassINET}
 	msgBytes, err := m.Pack()
 	if err != nil {
-		log.Println("Pack failed with:", err.Error(), oname)
+		events.Warning(s.Node, "Pack failed with:", err.Error(), oname)
 		return err
 	}
 
 	conn := s.dialSocket
 	n, err := conn.Write(msgBytes)
 	if err != nil || n != len(msgBytes) {
-		log.Println("Write failed with:", err.Error())
+		events.Warning(s.Node, "Write failed with:", err.Error())
 	}
 	return nil
 }

@@ -2,13 +2,13 @@ package fs
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/ratnet/api"
+	"github.com/awgh/ratnet/api/events"
 	"github.com/awgh/ratnet/nodes"
 	"github.com/awgh/ratnet/router"
 )
@@ -109,14 +109,14 @@ func (node *Node) FlushOutbox(maxAgeSeconds int64) {
 	now := time.Now()
 	_ = filepath.Walk(node.basePath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			log.Printf("FlushOutbox failure accessing a path %q: %v\n", path, err)
+			events.Warning(node, "FlushOutbox failure accessing a path:", path, err.Error())
 			return err
 		}
 		if !info.IsDir() {
 			if diff := now.Sub(info.ModTime()); diff > time.Duration(maxAgeSeconds)*time.Second {
-				log.Printf("Deleting %s which is %s seconds old\n", filepath.Join(node.basePath, info.Name()), diff)
+				events.Debug(node, "Deleting file:", filepath.Join(node.basePath, info.Name()), diff)
 				if err = os.Remove(path); err != nil {
-					log.Println("error deleting file: " + err.Error())
+					events.Error(node, "error deleting file: "+err.Error())
 				}
 			}
 		}

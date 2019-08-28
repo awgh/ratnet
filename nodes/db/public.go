@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/gob"
 	"errors"
-	"log"
 
 	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/ratnet/api"
@@ -34,7 +33,7 @@ func (node *Node) Dropoff(bundle api.Bundle) error {
 	reader := bytes.NewReader(data)
 	dec := gob.NewDecoder(reader)
 	if erra := dec.Decode(&msgs); erra != nil {
-		log.Printf("dropoff gob decode failed, len %d\n", len(data))
+		events.Warning(node, "dropoff gob decode failed, len %d\n", len(data))
 		return erra
 	}
 
@@ -44,7 +43,7 @@ func (node *Node) Dropoff(bundle api.Bundle) error {
 		}
 		err = node.router.Route(node, msgs[i])
 		if err != nil {
-			log.Println("error in dropoff: " + err.Error())
+			events.Warning(node, "error in dropoff: "+err.Error())
 			continue // we don't want to return routing errors back out the remote public interface
 		}
 	}
@@ -61,11 +60,9 @@ func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, maxBytes int64, channel
 	if err != nil {
 		return retval, err
 	}
-	//log.Printf("maxBytes = %d", maxBytes)
 
 	// Return things
 
-	//log.Printf("rows returned by Pickup query: %d, lastTime: %d\n", len(msgs), lastTimeReturned)
 	retval.Time = lastTimeReturned
 	if len(msgs) > 0 {
 		//use default gob encoder
@@ -76,7 +73,7 @@ func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, maxBytes int64, channel
 		}
 		cipher, err := node.routingKey.EncryptMessage(buf.Bytes(), rpub)
 		if err != nil {
-			log.Printf("pickup gob encode failed, len %d\n", len(cipher))
+			events.Error(node, "pickup gob encode failed, len %d\n", len(cipher))
 			return retval, err
 		}
 		retval.Data = cipher

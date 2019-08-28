@@ -52,7 +52,7 @@ var nodeType int
 var transportType int
 
 func init() {
-	nodeType = DB
+	nodeType = RAM
 	transportType = TLS
 }
 
