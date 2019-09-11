@@ -6,6 +6,26 @@ import (
 	"github.com/awgh/bencrypt/bc"
 )
 
+func Test_Loop_OneMessage_1(t *testing.T) {
+
+	recentBuffer := newRecentBuffer()
+	b, err := bc.GenerateRandomBytes(nonceSize)
+	if err != nil {
+		t.Fatal(err)
+	}
+	everSeen := false
+	for i := 0; i < 1000; i++ {
+		seen := recentBuffer.SeenRecently(b)
+		t.Log("seen? ", i, seen)
+		if seen {
+			everSeen = true
+		}
+	}
+	if !everSeen {
+		t.Fatal("SeenRecently never returned true on one-message loop test")
+	}
+}
+
 func Test_Loop_Random_1(t *testing.T) {
 
 	recentBuffer := newRecentBuffer()
@@ -36,7 +56,7 @@ func Test_Loop_Fixed_1(t *testing.T) {
 	everSeen := false
 	for i := 0; i < 5000; i++ {
 		seen := recentBuffer.SeenRecently(sendBuffers[i%len(sendBuffers)])
-		t.Log("seen? ", i, i%10000, seen)
+		t.Log("seen? ", i, i%len(sendBuffers), seen)
 		if seen {
 			everSeen = true
 		}
