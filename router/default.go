@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"hash/crc32"
+	"math"
 	"sort"
 	"sync"
 
@@ -43,7 +44,11 @@ func (r *RecentBuffer) SeenRecently(nonce []byte) bool {
 	if !seen {
 		r.recentBuffer[nonceHash] = r.counter
 		r.reverseBuffer[r.counter] = nonceHash
-		r.counter++
+		if r.counter == math.MaxInt32 { // todo doc: cacheSize is limited to MaxInt32
+			r.counter = 0
+		} else {
+			r.counter++
+		}
 	}
 	// garbage collection
 	m := len(r.recentBuffer)
