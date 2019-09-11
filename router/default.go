@@ -11,28 +11,28 @@ import (
 )
 
 const (
-	recentBufferSize = 8
-	cacheSize        = 256
+	recentBufferSize = 1024
+	cacheSize        = 16 * 1024
 	entriesPerTable  = cacheSize / recentBufferSize
 	nonceSize        = 32
 )
 
 type recentPage map[[nonceSize]byte]bool
 
-type recentBuffer struct {
+type RecentBuffer struct {
 	mtx           sync.Mutex
 	recentPageIdx int32
 	recentBuffer  [recentBufferSize]recentPage
 }
 
-func newRecentBuffer() (r recentBuffer) {
+func newRecentBuffer() (r RecentBuffer) {
 	for i := range r.recentBuffer {
 		r.recentBuffer[i] = make(recentPage, entriesPerTable)
 	}
 	return
 }
 
-func (r *recentBuffer) hasMsgBeenSeen(nonce [nonceSize]byte) bool {
+func (r *RecentBuffer) hasMsgBeenSeen(nonce [nonceSize]byte) bool {
 	for i := range r.recentBuffer {
 		if _, ok := r.recentBuffer[i][nonce]; ok {
 			return ok
@@ -41,7 +41,7 @@ func (r *recentBuffer) hasMsgBeenSeen(nonce [nonceSize]byte) bool {
 	return false
 }
 
-func (r *recentBuffer) resetRecentPageIfFull() bool {
+func (r *RecentBuffer) resetRecentPageIfFull() bool {
 	isFull := len(r.recentBuffer[r.recentPageIdx]) >= entriesPerTable
 
 	if isFull {
@@ -50,12 +50,12 @@ func (r *recentBuffer) resetRecentPageIfFull() bool {
 	return isFull
 }
 
-func (r *recentBuffer) setMsgSeen(nonce [nonceSize]byte) {
+func (r *RecentBuffer) setMsgSeen(nonce [nonceSize]byte) {
 	r.recentBuffer[r.recentPageIdx][nonce] = true
 }
 
 // seenRecently : Returns whether this message should be filtered out by loop detection
-func (r *recentBuffer) seenRecently(nonce []byte) bool {
+func (r *RecentBuffer) SeenRecently(nonce []byte) bool {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
 
@@ -84,7 +84,7 @@ func (r *recentBuffer) seenRecently(nonce []byte) bool {
 //                 and non-channel messages are consumed but not forwarded
 type DefaultRouter struct {
 	// Internal
-	recentBuffer
+	RecentBuffer
 
 	Patches []api.Patch
 
@@ -134,7 +134,7 @@ func NewDefaultRouter() *DefaultRouter {
 	r.ForwardConsumedChannels = true
 	r.ForwardConsumedProfiles = false
 	// init page maps
-	r.recentBuffer = newRecentBuffer()
+	r.RecentBuffer = newRecentBuffer()
 	return r
 }
 
@@ -192,7 +192,7 @@ func (r *DefaultRouter) Route(node api.Node, message []byte) error {
 		return errors.New("Malformed message")
 	}
 	nonce := message[idx : idx+nonceSize]
-	if r.seenRecently(nonce) { // LOOP PREVENTION before handling or forwarding
+	if r.SeenRecently(nonce) { // LOOP PREVENTION before handling or forwarding
 		return nil
 	}
 	cid, err := node.CID() // we need this for cloning
