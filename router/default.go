@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"hash/crc32"
+	"sort"
 	"sync"
 
 	"github.com/awgh/ratnet"
@@ -11,71 +13,53 @@ import (
 )
 
 const (
-	recentBufferSize = 1024
-	cacheSize        = 16 * 1024
-	entriesPerTable  = cacheSize / recentBufferSize
-	nonceSize        = 32
+	cacheSize     = 4 * 1024
+	cacheDiscount = int(0.25 * cacheSize)
+	nonceSize     = 32
 )
 
-type recentPage map[[nonceSize]byte]bool
-
+// RecentBuffer - Used for tracking recently seen messages
 type RecentBuffer struct {
 	mtx           sync.Mutex
-	recentPageIdx int32
-	recentBuffer  [recentBufferSize]recentPage
+	recentBuffer  map[uint32]int
+	reverseBuffer map[int]uint32
+	counter       int
 }
 
 func newRecentBuffer() (r RecentBuffer) {
-	for i := range r.recentBuffer {
-		r.recentBuffer[i] = make(recentPage, entriesPerTable)
-	}
+	r.recentBuffer = make(map[uint32]int, cacheSize)
+	r.reverseBuffer = make(map[int]uint32, cacheSize)
+	r.counter = 0
 	return
 }
 
-func (r *RecentBuffer) hasMsgBeenSeen(nonce [nonceSize]byte) bool {
-	for i := range r.recentBuffer {
-		if _, ok := r.recentBuffer[i][nonce]; ok {
-			return ok
-		}
-	}
-	return false
-}
-
-func (r *RecentBuffer) resetRecentPageIfFull() bool {
-	isFull := len(r.recentBuffer[r.recentPageIdx]) >= entriesPerTable
-
-	if isFull {
-		r.recentBuffer[r.recentPageIdx] = make(recentPage, entriesPerTable)
-	}
-	return isFull
-}
-
-func (r *RecentBuffer) setMsgSeen(nonce [nonceSize]byte) {
-	r.recentBuffer[r.recentPageIdx][nonce] = true
-}
-
-// seenRecently : Returns whether this message should be filtered out by loop detection
+// SeenRecently : Returns whether this message should be filtered out by loop detection
 func (r *RecentBuffer) SeenRecently(nonce []byte) bool {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
+	nonceHash := crc32.ChecksumIEEE(nonce)
 
-	var nonceVal [nonceSize]byte
-	copy(nonceVal[:], nonce[:nonceSize])
-
-	seen := r.hasMsgBeenSeen(nonceVal)
-
-	if reset := r.resetRecentPageIfFull(); reset {
-		if r.recentPageIdx < recentBufferSize-1 {
-			r.recentPageIdx++
-		} else {
-			r.recentPageIdx = 0
+	_, seen := r.recentBuffer[nonceHash]
+	if !seen {
+		r.recentBuffer[nonceHash] = r.counter
+		r.reverseBuffer[r.counter] = nonceHash
+		r.counter++
+	}
+	// garbage collection
+	m := len(r.recentBuffer)
+	if m >= cacheSize {
+		values := make([]int, 0, m)
+		for _, v := range r.recentBuffer {
+			values = append(values, v)
+		}
+		sort.Slice(values, func(i, j int) bool { return values[i] < values[j] })
+		discount := (cacheSize - m) + cacheDiscount
+		for i := 0; i < discount; i++ {
+			nh := r.reverseBuffer[values[i]]
+			delete(r.reverseBuffer, values[i])
+			delete(r.recentBuffer, nh)
 		}
 	}
-
-	if !seen {
-		r.setMsgSeen(nonceVal)
-	}
-
 	return seen
 }
 
