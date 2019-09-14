@@ -1,14 +1,16 @@
 package policy
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"errors"
-	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
+	"github.com/awgh/ratnet/api/events"
 )
 
 // Poll : defines a Polling Connection Policy, which will periodically connect to each remote Peer
@@ -23,7 +25,8 @@ type Poll struct {
 	Transport api.Transport
 	node      api.Node
 
-	Interval int
+	Interval int32
+	Jitter   int32
 
 	Group string
 }
@@ -36,12 +39,13 @@ func init() {
 func NewPollFromMap(transport api.Transport, node api.Node,
 	t map[string]interface{}) api.Policy {
 	interval := int(t["Interval"].(float64))
+	jitter := int(t["Jitter"].(float64))
 	group := string(t["Group"].(string))
-	return NewPoll(transport, node, interval, group)
+	return NewPoll(transport, node, interval, jitter, group)
 }
 
 // NewPoll : Returns a new instance of a Poll Connection Policy
-func NewPoll(transport api.Transport, node api.Node, interval int, group ...string) *Poll {
+func NewPoll(transport api.Transport, node api.Node, interval, jitter int, group ...string) *Poll {
 	p := new(Poll)
 	// if we don't have a specified group, it's ""
 	p.Group = ""
@@ -50,9 +54,30 @@ func NewPoll(transport api.Transport, node api.Node, interval int, group ...stri
 	}
 	p.Transport = transport
 	p.node = node
-	p.Interval = interval
+	p.Interval = int32(interval)
+	p.Jitter = int32(jitter)
 
 	return p
+}
+
+// GetInterval : Get the interval at which this policy sends/receives messages
+func (p *Poll) GetInterval() int {
+	return int(atomic.LoadInt32(&p.Interval))
+}
+
+// SetInterval : Set the interval at which this policy sends/receives messages
+func (p *Poll) SetInterval(newInterval int) {
+	atomic.StoreInt32(&p.Interval, int32(newInterval))
+}
+
+// GetJitter : Get the percentage of which the interval with be randomly skewed
+func (p *Poll) GetJitter() int {
+	return int(atomic.LoadInt32(&p.Jitter))
+}
+
+// SetJitter : Set the percentage of which the interval with be randomly skewed
+func (p *Poll) SetJitter(newJitter int) {
+	atomic.StoreInt32(&p.Jitter, int32(newJitter))
 }
 
 // MarshalJSON : Create a serialied representation of the config of this policy
@@ -61,6 +86,7 @@ func (p *Poll) MarshalJSON() (b []byte, e error) {
 		"Policy":    "poll",
 		"Transport": p.Transport,
 		"Interval":  p.Interval,
+		"Jitter":    p.Jitter,
 		"Group":     p.Group})
 }
 
@@ -83,27 +109,35 @@ func (p *Poll) RunPolicy() error {
 
 		pubsrv, err := p.node.ID()
 		if err != nil {
-			log.Fatal("Couldn't get routing key in Poll.RunPolicy:\n" + err.Error())
+			events.Critical(p.node, "Couldn't get routing key in Poll.RunPolicy:\n"+err.Error())
 		}
+
+		b := make([]byte, 1)
 		counter := 0
 		for {
 			// check if we should still be running
 			if !p.isRunning {
 				break
 			}
-			time.Sleep(time.Duration(p.Interval) * time.Millisecond) // update interval
+
+			if interval := p.GetInterval(); interval > 0 {
+				delay := time.Duration(interval) * time.Millisecond
+				rand.Read(b)
+				sleep := (time.Duration((float64(100-(int(b[0])%p.GetJitter())) / 100) * float64(delay)))
+				time.Sleep(sleep) // update interval
+			}
 
 			// Get Server List for this Poll's assigned Group
 			peers, err := p.node.GetPeers(p.Group)
 			if err != nil {
-				log.Println("Poll.RunPolicy error in loop: ", err)
+				events.Warning(p.node, "Poll.RunPolicy error in loop: ", err)
 				continue
 			}
 			for _, element := range peers {
 				if element.Enabled {
 					_, err := PollServer(p.Transport, p.node, element.URI, pubsrv)
 					if err != nil {
-						log.Println("pollServer error: ", err.Error())
+						events.Warning(p.node, "pollServer error: ", err.Error())
 					}
 				}
 			}
