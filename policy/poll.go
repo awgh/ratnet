@@ -25,8 +25,8 @@ type Poll struct {
 	Transport api.Transport
 	node      api.Node
 
-	Interval int32
-	Jitter   int32
+	interval int32
+	jitter   int32
 
 	Group string
 }
@@ -54,30 +54,30 @@ func NewPoll(transport api.Transport, node api.Node, interval, jitter int, group
 	}
 	p.Transport = transport
 	p.node = node
-	p.Interval = int32(interval)
-	p.Jitter = int32(jitter)
+	p.interval = int32(interval)
+	p.jitter = int32(jitter)
 
 	return p
 }
 
 // GetInterval : Get the interval at which this policy sends/receives messages
 func (p *Poll) GetInterval() int {
-	return int(atomic.LoadInt32(&p.Interval))
+	return int(atomic.LoadInt32(&p.interval))
 }
 
 // SetInterval : Set the interval at which this policy sends/receives messages
 func (p *Poll) SetInterval(newInterval int) {
-	atomic.StoreInt32(&p.Interval, int32(newInterval))
+	atomic.StoreInt32(&p.interval, int32(newInterval))
 }
 
 // GetJitter : Get the percentage of which the interval with be randomly skewed
 func (p *Poll) GetJitter() int {
-	return int(atomic.LoadInt32(&p.Jitter))
+	return int(atomic.LoadInt32(&p.jitter))
 }
 
 // SetJitter : Set the percentage of which the interval with be randomly skewed
 func (p *Poll) SetJitter(newJitter int) {
-	atomic.StoreInt32(&p.Jitter, int32(newJitter))
+	atomic.StoreInt32(&p.jitter, int32(newJitter))
 }
 
 // MarshalJSON : Create a serialied representation of the config of this policy
@@ -85,8 +85,8 @@ func (p *Poll) MarshalJSON() (b []byte, e error) {
 	return json.Marshal(map[string]interface{}{
 		"Policy":    "poll",
 		"Transport": p.Transport,
-		"Interval":  p.Interval,
-		"Jitter":    p.Jitter,
+		"Interval":  p.GetInterval(),
+		"Jitter":    p.GetJitter(),
 		"Group":     p.Group})
 }
 
