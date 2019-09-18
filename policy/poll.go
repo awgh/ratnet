@@ -123,7 +123,13 @@ func (p *Poll) RunPolicy() error {
 			if interval := p.GetInterval(); interval > 0 {
 				delay := time.Duration(interval) * time.Millisecond
 				rand.Read(b)
-				sleep := (time.Duration((float64(100-(int(b[0])%p.GetJitter())) / 100) * float64(delay)))
+				var sleep time.Duration
+				jit := p.GetJitter()
+				if jit == 0 { // no jitter discount, no divide by zero
+					sleep = delay
+				} else { // discount a jitter amount within the given percentage
+					sleep = (time.Duration((float64(100-(int(b[0])%jit)) / 100) * float64(delay)))
+				}
 				time.Sleep(sleep) // update interval
 			}
 

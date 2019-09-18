@@ -21,7 +21,7 @@ func Test_fast_sending(t *testing.T) {
 	defaultlogger.StartDefaultLogger(receivingNode, api.Info)
 
 	sendingNode := ram.New(new(ecc.KeyPair), new(ecc.KeyPair))
-	sendingNode.SetPolicy(policy.NewPoll(udp.New(sendingNode), sendingNode, 100))
+	sendingNode.SetPolicy(policy.NewPoll(udp.New(sendingNode), sendingNode, 100, 0))
 	sendingNode.AddPeer("rc", true, URI)
 	key, _ := receivingNode.CID()
 	sendingNode.AddContact("rc", key.ToB64())
