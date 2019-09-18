@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/bencrypt/ecc"
 	"github.com/awgh/ratnet/api"
 	"github.com/awgh/ratnet/nodes/qldb"
@@ -57,5 +58,10 @@ func main() {
 	// RamNode Mode:
 	//node := ram.New(new(ecc.KeyPair), new(ecc.KeyPair))
 
-	serve(https.New("cert.pem", "key.pem", node, true), https.New("cert.pem", "key.pem", node, true), node, publicString, adminString)
+	cert, key, err := bc.GenerateSSLCertBytes(true)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	serve(https.New(cert, key, node, true), https.New(cert, key, node, true), node, publicString, adminString)
 }
