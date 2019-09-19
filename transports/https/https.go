@@ -6,6 +6,7 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"sync"
@@ -179,6 +180,8 @@ func (h *Module) handleResponse(w http.ResponseWriter, r *http.Request, node api
 
 // RPC : client interface
 func (h *Module) RPC(host string, method string, args ...interface{}) (interface{}, error) {
+	events.Info(h.node, fmt.Sprintf("\n***\n***RPC %s on %s called with: %+v\n***\n", method, host, args))
+
 	var a api.RemoteCall
 	a.Action = method
 	a.Args = args

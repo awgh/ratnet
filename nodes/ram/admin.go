@@ -371,35 +371,37 @@ func (node *Node) Start() error {
 			// for each stream, count chunks for that header
 			for _, stream := range node.streams {
 				count := 0
-				if node.chunks[stream.StreamID] != nil {
-					count = len(node.chunks[stream.StreamID])
-				}
-
-				// if chunks == total chunks, re-assemble Msg and call Handle
-				if uint32(count) == uint32(stream.NumChunks) {
-					buf := bytes.NewBuffer([]byte{})
-					for i := uint32(0); i < stream.NumChunks; i++ {
-						chunk, ok := node.chunks[stream.StreamID][i]
-						if !ok {
-							events.Critical(node, "Chunk count miscalculated - code broken")
+				if stream != nil {
+					v, ok := node.chunks[stream.StreamID]
+					if ok && v != nil {
+						count = len(v)
+					}
+					// if chunks == total chunks, re-assemble Msg and call Handle
+					if uint32(count) == uint32(stream.NumChunks) {
+						buf := bytes.NewBuffer([]byte{})
+						for i := uint32(0); i < stream.NumChunks; i++ {
+							chunk, ok := node.chunks[stream.StreamID][i]
+							if !ok {
+								events.Critical(node, "Chunk count miscalculated - code broken")
+							}
+							buf.Write(chunk.Data)
 						}
-						buf.Write(chunk.Data)
-					}
 
-					var msg api.Msg
-					if len(stream.ChannelName) > 0 {
-						msg.IsChan = true
-						msg.Name = stream.ChannelName
-					}
-					msg.Content = buf
+						var msg api.Msg
+						if len(stream.ChannelName) > 0 {
+							msg.IsChan = true
+							msg.Name = stream.ChannelName
+						}
+						msg.Content = buf
 
-					select {
-					case node.Out() <- msg:
-						events.Debug(node, "Sent message "+fmt.Sprint(msg.Content.Bytes()))
-						node.streams[stream.StreamID] = nil
-						node.chunks[stream.StreamID] = make(map[uint32]*api.Chunk)
-					default:
-						events.Debug(node, "No message sent")
+						select {
+						case node.Out() <- msg:
+							events.Debug(node, "Sent message "+fmt.Sprint(msg.Content.Bytes()))
+							node.streams[stream.StreamID] = nil
+							node.chunks[stream.StreamID] = make(map[uint32]*api.Chunk)
+						default:
+							events.Debug(node, "No message sent")
+						}
 					}
 				}
 			}
