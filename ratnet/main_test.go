@@ -122,11 +122,21 @@ func initNode(n int64, testNode TestNode, nodeType int, transportType int, p2pMo
 			testNode.Public = udp.New(testNode.Node)
 			testNode.Admin = udp.New(testNode.Node)
 		} else if transportType == TLS {
-			testNode.Public = tls.New("tmp/cert"+num+".pem", "tmp/key"+num+".pem", testNode.Node, true)
-			testNode.Admin = tls.New("tmp/cert"+num+".pem", "tmp/key"+num+".pem", testNode.Node, true)
+			cert, key, err := bc.GenerateSSLCertBytes(true)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			testNode.Public = tls.New(cert, key, testNode.Node, true)
+			testNode.Admin = tls.New(cert, key, testNode.Node, true)
 		} else {
-			testNode.Public = https.New("tmp/cert"+num+".pem", "tmp/key"+num+".pem", testNode.Node, true)
-			testNode.Admin = https.New("tmp/cert"+num+".pem", "tmp/key"+num+".pem", testNode.Node, true)
+			cert, key, err := bc.GenerateSSLCertBytes(true)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			testNode.Public = https.New(cert, key, testNode.Node, true)
+			testNode.Admin = https.New(cert, key, testNode.Node, true)
 		}
 		defaultlogger.StartDefaultLogger(testNode.Node, api.Info)
 		if p2pMode {
