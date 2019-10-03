@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"runtime/debug"
 	"time"
 
 	"github.com/awgh/ratnet/api"
+	"github.com/awgh/ratnet/api/chunking"
+	"github.com/awgh/ratnet/api/events"
 )
 
 // GetChannelPrivKey : Return the private key of a given channel
@@ -18,34 +19,46 @@ func (node *Node) GetChannelPrivKey(name string) (string, error) {
 }
 
 // Forward - Add an already-encrypted message to the outbound message queue (forward it along)
-func (node *Node) Forward(channelName string, message []byte) error {
-	// prepend a uint16 of channel name length, little-endian
-	t := uint16(len(channelName))
-	rxsum := []byte{byte(t >> 8), byte(t & 0xFF)}
-	rxsum = append(rxsum, []byte(channelName)...)
-	message = append(rxsum, message...)
+func (node *Node) Forward(msg api.Msg) error {
 
-	return node.qlOutboxEnqueue(channelName, message, time.Now().UnixNano(), false) //true
+	flags := uint8(0)
+	if msg.IsChan {
+		flags |= api.ChannelFlag
+	}
+	if msg.Chunked {
+		flags |= api.ChunkedFlag
+	}
+	if msg.StreamHeader {
+		flags |= api.StreamHeaderFlag
+	}
+	rxsum := []byte{flags} // prepend flags byte
+	if msg.IsChan {
+		// prepend a uint16 of channel name length, little-endian
+		t := uint16(len(msg.Name))
+		rxsum = append(rxsum, byte(t>>8), byte(t&0xFF))
+		rxsum = append(rxsum, []byte(msg.Name)...)
+	}
+	message := append(rxsum, msg.Content.Bytes()...)
+	return node.qlOutboxEnqueue(msg.Name, message, time.Now().UnixNano(), false) //true
 }
 
 // Handle - Decrypt and handle an encrypted message
-func (node *Node) Handle(channelName string, message []byte) (bool, error) {
+func (node *Node) Handle(msg api.Msg) (bool, error) {
 	var clear []byte
 	var err error
 	var tagOK bool
 	var clearMsg api.Msg // msg to out channel
-	channelLen := len(channelName)
 
-	if channelLen > 0 {
-		v, ok := node.channelKeys[channelName]
+	if msg.IsChan {
+		v, ok := node.channelKeys[msg.Name]
 		if !ok {
 			return false, errors.New("Cannot Handle message for Unknown Channel")
 		}
-		clearMsg = api.Msg{Name: channelName, IsChan: true}
-		tagOK, clear, err = v.DecryptMessage(message)
+		clearMsg = api.Msg{Name: msg.Name, IsChan: true, Chunked: msg.Chunked, StreamHeader: msg.StreamHeader}
+		tagOK, clear, err = v.DecryptMessage(msg.Content.Bytes())
 	} else {
-		clearMsg = api.Msg{Name: "[content]", IsChan: false}
-		tagOK, clear, err = node.contentKey.DecryptMessage(message)
+		clearMsg = api.Msg{Name: "[content]", IsChan: false, Chunked: msg.Chunked, StreamHeader: msg.StreamHeader}
+		tagOK, clear, err = node.contentKey.DecryptMessage(msg.Content.Bytes())
 	}
 	// DecryptMessage will return !tagOK if the quick-check fails, which is common
 	if !tagOK || err != nil {
@@ -53,11 +66,19 @@ func (node *Node) Handle(channelName string, message []byte) (bool, error) {
 	}
 	clearMsg.Content = bytes.NewBuffer(clear)
 
+	if msg.Chunked {
+		err = chunking.HandleChunked(node, clearMsg)
+		if err != nil {
+			return false, err
+		}
+		return true, err
+	}
+
 	select {
 	case node.Out() <- clearMsg:
-		node.debugMsg("Sent message " + fmt.Sprint(message))
+		events.Debug(node, "Sent message "+fmt.Sprint(msg.Content.Bytes()))
 	default:
-		node.debugMsg("No message sent")
+		events.Debug(node, "No message sent")
 	}
 	return tagOK, nil
 }
@@ -82,33 +103,4 @@ func (node *Node) signalMonitor() {
 			}
 		}
 	}()
-}
-
-/*
-	TODO:	encrypted debug and error messages?! yes please!
-			- you may want an application that can detect that messages have happend
-			  while only being able to read them within the admin context
-*/
-func (node *Node) debugMsg(content string) {
-	if node.debugMode {
-		msg := new(api.Msg)
-		msg.Name = "[DEBUG]"
-		msg.Content = bytes.NewBufferString(content)
-		node.Err() <- *msg
-	}
-}
-
-func (node *Node) errMsg(err error, fatal bool) {
-	msg := new(api.Msg)
-	if node.debugMode {
-		msg.Content = bytes.NewBufferString(err.Error() + "\n---\n" + string(debug.Stack()))
-	} else {
-		msg.Content = bytes.NewBufferString(err.Error())
-	}
-	msg.Name = "[ERROR]"
-	msg.IsChan = fatal // use the "is channel" message flag as the "is fatal" flag
-	node.Err() <- *msg
-	if msg.IsChan {
-		node.Stop()
-	}
 }

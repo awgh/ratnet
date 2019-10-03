@@ -1,13 +1,16 @@
 package ram
 
 import (
+	"bytes"
 	"errors"
-	"log"
+	"fmt"
 	"time"
 
 	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/bencrypt/ecc"
 	"github.com/awgh/ratnet/api"
+	"github.com/awgh/ratnet/api/chunking"
+	"github.com/awgh/ratnet/api/events"
 )
 
 // CID : Return content key
@@ -111,7 +114,9 @@ func (node *Node) GetProfile(name string) (*api.Profile, error) {
 	pub := new(api.Profile)
 	pub.Name = name
 	pub.Enabled = p.Enabled
-	pub.Pubkey = p.Privkey.GetPubKey().ToB64()
+	kp := p.Privkey
+	pk := kp.GetPubKey()
+	pub.Pubkey = pk.ToB64()
 	return pub, nil
 }
 
@@ -158,7 +163,7 @@ func (node *Node) LoadProfile(name string) (bc.PubKey, error) {
 		return nil, errors.New("Profile not found")
 	}
 	node.contentKey = node.profiles[name].Privkey
-	node.debugMsg("Profile Loaded: " + node.contentKey.GetPubKey().ToB64())
+	events.Debug(node, "Profile Loaded: "+node.contentKey.GetPubKey().ToB64())
 	return node.contentKey.GetPubKey(), nil
 }
 
@@ -176,20 +181,33 @@ func (node *Node) GetPeer(name string) (*api.Peer, error) {
 }
 
 // GetPeers : Retrieve a list of peers in this node's database
-func (node *Node) GetPeers() ([]api.Peer, error) {
+func (node *Node) GetPeers(group ...string) ([]api.Peer, error) {
+	// if we don't have a specified group, it's ""
+	groupName := ""
+	if len(group) > 0 {
+		groupName = group[0]
+	}
 	var peers []api.Peer
 	for _, v := range node.peers {
-		peers = append(peers, api.Peer{Name: v.Name, Enabled: v.Enabled, URI: v.URI})
+		if v.Group == groupName {
+			peers = append(peers, api.Peer{Name: v.Name, Enabled: v.Enabled, URI: v.URI, Group: groupName})
+		}
 	}
 	return peers, nil
 }
 
 // AddPeer : Add or Update a peer configuration
-func (node *Node) AddPeer(name string, enabled bool, uri string) error {
+func (node *Node) AddPeer(name string, enabled bool, uri string, group ...string) error {
+	// if we don't have a specified group, it's ""
+	groupName := ""
+	if len(group) > 0 {
+		groupName = group[0]
+	}
 	peer := new(api.Peer)
 	peer.Name = name
 	peer.Enabled = enabled
 	peer.URI = uri
+	peer.Group = groupName
 	node.peers[name] = peer
 	return nil
 }
@@ -217,8 +235,7 @@ func (node *Node) Send(contactName string, data []byte, pubkey ...bc.PubKey) err
 			return err
 		}
 	}
-
-	return node.send("", destkey, data)
+	return node.SendMsg(api.Msg{Name: contactName, Content: bytes.NewBuffer(data), IsChan: false, PubKey: destkey, Chunked: false})
 }
 
 // SendChannelBulk : Transmit messages to a channel
@@ -244,30 +261,54 @@ func (node *Node) SendChannel(channelName string, data []byte, pubkey ...bc.PubK
 		}
 		destkey = c.Privkey.GetPubKey()
 	}
-
-	return node.send(channelName, destkey, data)
+	return node.SendMsg(api.Msg{Name: channelName, Content: bytes.NewBuffer(data), IsChan: true, PubKey: destkey, Chunked: false})
 }
 
-func (node *Node) send(channelName string, destkey bc.PubKey, msg []byte) error {
+// SendMsg : Transmits a message
+func (node *Node) SendMsg(msg api.Msg) error {
 
-	data, err := node.contentKey.EncryptMessage(msg, destkey)
+	// determine if we need to chunk
+	chunkSize := chunking.ChunkSize(node)                               // finds the minimum transport byte limit
+	if msg.Content.Len() > 0 && uint32(msg.Content.Len()) > chunkSize { // we need to chunk
+		if msg.Chunked { // we're already chunked, freak out!
+			return errors.New("Chunked message needs to be chunked, bailing out")
+		}
+		return chunking.SendChunked(node, chunkSize, msg)
+	}
+
+	data, err := node.contentKey.EncryptMessage(msg.Content.Bytes(), msg.PubKey)
 	if err != nil {
 		return err
 	}
 
-	// prepend a uint16 of channel name length, little-endian
-	t := uint16(len(channelName))
-	rxsum := []byte{byte(t >> 8), byte(t & 0xFF)}
-	rxsum = append(rxsum, []byte(channelName)...)
-	data = append(rxsum, data...)
+	flags := uint8(0)
+	if msg.IsChan {
+		flags |= api.ChannelFlag
+	}
+	if msg.Chunked {
+		flags |= api.ChunkedFlag
+	}
+	if msg.StreamHeader {
+		flags |= api.StreamHeaderFlag
+	}
+	rxsum := []byte{flags} // prepend flags byte
 
+	if msg.IsChan {
+		// prepend a uint16 of channel name length, little-endian
+		t := uint16(len(msg.Name))
+		rxsum = append(rxsum, byte(t>>8), byte(t&0xFF))
+		rxsum = append(rxsum, []byte(msg.Name)...)
+	}
+	data = append(rxsum, data...)
 	ts := time.Now().UnixNano()
 
 	m := new(outboxMsg)
-	m.channel = channelName
+	if msg.IsChan {
+		m.channel = msg.Name
+	}
 	m.timeStamp = ts
 	m.msg = data
-	node.outbox = append(node.outbox, m)
+	node.outbox.Append(m)
 	return nil
 }
 
@@ -300,6 +341,8 @@ func (node *Node) Start() error {
 		}
 	}
 
+	node.isRunning = true
+
 	// input loop
 	go func() {
 		for {
@@ -310,21 +353,61 @@ func (node *Node) Start() error {
 
 			// read message off the input channel
 			message := <-node.In()
-			node.debugMsg("Message accepted on input channel")
-			switch message.IsChan {
-			case true:
-				if err := node.SendChannel(message.Name, message.Content.Bytes(), message.PubKey); err != nil {
-					log.Fatal("SendChannel failed in input loop")
-				}
-			case false:
-				if err := node.Send(message.Name, message.Content.Bytes(), message.PubKey); err != nil {
-					log.Fatal("Send failed in input loop")
+			events.Debug(node, "Message accepted on input channel")
+			if err := node.SendMsg(message); err != nil {
+				events.Error(node, err.Error())
+			}
+		}
+	}()
+
+	// dechunking loop
+	go func() {
+		for {
+			time.Sleep(10 * time.Millisecond)
+			// check if we should stop running
+			if !node.isRunning {
+				break
+			}
+			// for each stream, count chunks for that header
+			for _, stream := range node.streams {
+				count := 0
+				if stream != nil {
+					v, ok := node.chunks[stream.StreamID]
+					if ok && v != nil {
+						count = len(v)
+					}
+					// if chunks == total chunks, re-assemble Msg and call Handle
+					if uint32(count) == uint32(stream.NumChunks) {
+						buf := bytes.NewBuffer([]byte{})
+						for i := uint32(0); i < stream.NumChunks; i++ {
+							chunk, ok := node.chunks[stream.StreamID][i]
+							if !ok {
+								events.Critical(node, "Chunk count miscalculated - code broken")
+							}
+							buf.Write(chunk.Data)
+						}
+
+						var msg api.Msg
+						if len(stream.ChannelName) > 0 {
+							msg.IsChan = true
+							msg.Name = stream.ChannelName
+						}
+						msg.Content = buf
+
+						select {
+						case node.Out() <- msg:
+							events.Debug(node, "Sent message "+fmt.Sprint(msg.Content.Bytes()))
+							node.streams[stream.StreamID] = nil
+							node.chunks[stream.StreamID] = make(map[uint32]*api.Chunk)
+						default:
+							events.Debug(node, "No message sent")
+						}
+					}
 				}
 			}
 		}
 	}()
 
-	node.isRunning = true
 	return nil
 }
 

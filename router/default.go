@@ -1,21 +1,79 @@
 package router
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"hash/crc32"
+	"math"
+	"sort"
+	"sync"
 
 	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
 )
+
+const (
+	cacheSize     = 4 * 1024
+	cacheDiscount = int(0.25 * cacheSize)
+	nonceSize     = 32
+)
+
+// RecentBuffer - Used for tracking recently seen messages
+type RecentBuffer struct {
+	mtx           sync.Mutex
+	recentBuffer  map[uint32]int
+	reverseBuffer map[int]uint32
+	counter       int
+}
+
+func newRecentBuffer() (r RecentBuffer) {
+	r.recentBuffer = make(map[uint32]int, cacheSize)
+	r.reverseBuffer = make(map[int]uint32, cacheSize)
+	r.counter = 0
+	return
+}
+
+// SeenRecently : Returns whether this message should be filtered out by loop detection
+func (r *RecentBuffer) SeenRecently(nonce []byte) bool {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+	nonceHash := crc32.ChecksumIEEE(nonce)
+
+	_, seen := r.recentBuffer[nonceHash]
+	if !seen {
+		r.recentBuffer[nonceHash] = r.counter
+		r.reverseBuffer[r.counter] = nonceHash
+		if r.counter == math.MaxInt32 { // todo doc: cacheSize is limited to MaxInt32
+			r.counter = 0
+		} else {
+			r.counter++
+		}
+	}
+	// garbage collection
+	m := len(r.recentBuffer)
+	if m >= cacheSize {
+		values := make([]int, 0, m)
+		for _, v := range r.recentBuffer {
+			values = append(values, v)
+		}
+		sort.Slice(values, func(i, j int) bool { return values[i] < values[j] })
+		discount := (cacheSize - m) + cacheDiscount
+		for i := 0; i < discount; i++ {
+			nh := r.reverseBuffer[values[i]]
+			delete(r.reverseBuffer, values[i])
+			delete(r.recentBuffer, nh)
+		}
+	}
+	return seen
+}
 
 // DefaultRouter - The Default router makes no changes at all,
 //                 every message is sent out on the same channel it came in on,
 //                 and non-channel messages are consumed but not forwarded
 type DefaultRouter struct {
 	// Internal
-	recentPageIdx int
-	recentPage1   map[[16]byte]byte
-	recentPage2   map[[16]byte]byte
+	RecentBuffer
 
 	Patches []api.Patch
 
@@ -65,8 +123,7 @@ func NewDefaultRouter() *DefaultRouter {
 	r.ForwardConsumedChannels = true
 	r.ForwardConsumedProfiles = false
 	// init page maps
-	r.recentPage1 = make(map[[16]byte]byte)
-	r.recentPage2 = make(map[[16]byte]byte)
+	r.RecentBuffer = newRecentBuffer()
 	return r
 }
 
@@ -80,19 +137,24 @@ func (r *DefaultRouter) GetPatches() []api.Patch {
 	return r.Patches
 }
 
-// forward - channel prefixes have been stripped from message when they get here
-func (r *DefaultRouter) forward(node api.Node, channelName string, message []byte) error {
+func (r *DefaultRouter) forward(node api.Node, msg api.Msg) error {
 	for _, p := range r.Patches { //todo: this could be constant-time
-		if channelName == p.From {
+		if msg.Name == p.From { // we don't check for IsChan here, we allow forwarding from "" chan to channels
 			for i := 0; i < len(p.To); i++ {
-				if err := node.Forward(p.To[i], message); err != nil {
+				msg.Name = p.To[i]
+				if msg.Name == "" {
+					msg.IsChan = false
+				} else {
+					msg.IsChan = true
+				}
+				if err := node.Forward(msg); err != nil {
 					return err
 				}
 			}
 			return nil
 		}
 	}
-	if err := node.Forward(channelName, message); err != nil {
+	if err := node.Forward(msg); err != nil {
 		return err
 	}
 	return nil
@@ -103,41 +165,47 @@ func (r *DefaultRouter) Route(node api.Node, message []byte) error {
 
 	//  Stuff Everything will need just about every time...
 	//
+	var msg api.Msg
+	flags := message[0]
+	idx := 1
+	msg.IsChan = ((flags & api.ChannelFlag) != 0)
+	msg.Chunked = ((flags & api.ChunkedFlag) != 0)
+	msg.StreamHeader = ((flags & api.StreamHeaderFlag) != 0)
 	var channelLen uint16 // beginning uint16 of message is channel name length
-	channelName := ""
-	channelLen = (uint16(message[0]) << 8) | uint16(message[1])
-	if len(message) < int(channelLen)+2+64 { // uint16 + LuggageTag
-		return errors.New("Incorrect channel name length")
+	if msg.IsChan {
+		channelLen = (uint16(message[1]) << 8) | uint16(message[2])
+		msg.Name = string(message[3 : 3+channelLen]) // flags[0], chan name length[1,2]
+		idx += 2 + int(channelLen)                   // skip over the channel name
 	}
-	idx := 2 + channelLen          //skip over the channel name
-	nonce := message[idx : idx+16] // todo: this is truncating half the pubkey
-	if r.seenRecently(nonce) {     // LOOP PREVENTION before handling or forwarding
+	if idx+16 >= len(message) {
+		return errors.New("Malformed message")
+	}
+	nonce := message[idx : idx+nonceSize]
+	if r.SeenRecently(nonce) { // LOOP PREVENTION before handling or forwarding
 		return nil
 	}
-
 	cid, err := node.CID() // we need this for cloning
 	if err != nil {
 		return err
 	}
-	//
+	msg.Content = bytes.NewBuffer(message[idx:])
 
-	// When the channel tag is set...
-	if channelLen > 0 { // channel message
-		channelName = string(message[2 : 2+channelLen])
+	// Routing Logic
+	if msg.IsChan { // channel message
 		consumed := false
 		if r.CheckChannels {
-			chn, err := node.GetChannel(channelName)
+			chn, err := node.GetChannel(msg.Name)
 			if chn != nil && err == nil { // this is a channel key we know
 				pubkey := cid.Clone()
 				pubkey.FromB64(chn.Pubkey)
-				consumed, err = node.Handle(channelName, message[idx:])
+				consumed, err = node.Handle(msg)
 				if err != nil {
 					return err
 				}
 			}
 		}
 		if (!consumed && r.ForwardUnknownChannels) || (consumed && r.ForwardConsumedChannels) {
-			if err := r.forward(node, channelName, message[idx:]); err != nil {
+			if err := r.forward(node, msg); err != nil {
 				return err
 			}
 		}
@@ -145,13 +213,13 @@ func (r *DefaultRouter) Route(node api.Node, message []byte) error {
 		// content key case (to be removed, deprecated)
 		consumed := false
 		if r.CheckContent {
-			consumed, err = node.Handle(channelName, message[idx:])
+			consumed, err = node.Handle(msg)
 			if err != nil {
 				return err
 			}
 		}
 		if (!consumed && r.ForwardUnknownContent) || (consumed && r.ForwardConsumedContent) {
-			if err := r.forward(node, channelName, message[idx:]); err != nil {
+			if err := r.forward(node, msg); err != nil {
 				return err
 			}
 		}
@@ -169,7 +237,7 @@ func (r *DefaultRouter) Route(node api.Node, message []byte) error {
 				}
 				pubkey := cid.Clone()
 				pubkey.FromB64(profile.Pubkey)
-				consumed, err = node.Handle(channelName, message[idx:])
+				consumed, err = node.Handle(msg)
 				if err != nil {
 					return err
 				}
@@ -179,54 +247,12 @@ func (r *DefaultRouter) Route(node api.Node, message []byte) error {
 			}
 		}
 		if (!consumed && r.ForwardUnknownProfiles) || (consumed && r.ForwardConsumedProfiles) {
-			if err := r.forward(node, channelName, message[idx:]); err != nil {
+			if err := r.forward(node, msg); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
-}
-
-// seenRecently : Returns whether this message should be filtered out by loop detection
-func (r *DefaultRouter) seenRecently(hdr []byte) bool {
-
-	halfCacheSize := 50
-
-	var shdr [16]byte // todo: truncating half of shared key
-	copy(shdr[:], hdr[:16])
-	_, aok := r.recentPage1[shdr]
-	_, bok := r.recentPage2[shdr]
-	retval := aok || bok
-
-	//log.Printf("seen: %+v len1: %d len2: %d\n", shdr, len(r.recentPage1), len(r.recentPage2))
-
-	switch r.recentPageIdx {
-	default:
-		fallthrough
-	case 0:
-		if len(r.recentPage1) >= halfCacheSize {
-			if len(r.recentPage2) >= halfCacheSize {
-				r.recentPage2 = nil
-				r.recentPage2 = make(map[[16]byte]byte)
-			}
-			r.recentPageIdx = 1
-			r.recentPage2[shdr] = 1
-		} else {
-			r.recentPage1[shdr] = 1
-		}
-	case 1:
-		if len(r.recentPage2) >= halfCacheSize {
-			if len(r.recentPage1) >= halfCacheSize {
-				r.recentPage1 = nil
-				r.recentPage1 = make(map[[16]byte]byte)
-			}
-			r.recentPageIdx = 0
-			r.recentPage1[shdr] = 1
-		} else {
-			r.recentPage2[shdr] = 1
-		}
-	}
-	return retval
 }
 
 // MarshalJSON : Create a serialized JSON blob out of the config of this router

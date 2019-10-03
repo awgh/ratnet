@@ -2,10 +2,11 @@ package udp
 
 import (
 	"bufio"
-	"encoding/gob"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
-	"log"
+	"fmt"
+	"io"
 	"net"
 	"sync"
 	"time"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
+	"github.com/awgh/ratnet/api/events"
 )
 
 var cachedSessions map[string]*kcp.UDPSession
@@ -73,7 +75,7 @@ func (m *Module) Listen(listen string, adminMode bool) {
 	}
 	lis, err := kcp.ListenWithOptions(listen, nil, 10, 0) //disabled FEC
 	if err != nil {
-		log.Println(err.Error())
+		events.Error(m.node, err.Error())
 		return
 	}
 	m.isRunning = true
@@ -88,11 +90,11 @@ func (m *Module) Listen(listen string, adminMode bool) {
 		for m.isRunning {
 			c, err := lis.Accept()
 			if err != nil {
-				log.Println(err)
+				events.Error(m.node, err.Error())
 				continue
 			}
 
-			//log.Println("UDP accepted new connection")
+			events.Debug(m.node, "UDP accepted new connection")
 
 			c.SetReadDeadline(time.Now().Add(35 * time.Second))
 			c.SetWriteDeadline(time.Now().Add(35 * time.Second))
@@ -102,38 +104,63 @@ func (m *Module) Listen(listen string, adminMode bool) {
 				writer := bufio.NewWriter(conn)
 
 				for m.isRunning { // read multiple messages on the same connection
-					var a api.RemoteCall
-					//Use default gob decoder
-					dec := gob.NewDecoder(reader)
-					if err = dec.Decode(&a); err != nil {
-						if err, ok := err.(net.Error); ok && err.Timeout() {
-							// it's a timeout, which is the normal way for UDP "sessions" to die.  don't spew log here.
-						} else {
-							log.Println("listen gob decode failed: " + err.Error())
-						}
+
+					// read
+					blen := make([]byte, 4)
+					n, err := io.ReadFull(reader, blen)
+					if n != 4 {
+						events.Warning(m.node, "Listen remote read len underflow: n =", n)
 						break
 					}
+					if err != nil {
+						events.Warning(m.node, "Listen remote read len failed: "+err.Error())
+						break
+					}
+					rlen := binary.LittleEndian.Uint32(blen)
+					buf := make([]byte, rlen)
+					n, err = io.ReadFull(reader, buf)
+					if uint32(n) != rlen {
+						events.Warning(m.node, "Listen remote read underflow: n =", n)
+						break
+					}
+					if err != nil {
+						events.Warning(m.node, "Listen remote read failed: "+err.Error())
+						break
+					}
+					//
+
+					a, err := api.RemoteCallFromBytes(buf)
+					if err != nil {
+						events.Warning(m.node, "Listen remote deserialize failed: "+err.Error())
+						break
+					}
+
 					var result interface{}
 					if adminMode {
-						result, err = m.node.AdminRPC(m, a)
+						result, err = m.node.AdminRPC(m, *a)
 					} else {
-						result, err = m.node.PublicRPC(m, a)
+						result, err = m.node.PublicRPC(m, *a)
 					}
-					//log.Printf("result type %T \n", result)
+
 					rr := api.RemoteResponse{}
 					if err != nil {
 						rr.Error = err.Error()
 					}
-					if result != nil { // gob cannot encode typed Nils, only interface{} Nils...wtf?
+					if result != nil { //
 						rr.Value = result
 					}
 
-					enc := gob.NewEncoder(writer)
-					if err := enc.Encode(rr); err != nil {
-						log.Println("listen gob encode failed: " + err.Error())
+					rbytes := api.RemoteResponseToBytes(&rr)
+					// write
+					wlen := make([]byte, 4)
+					binary.LittleEndian.PutUint32(wlen, uint32(len(rbytes)))
+					rbytes = append(wlen, rbytes...)
+					if _, err := writer.Write(rbytes); err != nil {
+						events.Warning(m.node, "Listen remote write failed: "+err.Error())
 						break
 					}
-					_ = writer.Flush()
+					writer.Flush()
+					//
 				}
 			}(c)
 		}
@@ -143,7 +170,7 @@ func (m *Module) Listen(listen string, adminMode bool) {
 // RPC : transmit data via UDP
 func (m *Module) RPC(host string, method string, args ...interface{}) (interface{}, error) {
 
-	//log.Printf("\n***\n***RPC %s called: %s  with: %v\n***\n", method, host, args)
+	events.Info(m.node, fmt.Sprintf("\n***\n***RPC %s on %s called with: %+v\n***\n", method, host, args))
 
 	conn, ok := cachedSessions[host]
 	if !ok {
@@ -151,7 +178,7 @@ func (m *Module) RPC(host string, method string, args ...interface{}) (interface
 		var err error
 		conn, err = kcp.DialWithOptions(host, nil, 10, 0) // disabled FEC
 		if err != nil {
-			log.Println("kcp dial error in udp:", err)
+			events.Warning(m.node, "kcp dial error in udp:", err)
 			return nil, err
 		}
 		conn.SetStreamMode(false)
@@ -171,20 +198,58 @@ func (m *Module) RPC(host string, method string, args ...interface{}) (interface
 	a.Action = method
 	a.Args = args
 
-	//use default gob encoder
-	enc := gob.NewEncoder(writer)
-	if err := enc.Encode(a); err != nil {
-		log.Println("rpc gob encode failed: " + err.Error())
+	rbytes := api.RemoteCallToBytes(&a)
+
+	// write
+	rlen := make([]byte, 4)
+	binary.LittleEndian.PutUint32(rlen, uint32(len(rbytes)))
+	rbytes = append(rlen, rbytes...)
+	if _, err := writer.Write(rbytes); err != nil {
+		events.Warning(m.node, "RPC remote write failed: "+err.Error())
 		delete(cachedSessions, host) // something's wrong, make a new session next attempt
 		_ = conn.Close()
 		return nil, err
 	}
 	writer.Flush()
+	//
 
-	var rr api.RemoteResponse
-	dec := gob.NewDecoder(reader)
-	if err := dec.Decode(&rr); err != nil {
-		log.Println("rpc gob decode failed: " + err.Error())
+	// read
+	blen := make([]byte, 4)
+	n, err := io.ReadFull(reader, blen)
+	if n != 4 {
+		events.Warning(m.node, "RPC remote read len underflow: n =", n)
+		delete(cachedSessions, host) // something's wrong, make a new session next attempt
+		_ = conn.Close()
+		return nil, err
+	}
+	if err != nil {
+		events.Warning(m.node, "RPC remote read len failed: "+err.Error())
+		delete(cachedSessions, host) // something's wrong, make a new session next attempt
+		_ = conn.Close()
+		return nil, err
+	}
+	wlen := binary.LittleEndian.Uint32(blen)
+	buf := make([]byte, wlen)
+	n, err = io.ReadFull(reader, buf)
+	if uint32(n) != wlen {
+		events.Warning(m.node, "RPC remote read underflow: n =", n)
+		delete(cachedSessions, host) // something's wrong, make a new session next attempt
+		_ = conn.Close()
+		return nil, err
+	}
+	if err != nil {
+		events.Warning(m.node, "RPC remote read failed: "+err.Error())
+		delete(cachedSessions, host) // something's wrong, make a new session next attempt
+		_ = conn.Close()
+		return nil, err
+	}
+	//
+	rr, err := api.RemoteResponseFromBytes(buf)
+	if err == io.EOF {
+		rr = nil
+	}
+	if err != nil {
+		events.Warning(m.node, "RPC decode failed: "+err.Error())
 		delete(cachedSessions, host) // something's wrong, make a new session next attempt
 		_ = conn.Close()
 		return nil, err

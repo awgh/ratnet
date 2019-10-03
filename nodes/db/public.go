@@ -1,4 +1,4 @@
-package qldb
+package db
 
 import (
 	"bytes"
@@ -36,6 +36,7 @@ func (node *Node) Dropoff(bundle api.Bundle) error {
 		events.Warning(node, "dropoff gob decode failed, len %d\n", len(data))
 		return erra
 	}
+
 	for i := 0; i < len(msgs); i++ {
 		if len(msgs[i]) < 16 { // aes.BlockSize == 16
 			continue //todo: remove padding before here?
@@ -55,7 +56,7 @@ func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, maxBytes int64, channel
 	events.Debug(node, "Pickup called")
 	var retval api.Bundle
 
-	msgs, lastTimeReturned, err := node.qlGetMessages(lastTime, maxBytes, channelNames...)
+	msgs, lastTimeReturned, err := node.dbGetMessages(lastTime, maxBytes, channelNames...)
 	if err != nil {
 		return retval, err
 	}
@@ -72,7 +73,7 @@ func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, maxBytes int64, channel
 		}
 		cipher, err := node.routingKey.EncryptMessage(buf.Bytes(), rpub)
 		if err != nil {
-			events.Warning(node, "pickup gob encode failed, len:", len(cipher))
+			events.Error(node, "pickup gob encode failed, len %d\n", len(cipher))
 			return retval, err
 		}
 		retval.Data = cipher

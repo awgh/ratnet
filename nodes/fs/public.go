@@ -6,12 +6,12 @@ import (
 	"errors"
 	"io"
 	"io/ioutil"
-	"log"
 	"os"
 	"path/filepath"
 
 	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/ratnet/api"
+	"github.com/awgh/ratnet/api/events"
 )
 
 // ID : Return routing key
@@ -21,7 +21,7 @@ func (node *Node) ID() (bc.PubKey, error) {
 
 // Dropoff : Deliver a batch of  messages to a remote node
 func (node *Node) Dropoff(bundle api.Bundle) error {
-	node.debugMsg("Dropoff called")
+	events.Debug(node, "Dropoff called")
 	if len(bundle.Data) < 1 { // todo: correct min length
 		return errors.New("Dropoff called with no data")
 	}
@@ -29,7 +29,7 @@ func (node *Node) Dropoff(bundle api.Bundle) error {
 	if err != nil {
 		return err
 	} else if !tagOK {
-		return errors.New("Luggage Tag Check Failed in Dropoff")
+		return errors.New("Luggage Tag Check Failed in FSNode Dropoff")
 	}
 
 	var msgs [][]byte
@@ -38,7 +38,7 @@ func (node *Node) Dropoff(bundle api.Bundle) error {
 	reader := bytes.NewReader(data)
 	dec := gob.NewDecoder(reader)
 	if err := dec.Decode(&msgs); err != nil {
-		log.Printf("dropoff gob decode failed, len %d\n", len(data))
+		events.Error(node, "dropoff gob decode failed, len:", len(data), err.Error())
 		return err
 	}
 	for i := 0; i < len(msgs); i++ {
@@ -47,18 +47,18 @@ func (node *Node) Dropoff(bundle api.Bundle) error {
 		}
 		err = node.router.Route(node, msgs[i])
 		if err != nil {
-			log.Println("error in dropoff: " + err.Error())
+			events.Error(node, "error in dropoff: "+err.Error())
 			continue // we don't want to return routing errors back out the remote public interface
 		}
 	}
 
-	node.debugMsg("Dropoff returned")
+	events.Debug(node, "Dropoff returned")
 	return nil
 }
 
 // Pickup : Get messages from a remote node
 func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, maxBytes int64, channelNames ...string) (api.Bundle, error) {
-	node.debugMsg("Pickup called")
+	events.Debug(node, "Pickup called")
 	var retval api.Bundle
 	var msgs [][]byte
 	retval.Time = lastTime
@@ -66,23 +66,21 @@ func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, maxBytes int64, channel
 
 	err := filepath.Walk(node.basePath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			log.Printf("Pickup failure accessing a path %q: %v\n", path, err)
+			events.Error(node, "Pickup failure accessing a path:", path, err)
 			return err
 		}
 		fileTime := info.ModTime().UnixNano()
-		//if !info.IsDir() {
-		//	log.Printf("pickup t1: %d  t2: %d\n", fileTime, lastTime)
-		//}
 		if !info.IsDir() && fileTime > lastTime {
 			b, err := ioutil.ReadFile(path) //filepath.Join(node.basePath, path))
 			if err != nil {
-				log.Printf("prevent panic by handling failure reading a file %q: %v\n", path, err)
+				events.Error(node, "prevent panic by handling failure reading a file:", path, err)
 				return err
 			}
 
 			if fileTime == retval.Time {
-				log.Println("Identical filetimes, attempting to exceed recommended protocol buffer size")
+				events.Warning(node, "Identical filetimes, attempting to exceed recommended protocol buffer size")
 			} else if bytesRead+int64(len(b)) >= maxBytes { // no room for next msg
+				events.Warning(node, "Result too big to be fetched on this transport! Flush and rechunk")
 				return io.EOF
 			}
 
@@ -92,7 +90,6 @@ func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, maxBytes int64, channel
 				retval.Time = fileTime
 			}
 		}
-		//fmt.Printf("visited file: %q\n", path)
 		return nil
 	})
 	if err != nil && err != io.EOF {
@@ -115,6 +112,6 @@ func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, maxBytes int64, channel
 		retval.Data = cipher
 		return retval, err
 	}
-	node.debugMsg("Pickup returned")
+	events.Debug(node, "Pickup returned")
 	return retval, nil
 }

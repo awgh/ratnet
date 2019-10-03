@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"log"
+	"net"
 	"os"
 	"strconv"
 	"testing"
@@ -12,6 +13,8 @@ import (
 	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/bencrypt/ecc"
 	"github.com/awgh/ratnet/api"
+	"github.com/awgh/ratnet/api/events/defaultlogger"
+	"github.com/awgh/ratnet/nodes/db"
 	"github.com/awgh/ratnet/nodes/fs"
 	"github.com/awgh/ratnet/nodes/qldb"
 	"github.com/awgh/ratnet/nodes/ram"
@@ -19,7 +22,8 @@ import (
 	"github.com/awgh/ratnet/transports/tls"
 	"github.com/awgh/ratnet/transports/udp"
 
-	_ "github.com/cznic/ql/driver"
+	//_ "modernc.org/ql/driver"
+	_ "upper.io/db.v3/ql" // this requires PR #507: https://github.com/upper/db/pull/507
 )
 
 type TestNode struct {
@@ -40,6 +44,7 @@ const (
 	RAM int = iota
 	QL
 	FS
+	DB
 	NumNodes
 )
 
@@ -47,7 +52,7 @@ var nodeType int
 var transportType int
 
 func init() {
-	nodeType = QL
+	nodeType = DB
 	transportType = TLS
 }
 
@@ -58,11 +63,26 @@ var (
 
 	p2p1 TestNode
 	p2p2 TestNode
+	p2p3 TestNode
+	p2p4 TestNode
 
 	server6 TestNode
 	server7 TestNode
 	server8 TestNode
 )
+
+// Get preferred outbound ip of this machine
+func GetOutboundIP() net.IP {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer conn.Close()
+
+	localAddr := conn.LocalAddr().(*net.UDPAddr)
+
+	return localAddr.IP
+}
 
 func initNode(n int64, testNode TestNode, nodeType int, transportType int, p2pMode bool) TestNode {
 	num := strconv.FormatInt(n, 10)
@@ -83,6 +103,17 @@ func initNode(n int64, testNode TestNode, nodeType int, transportType int, p2pMo
 			s.BootstrapDB(dbfile)
 			s.FlushOutbox(0)
 			testNode.Node = s
+		} else if nodeType == DB {
+			// DB Mode
+			s := db.New(new(ecc.KeyPair), new(ecc.KeyPair))
+			if err := os.RemoveAll("dbtmp" + num); err != nil {
+				log.Printf("error removing directory %s: %s\n", "dbtmp"+num, err.Error())
+			}
+			os.Mkdir("dbtmp"+num, os.FileMode(int(0755)))
+			dbfile := "file://dbtmp" + num + "/ratnet_test" + num + ".ql"
+			s.BootstrapDB("ql", dbfile)
+			s.FlushOutbox(0)
+			testNode.Node = s
 		} else if nodeType == FS {
 			testNode.Node = fs.New(new(ecc.KeyPair), new(ecc.KeyPair), "queue")
 		}
@@ -91,14 +122,26 @@ func initNode(n int64, testNode TestNode, nodeType int, transportType int, p2pMo
 			testNode.Public = udp.New(testNode.Node)
 			testNode.Admin = udp.New(testNode.Node)
 		} else if transportType == TLS {
-			testNode.Public = tls.New("tmp/cert"+num+".pem", "tmp/key"+num+".pem", testNode.Node, true)
-			testNode.Admin = tls.New("tmp/cert"+num+".pem", "tmp/key"+num+".pem", testNode.Node, true)
+			cert, key, err := bc.GenerateSSLCertBytes(true)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			testNode.Public = tls.New(cert, key, testNode.Node, true)
+			testNode.Admin = tls.New(cert, key, testNode.Node, true)
 		} else {
-			testNode.Public = https.New("tmp/cert"+num+".pem", "tmp/key"+num+".pem", testNode.Node, true)
-			testNode.Admin = https.New("tmp/cert"+num+".pem", "tmp/key"+num+".pem", testNode.Node, true)
+			cert, key, err := bc.GenerateSSLCertBytes(true)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			testNode.Public = https.New(cert, key, testNode.Node, true)
+			testNode.Admin = https.New(cert, key, testNode.Node, true)
 		}
+		defaultlogger.StartDefaultLogger(testNode.Node, api.Info)
 		if p2pMode {
-			go p2p(testNode.Public, testNode.Admin, testNode.Node, "localhost:3000"+num, "localhost:30"+num+"0"+num)
+			ip := GetOutboundIP().String()
+			go p2p(testNode.Public, testNode.Admin, testNode.Node, ip+":3000"+num, ip+":30"+num+"0"+num)
 		} else {
 			go serve(testNode.Public, testNode.Admin, testNode.Node, "localhost:3000"+num, "localhost:30"+num+"0"+num)
 		}
@@ -293,6 +336,14 @@ func Test_server_AddProfile_1(t *testing.T) {
 func Test_server_GetProfile_1(t *testing.T) {
 	server1 = initNode(1, server1, nodeType, transportType, false)
 
+	/* todo: AddProfile twice in a row on ramnode is a bug
+	t.Log("Trying AddProfile on Admin interface")
+	_, errb := server1.Admin.RPC("localhost:30101", "AddProfile", "profile1", "false")
+	if errb != nil {
+		t.Error(errb.Error())
+	}
+	*/
+
 	t.Log("Trying GetProfile on Public interface")
 	// should not work on public interface
 	if _, erra := server1.Public.RPC("localhost:30001", "GetProfile", "profile1"); erra == nil {
@@ -325,6 +376,7 @@ func Test_server_GetProfile_1(t *testing.T) {
 	if len(profiles) < 1 {
 		t.Fail()
 	}
+
 }
 
 func Test_server_AddPeer_1(t *testing.T) {
@@ -341,44 +393,105 @@ func Test_server_AddPeer_1(t *testing.T) {
 	if errb != nil {
 		t.Error(errb.Error())
 	}
+
+	t.Log("Trying AddPeer on Admin interface with a group name")
+	_, errc := server1.Admin.RPC("localhost:30101", "AddPeer", "peer2", "false", "https://2.3.4.5:123", "groupnametest")
+	if errc != nil {
+		t.Error(errc.Error())
+	}
+
+	t.Log("Trying AddPeer on Admin interface with a group name that already exists")
+	_, errd := server1.Admin.RPC("localhost:30101", "AddPeer", "peer3", "false", "https://3.4.5.6:234", "groupnametest")
+	if errd != nil {
+		t.Error(errd.Error())
+	}
 }
 
 func Test_server_GetPeer_1(t *testing.T) {
 	server1 = initNode(1, server1, nodeType, transportType, false)
 
+	//
+	t.Log("Trying AddPeer on Public interface")
+	// should not work on public interface
+	if _, erra := server1.Public.RPC("localhost:30001", "AddPeer", "peer1", "false", "https://1.2.3.4:443"); erra == nil {
+		t.Error(errors.New("AddPeer was accessible on Public network interface"))
+	}
+
+	t.Log("Trying AddPeer on Admin interface")
+	_, errb := server1.Admin.RPC("localhost:30101", "AddPeer", "peer1", "false", "https://1.2.3.4:443")
+	if errb != nil {
+		t.Error(errb.Error())
+	}
+
+	t.Log("Trying AddPeer on Admin interface with a group name")
+	_, errc := server1.Admin.RPC("localhost:30101", "AddPeer", "peer2", "false", "https://2.3.4.5:123", "groupnametest")
+	if errc != nil {
+		t.Error(errc.Error())
+	}
+
+	t.Log("Trying AddPeer on Admin interface with a group name that already exists")
+	_, errd := server1.Admin.RPC("localhost:30101", "AddPeer", "peer3", "false", "https://3.4.5.6:234", "groupnametest")
+	if errd != nil {
+		t.Error(errd.Error())
+	}
+	//
+
 	t.Log("Trying GetPeer on Public interface")
 	// should not work on public interface
 	if _, erra := server1.Public.RPC("localhost:30001", "GetPeer", "peer1"); erra == nil {
-		t.Error(errors.New("GetPeer was accessible on Public network interface"))
+		t.Fatal(errors.New("GetPeer was accessible on Public network interface"))
 	}
 
 	t.Log("Trying GetPeers on Public interface")
 	// should not work on public interface
 	if _, erra := server1.Public.RPC("localhost:30001", "GetPeers"); erra == nil {
-		t.Error(errors.New("GetPeers was accessible on Public network interface"))
+		t.Fatal(errors.New("GetPeers was accessible on Public network interface"))
 	}
 
 	t.Log("Trying GetPeer on Admin interface")
 	peer, err := server1.Admin.RPC("localhost:30101", "GetPeer", "peer1")
 	if err != nil {
-		t.Error(err.Error())
+		t.Fatal(err.Error())
 	}
 	t.Logf("Got Peer: %+v\n", peer)
 	if peer == nil {
-		t.Fail()
+		t.Fatal(errors.New("GetPeer on Admin interface failed"))
 	}
 
 	t.Log("Trying GetPeers on Admin interface")
 	peersRaw, err := server1.Admin.RPC("localhost:30101", "GetPeers")
 	if err != nil {
-		t.Error(err.Error())
+		t.Fatal(err.Error())
 	}
 	peers := peersRaw.([]api.Peer)
 	t.Logf("Got Peers: %+v\n", peers)
-	if len(peers) < 1 {
-		t.Fail()
+	if len(peers) != 1 {
+		t.Fatal(errors.New("GetPeers on Admin interface failed"))
 	}
 
+	t.Log("Trying GetPeers on Admin interface with a group that has no peers")
+	groupedPeers, err := server1.Admin.RPC("localhost:30101", "GetPeers", "not-a-group")
+	if err != nil {
+		t.Fatal(err.Error())
+	}
+	var groupPeers []api.Peer
+	groupPeers = groupedPeers.([]api.Peer)
+	t.Logf("Got Peers: %+v\n", groupPeers)
+	if len(groupPeers) != 0 {
+		t.Fatal(errors.New("GetPeers with a group with no peers returned results"))
+	}
+
+	t.Log("Trying GetPeers on Admin interface with a group that has peers")
+	peers2, err := server1.Admin.RPC("localhost:30101", "GetPeers", "groupnametest")
+	if err != nil {
+		t.Fatal(err.Error())
+	}
+	var peergroup []api.Peer
+	peergroup = peers2.([]api.Peer)
+	t.Logf("Got Peers: %+v\n", peergroup)
+	if len(peergroup) != 2 {
+		t.Fatal(errors.New("GetPeers with a group with peers did not return two results"))
+	}
 }
 
 func Test_server_Send_1(t *testing.T) {
@@ -480,11 +593,12 @@ func Test_server_PickupDropoff_2(t *testing.T) {
 	}
 }
 
+var randmessage []byte
+
 func Test_p2p_Basic_1(t *testing.T) {
 
 	p2p1 = initNode(4, p2p1, nodeType, transportType, true)
 	p2p2 = initNode(5, p2p2, nodeType, transportType, true)
-
 	for p2p1.Node == nil || p2p2.Node == nil {
 		time.Sleep(1 * time.Second)
 	}
@@ -501,9 +615,52 @@ func Test_p2p_Basic_1(t *testing.T) {
 	if err := p2p2.Node.AddChannel("test1", pubprivkeyb64Ecc); err != nil {
 		t.Error(err.Error())
 	}
-
 	if err := p2p1.Node.SendChannel("test1", []byte(testMessage1)); err != nil {
 		t.Error(err.Error())
+	}
+}
+
+func Test_p2p_Chunking_1(t *testing.T) {
+
+	p2p3 = initNode(6, p2p3, nodeType, transportType, true)
+	p2p4 = initNode(7, p2p4, nodeType, transportType, true)
+	for p2p3.Node == nil || p2p4.Node == nil {
+		time.Sleep(1 * time.Second)
+	}
+
+	done := make(chan []byte)
+
+	go func() {
+		msg := <-p2p4.Node.Out()
+		t.Log("p2p4.Out Returned Data!")
+		//t.Log(msg)
+		done <- msg.Content.Bytes()
+	}()
+
+	if err := p2p3.Node.AddChannel("test1", pubprivkeyb64Ecc); err != nil {
+		t.Error(err.Error())
+	}
+	if err := p2p4.Node.AddChannel("test1", pubprivkeyb64Ecc); err != nil {
+		t.Error(err.Error())
+	}
+	randmessage, err := bc.GenerateRandomBytes(8675)
+	if err != nil {
+		t.Error(err.Error())
+	}
+	//override byte limit to trigger chunking
+	oldByteLimit := p2p3.Public.ByteLimit()
+	p2p3.Public.SetByteLimit(4096)
+	if err := p2p3.Node.SendChannel("test1", randmessage); err != nil {
+		t.Error(err.Error())
+	}
+
+	gotbytes := <-done
+	p2p3.Public.SetByteLimit(oldByteLimit)
+
+	if bytes.Compare(gotbytes, randmessage) == 0 {
+		t.Log("PASS:  Byte arrays were an exact match!!!")
+	} else {
+		t.Error("Byte arrays did not match")
 	}
 }
 

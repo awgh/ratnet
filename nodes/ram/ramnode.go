@@ -1,8 +1,6 @@
 package ram
 
 import (
-	"time"
-
 	"github.com/awgh/bencrypt/ecc"
 
 	"github.com/awgh/bencrypt/bc"
@@ -10,12 +8,6 @@ import (
 	"github.com/awgh/ratnet/nodes"
 	"github.com/awgh/ratnet/router"
 )
-
-type outboxMsg struct {
-	channel   string
-	msg       []byte
-	timeStamp int64
-}
 
 // Node : defines an instance of the API with a ql-DB backed Node
 type Node struct {
@@ -30,17 +22,19 @@ type Node struct {
 	debugMode bool
 
 	// external data members
-	in  chan api.Msg
-	out chan api.Msg
-	err chan api.Msg
+	in     chan api.Msg
+	out    chan api.Msg
+	events chan api.Event
 
 	// db -> ram replacements
 	channels map[string]*api.ChannelPriv
 	config   map[string]string
 	contacts map[string]*api.Contact
-	outbox   []*outboxMsg
+	outbox   outboxQueue
 	peers    map[string]*api.Peer
 	profiles map[string]*api.ProfilePriv
+	streams  map[uint32]*api.StreamHeader
+	chunks   map[uint32]map[uint32]*api.Chunk
 }
 
 // New : creates a new instance of API
@@ -54,14 +48,20 @@ func New(contentKey, routingKey bc.KeyPair) *Node {
 	node.contacts = make(map[string]*api.Contact)
 	node.peers = make(map[string]*api.Peer)
 	node.profiles = make(map[string]*api.ProfilePriv)
+	node.streams = make(map[uint32]*api.StreamHeader)
+	node.chunks = make(map[uint32]map[uint32]*api.Chunk)
 
 	// set crypto modes
 	if contentKey == nil {
 		contentKey = new(ecc.KeyPair)
+	}
+	if contentKey.GetPubKey() == contentKey.GetPubKey().Nil() {
 		contentKey.GenerateKey()
 	}
 	if routingKey == nil {
 		routingKey = new(ecc.KeyPair)
+	}
+	if routingKey.GetPubKey() == routingKey.GetPubKey().Nil() {
 		routingKey.GenerateKey()
 	}
 	node.contentKey = contentKey
@@ -70,10 +70,11 @@ func New(contentKey, routingKey bc.KeyPair) *Node {
 	// setup chans
 	node.in = make(chan api.Msg)
 	node.out = make(chan api.Msg)
-	node.err = make(chan api.Msg)
+	node.events = make(chan api.Event)
 
 	// setup default router
 	node.router = router.NewDefaultRouter()
+	node.outbox.node = node
 
 	return node
 }
@@ -100,12 +101,7 @@ func (node *Node) SetRouter(router api.Router) {
 
 // FlushOutbox : Deletes outbound messages older than maxAgeSeconds seconds
 func (node *Node) FlushOutbox(maxAgeSeconds int64) {
-	c := (time.Now().UnixNano()) - (maxAgeSeconds * 1000000000)
-	for index, mail := range node.outbox {
-		if mail.timeStamp < c {
-			node.outbox = append(node.outbox[:index], node.outbox[index+1:]...)
-		}
-	}
+	node.outbox.Flush(maxAgeSeconds)
 }
 
 // Channels
@@ -120,9 +116,9 @@ func (node *Node) Out() chan api.Msg {
 	return node.out
 }
 
-// Err : Returns the Err channel of this node
-func (node *Node) Err() chan api.Msg {
-	return node.err
+// Events : Returns the Events channel of this node
+func (node *Node) Events() chan api.Event {
+	return node.events
 }
 
 // RPC set to default handlers

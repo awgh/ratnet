@@ -18,3 +18,12 @@ type Patch struct {
 	From string
 	To   []string
 }
+
+const (
+	// StreamHeaderFlag : this message is a stream header
+	StreamHeaderFlag = 0x01
+	// ChunkedFlag : this message is a chunked
+	ChunkedFlag = 0x02
+	// ChannelFlag : this message has a channel name prefix
+	ChannelFlag = 0x04
+)

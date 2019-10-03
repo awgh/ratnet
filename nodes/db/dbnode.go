@@ -1,66 +1,50 @@
-package fs
+package db
+
+// To install upper db:
+// go get -v -u upper.io/db.v3
+// FOR POSTGRES DRIVER: go get -v -u github.com/lib/pq
 
 import (
-	"fmt"
-	"os"
-	"path/filepath"
-	"time"
+	"sync"
 
 	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/ratnet/api"
-	"github.com/awgh/ratnet/api/events"
 	"github.com/awgh/ratnet/nodes"
 	"github.com/awgh/ratnet/router"
+	"upper.io/db.v3/lib/sqlbuilder"
 )
-
-type outboxMsg struct {
-	channel   string
-	msg       []byte
-	timeStamp int64
-}
 
 // Node : defines an instance of the API with a ql-DB backed Node
 type Node struct {
-	contentKey bc.KeyPair
-	routingKey bc.KeyPair
+	contentKey  bc.KeyPair
+	routingKey  bc.KeyPair
+	channelKeys map[string]bc.KeyPair
 
-	policies  []api.Policy
-	router    api.Router
+	policies []api.Policy
+	router   api.Router
+
+	db sqlbuilder.Database
+
+	mutex *sync.Mutex
+
 	isRunning bool
+
 	debugMode bool
 
 	// external data members
 	in     chan api.Msg
 	out    chan api.Msg
 	events chan api.Event
-
-	// db -> ram replacements
-	channels map[string]*api.ChannelPriv
-	config   map[string]string
-	contacts map[string]*api.Contact
-	peers    map[string]*api.Peer
-	profiles map[string]*api.ProfilePriv
-	streams  map[uint32]*api.StreamHeader
-	chunks   map[uint32]map[uint32]*api.Chunk
-
-	//outbox   []*outboxMsg
-	basePath    string
-	outboxIndex uint32
 }
 
 // New : creates a new instance of API
-func New(contentKey, routingKey bc.KeyPair, basePath string) *Node {
+func New(contentKey, routingKey bc.KeyPair) *Node {
 	// create node
 	node := new(Node)
+	node.mutex = &sync.Mutex{}
 
-	// init assorted other
-	node.channels = make(map[string]*api.ChannelPriv)
-	node.config = make(map[string]string)
-	node.contacts = make(map[string]*api.Contact)
-	node.peers = make(map[string]*api.Peer)
-	node.profiles = make(map[string]*api.ProfilePriv)
-	node.streams = make(map[uint32]*api.StreamHeader)
-	node.chunks = make(map[uint32]map[uint32]*api.Chunk)
+	// init channel key map
+	node.channelKeys = make(map[string]bc.KeyPair)
 
 	// set crypto modes
 	node.contentKey = contentKey
@@ -74,14 +58,7 @@ func New(contentKey, routingKey bc.KeyPair, basePath string) *Node {
 	// setup default router
 	node.router = router.NewDefaultRouter()
 
-	node.basePath = basePath
-	os.Mkdir(basePath, 0700)
-
 	return node
-}
-
-func hex(n uint32) string {
-	return fmt.Sprintf("%08x", n)
 }
 
 // GetPolicies : returns the array of Policy objects for this Node
@@ -102,26 +79,6 @@ func (node *Node) Router() api.Router {
 // SetRouter : set the Router object for this Node
 func (node *Node) SetRouter(router api.Router) {
 	node.router = router
-}
-
-// FlushOutbox : Deletes outbound messages older than maxAgeSeconds seconds
-func (node *Node) FlushOutbox(maxAgeSeconds int64) {
-	now := time.Now()
-	_ = filepath.Walk(node.basePath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			events.Warning(node, "FlushOutbox failure accessing a path:", path, err.Error())
-			return err
-		}
-		if !info.IsDir() {
-			if diff := now.Sub(info.ModTime()); diff > time.Duration(maxAgeSeconds)*time.Second {
-				events.Debug(node, "Deleting file:", filepath.Join(node.basePath, info.Name()), diff)
-				if err = os.Remove(path); err != nil {
-					events.Error(node, "error deleting file: "+err.Error())
-				}
-			}
-		}
-		return nil
-	})
 }
 
 // Channels

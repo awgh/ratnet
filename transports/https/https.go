@@ -6,15 +6,15 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"errors"
-	"log"
+	"fmt"
 	"net"
 	"net/http"
 	"sync"
 	"time"
 
-	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
+	"github.com/awgh/ratnet/api/events"
 )
 
 func init() {
@@ -23,29 +23,28 @@ func init() {
 
 // NewFromMap : Makes a new instance of this transport module from a map of arguments (for deserialization support)
 func NewFromMap(node api.Node, t map[string]interface{}) api.Transport {
-	certfile := "cert.pem"
-	keyfile := "key.pem"
+	var certBytes, keyBytes []byte //, _ := bc.GenerateSSLCertBytes()
 	eccMode := true
 
-	if _, ok := t["Certfile"]; ok {
-		certfile = t["Certfile"].(string)
+	if _, ok := t["Cert"]; ok {
+		certBytes = t["Cert"].([]byte)
 	}
-	if _, ok := t["KeyFile"]; ok {
-		keyfile = t["KeyFile"].(string)
+	if _, ok := t["Key"]; ok {
+		keyBytes = t["Key"].([]byte)
 	}
 	if _, ok := t["EccMode"]; ok {
 		eccMode = t["EccMode"].(bool)
 	}
-	return New(certfile, keyfile, node, eccMode)
+	return New(certBytes, keyBytes, node, eccMode)
 }
 
 // New : Makes a new instance of this transport module
-func New(certfile string, keyfile string, node api.Node, eccMode bool) *Module {
+func New(cert []byte, key []byte, node api.Node, eccMode bool) *Module {
 
 	web := new(Module)
 
-	web.Certfile = certfile
-	web.Keyfile = keyfile
+	web.Cert = cert
+	web.Key = key
 	web.node = node
 	web.EccMode = eccMode
 
@@ -70,8 +69,8 @@ type Module struct {
 	wg        sync.WaitGroup
 	listeners []net.Listener
 
-	Certfile, Keyfile string
-	EccMode           bool
+	Cert, Key []byte
+	EccMode   bool
 
 	byteLimit int64
 }
@@ -85,8 +84,8 @@ func (*Module) Name() string {
 func (h *Module) MarshalJSON() (b []byte, e error) {
 	return json.Marshal(map[string]interface{}{
 		"Transport": "https",
-		"Certfile":  h.Certfile,
-		"Keyfile":   h.Keyfile,
+		"Certfile":  h.Cert,
+		"Keyfile":   h.Key,
 		"EccMode":   h.EccMode})
 }
 
@@ -100,15 +99,14 @@ func (h *Module) SetByteLimit(limit int64) { h.byteLimit = limit }
 func (h *Module) Listen(listen string, adminMode bool) {
 	// make sure we are not already running
 	if h.isRunning {
-		log.Println("This listener is already running.")
+		events.Warning(h.node, "This listener is already running.")
 		return
 	}
 
 	// init ssl components
-	bc.InitSSL(h.Certfile, h.Keyfile, h.EccMode)
-	cert, err := tls.LoadX509KeyPair(h.Certfile, h.Keyfile)
+	cert, err := tls.X509KeyPair(h.Cert, h.Key)
 	if err != nil {
-		log.Println(err.Error())
+		events.Error(h.node, err.Error())
 		return
 	}
 
@@ -121,7 +119,7 @@ func (h *Module) Listen(listen string, adminMode bool) {
 	// setup Listener
 	listener, err := net.Listen("tcp", listen)
 	if err != nil {
-		log.Println(err.Error())
+		events.Error(h.node, err.Error())
 		return
 	}
 
@@ -139,18 +137,19 @@ func (h *Module) Listen(listen string, adminMode bool) {
 	go func() {
 		defer h.wg.Done()
 		if err := http.Serve(tlsListener, serveMux); err != nil {
-			log.Print(err.Error())
+			events.Error(h.node, err.Error())
 		}
 	}()
 	h.isRunning = true
 }
 
 func (h *Module) handleResponse(w http.ResponseWriter, r *http.Request, node api.Node, adminMode bool) {
+
 	var a api.RemoteCall
 
 	dec := gob.NewDecoder(r.Body)
 	if err := dec.Decode(&a); err != nil {
-		log.Println("https handleResponse gob decode failed: " + err.Error())
+		events.Warning(h.node, "https handleResponse gob decode failed: "+err.Error())
 		return
 	}
 
@@ -161,7 +160,6 @@ func (h *Module) handleResponse(w http.ResponseWriter, r *http.Request, node api
 	} else {
 		result, err = node.PublicRPC(h, a)
 	}
-	//log.Printf("result type %T \n", result)
 
 	rr := api.RemoteResponse{}
 	if err != nil {
@@ -173,12 +171,14 @@ func (h *Module) handleResponse(w http.ResponseWriter, r *http.Request, node api
 
 	enc := gob.NewEncoder(w)
 	if err := enc.Encode(rr); err != nil {
-		log.Println("https listen gob encode failed: " + err.Error())
+		events.Warning(h.node, "https listen gob encode failed: "+err.Error())
 	}
 }
 
 // RPC : client interface
 func (h *Module) RPC(host string, method string, args ...interface{}) (interface{}, error) {
+	events.Info(h.node, fmt.Sprintf("\n***\n***RPC %s on %s called with: %+v\n***\n", method, host, args))
+
 	var a api.RemoteCall
 	a.Action = method
 	a.Args = args
@@ -187,12 +187,11 @@ func (h *Module) RPC(host string, method string, args ...interface{}) (interface
 	//use default gob encoder
 	enc := gob.NewEncoder(&buf)
 	if err := enc.Encode(a); err != nil {
-		log.Println("https rpc gob encode failed: " + err.Error())
+		events.Error(h.node, "https rpc gob encode failed: "+err.Error())
 		return nil, err
 	}
 
 	req, _ := http.NewRequest("POST", "https://"+host, &buf)
-	//req.Header.Add("Accept", "application/json")
 
 	resp, err := h.client.Do(req)
 	if err != nil {
@@ -203,11 +202,9 @@ func (h *Module) RPC(host string, method string, args ...interface{}) (interface
 	var rr api.RemoteResponse
 	dec := gob.NewDecoder(resp.Body)
 	if err := dec.Decode(&rr); err != nil {
-		log.Println("https rpc gob decode failed: " + err.Error())
+		events.Warning(h.node, "https rpc gob decode failed: "+err.Error())
 		return nil, err
 	}
-
-	//log.Printf("https dirty rx in rpc: %+v\n", rr.Value)
 
 	if rr.IsErr() {
 		return nil, errors.New(rr.Error)

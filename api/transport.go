@@ -12,20 +12,16 @@ type Transport interface {
 	SetByteLimit(limit int64)
 }
 
-// RemoteCall : defines a Remote Procedure Call
-type RemoteCall struct {
-	Action string
-	Args   []interface{}
+// StreamHeader manifest for a chunked transfer (database version)
+type StreamHeader struct {
+	StreamID    uint32 `db:"streamid"`
+	NumChunks   uint32 `db:"parts"`
+	ChannelName string `db:"channel"`
 }
 
-// RemoteResponse : defines a response returned from a Remote Procedure Call
-type RemoteResponse struct {
-	Error string
-	Value interface{}
+// Chunk header for each chunk
+type Chunk struct {
+	StreamID uint32 `db:"streamid"`
+	ChunkNum uint32 `db:"chunknum"`
+	Data     []byte `db:"data"`
 }
-
-// IsNil - is this response Nil?
-func (r *RemoteResponse) IsNil() bool { return r.Value == nil }
-
-// IsErr - is this response an error?
-func (r *RemoteResponse) IsErr() bool { return r.Error != "" }

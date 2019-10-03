@@ -2,7 +2,6 @@ package nodes
 
 import (
 	"errors"
-	"log"
 	"strconv"
 
 	"github.com/awgh/bencrypt/bc"
@@ -11,11 +10,11 @@ import (
 
 // PublicRPC : Entrypoint for RPC functions that are exposed to the public/Internet
 func PublicRPC(transport api.Transport, node api.Node, call api.RemoteCall) (interface{}, error) {
+
 	switch call.Action {
 	case "ID":
 		var i bc.PubKey
 		i, err := node.ID()
-		log.Printf("PublicRPC got %+v : %+v\n", i, err)
 		if err != nil {
 			return nil, err
 		} else if i == i.Nil() {
@@ -248,14 +247,25 @@ func AdminRPC(transport api.Transport, node api.Node, call api.RemoteCall) (inte
 		return nil, nil
 
 	case "GetPeers":
-		if peers, err := node.GetPeers(); err != nil {
+		var group = ""
+		if len(call.Args) > 1 {
+			return nil, errors.New("Invalid argument count")
+		}
+		if len(call.Args) > 0 {
+			var ok bool
+			group, ok = call.Args[0].(string)
+			if !ok {
+				return nil, errors.New("Invalid argument")
+			}
+		}
+		if peers, err := node.GetPeers(group); err != nil {
 			return nil, err
 		} else {
 			return peers, nil
 		}
 
 	case "AddPeer":
-		if len(call.Args) < 1 {
+		if len(call.Args) < 3 {
 			return nil, errors.New("Invalid argument count")
 		}
 		peerName, ok := call.Args[0].(string)
@@ -273,6 +283,13 @@ func AdminRPC(transport api.Transport, node api.Node, call api.RemoteCall) (inte
 		enabled, err := strconv.ParseBool(peerEnabled)
 		if err != nil {
 			return nil, errors.New("Invalid bool format")
+		}
+		if len(call.Args) > 3 {
+			group, ok := call.Args[3].(string)
+			if !ok {
+				return nil, errors.New("Invalid argument")
+			}
+			return nil, node.AddPeer(peerName, enabled, peerURI, group)
 		}
 		return nil, node.AddPeer(peerName, enabled, peerURI)
 

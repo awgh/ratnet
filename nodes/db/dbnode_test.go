@@ -1,4 +1,4 @@
-package qldb
+package db
 
 import (
 	"bytes"
@@ -9,7 +9,7 @@ import (
 	"github.com/awgh/bencrypt/ecc"
 	"github.com/awgh/ratnet/api"
 
-	_ "modernc.org/ql/driver"
+	_ "upper.io/db.v3/ql"
 )
 
 var (
@@ -18,9 +18,9 @@ var (
 
 func Test_init(t *testing.T) {
 	node = New(new(ecc.KeyPair), new(ecc.KeyPair))
-	os.RemoveAll("qltmp")
-	os.Mkdir("qltmp", os.FileMode(int(0755)))
-	node.BootstrapDB("qltmp/ratnet_test.ql")
+	os.RemoveAll("dbtmp")
+	os.Mkdir("dbtmp", os.FileMode(int(0755)))
+	node.BootstrapDB("ql", "file://dbtmp/ratnet_test.ql")
 	node.FlushOutbox(0)
 	if err := node.routingKey.FromB64(pubprivkeyb64Ecc); err != nil {
 		log.Fatal(err)

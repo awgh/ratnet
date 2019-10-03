@@ -13,7 +13,7 @@ import (
 	"github.com/awgh/ratnet/nodes"
 	"github.com/awgh/ratnet/router"
 
-	_ "github.com/cznic/ql/driver" // load the QL database driver
+	_ "modernc.org/ql/driver" // load the QL database driver
 )
 
 // Node : defines an instance of the API with a ql-DB backed Node
@@ -32,9 +32,9 @@ type Node struct {
 	debugMode bool
 
 	// external data members
-	in  chan api.Msg
-	out chan api.Msg
-	err chan api.Msg
+	in     chan api.Msg
+	out    chan api.Msg
+	events chan api.Event
 }
 
 // New : creates a new instance of API
@@ -53,7 +53,7 @@ func New(contentKey, routingKey bc.KeyPair) *Node {
 	// setup chans
 	node.in = make(chan api.Msg)
 	node.out = make(chan api.Msg)
-	node.err = make(chan api.Msg)
+	node.events = make(chan api.Event)
 
 	// setup default router
 	node.router = router.NewDefaultRouter()
@@ -93,9 +93,9 @@ func (node *Node) Out() chan api.Msg {
 	return node.out
 }
 
-// Err : Returns the Err channel of this node
-func (node *Node) Err() chan api.Msg {
-	return node.err
+// Events : Returns the Events channel of this node
+func (node *Node) Events() chan api.Event {
+	return node.events
 }
 
 // RPC set to default handlers

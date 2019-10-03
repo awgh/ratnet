@@ -1,4 +1,4 @@
-package qldb
+package db
 
 import (
 	"bytes"
@@ -20,7 +20,7 @@ func (node *Node) CID() (bc.PubKey, error) {
 
 // GetContact : Return a list of  keys
 func (node *Node) GetContact(name string) (*api.Contact, error) {
-	pubs, err := node.qlGetContactPubKey(name)
+	pubs, err := node.dbGetContactPubKey(name)
 	if err != nil {
 		return nil, err
 	} else if pubs == "" {
@@ -34,23 +34,23 @@ func (node *Node) GetContact(name string) (*api.Contact, error) {
 
 // GetContacts : Return a list of  keys
 func (node *Node) GetContacts() ([]api.Contact, error) {
-	return node.qlGetContacts()
+	return node.dbGetContacts()
 }
 
 // AddContact : Add or Update a contact key to this node's database
 func (node *Node) AddContact(name string, key string) error {
-	return node.qlAddContact(name, key)
+	return node.dbAddContact(name, key)
 }
 
 // DeleteContact : Remove a contact from this node's database
 func (node *Node) DeleteContact(name string) error {
-	node.qlDeleteContact(name)
+	node.dbDeleteContact(name)
 	return nil
 }
 
 // GetChannel : Return a channel by name
 func (node *Node) GetChannel(name string) (*api.Channel, error) {
-	privkey, err := node.qlGetChannelPrivKey(name)
+	privkey, err := node.dbGetChannelPrivKey(name)
 	if err != nil {
 		return nil, err
 	}
@@ -66,12 +66,12 @@ func (node *Node) GetChannel(name string) (*api.Channel, error) {
 
 // GetChannels : Return list of channels known to this node
 func (node *Node) GetChannels() ([]api.Channel, error) {
-	return node.qlGetChannels()
+	return node.dbGetChannels()
 }
 
 // AddChannel : Add a channel to this node's database
 func (node *Node) AddChannel(name string, privkey string) error {
-	if err := node.qlAddChannel(name, privkey); err != nil {
+	if err := node.dbAddChannel(name, privkey); err != nil {
 		return err
 	}
 	node.refreshChannels()
@@ -80,37 +80,36 @@ func (node *Node) AddChannel(name string, privkey string) error {
 
 // DeleteChannel : Remove a channel from this node's database
 func (node *Node) DeleteChannel(name string) error {
-	node.qlDeleteChannel(name)
+	node.dbDeleteChannel(name)
 	return nil
 }
 
 // GetProfile : Retrieve a profiles
 func (node *Node) GetProfile(name string) (*api.Profile, error) {
-	return node.qlGetProfile(name)
+	return node.dbGetProfile(name)
 }
 
 // GetProfiles : Retrieve the list of profiles for this node
 func (node *Node) GetProfiles() ([]api.Profile, error) {
-	return node.qlGetProfiles()
+	return node.dbGetProfiles()
 }
 
 // AddProfile : Add or Update a profile to this node's database
 func (node *Node) AddProfile(name string, enabled bool) error {
-	return node.qlAddProfile(name, enabled)
+	return node.dbAddProfile(name, enabled)
 }
 
 // DeleteProfile : Remove a profile from this node's database
 func (node *Node) DeleteProfile(name string) error {
-	node.qlDeleteProfile(name)
+	node.dbDeleteProfile(name)
 	return nil
 }
 
 // LoadProfile : Load a profile key from the database as the content key
 func (node *Node) LoadProfile(name string) (bc.PubKey, error) {
-	pk := node.qlGetProfilePrivateKey(name)
+	pk := node.dbGetProfilePrivateKey(name)
 	profileKey := node.contentKey.Clone()
 	if err := profileKey.FromB64(pk); err != nil {
-
 		events.Error(node, err)
 		return nil, err
 	}
@@ -121,26 +120,26 @@ func (node *Node) LoadProfile(name string) (bc.PubKey, error) {
 
 // GetPeer : Retrieve a peer by name
 func (node *Node) GetPeer(name string) (*api.Peer, error) {
-	return node.qlGetPeer(name)
+	return node.dbGetPeer(name)
 }
 
 // GetPeers : Retrieve a list of peers in this node's database
 func (node *Node) GetPeers(group ...string) ([]api.Peer, error) {
 	// if we don't have a specified group, it's ""
 	groupName := strings.Join(group, " ")
-	return node.qlGetPeers(groupName)
+	return node.dbGetPeers(groupName)
 }
 
 // AddPeer : Add or Update a peer configuration
 func (node *Node) AddPeer(name string, enabled bool, uri string, group ...string) error {
 	// if we don't have a specified group, it's ""
 	groupName := strings.Join(group, " ")
-	return node.qlAddPeer(name, enabled, uri, groupName)
+	return node.dbAddPeer(name, enabled, uri, groupName)
 }
 
 // DeletePeer : Remove a peer from this node's database
 func (node *Node) DeletePeer(name string) error {
-	node.qlDeletePeer(name)
+	node.dbDeletePeer(name)
 	return nil
 }
 
@@ -150,7 +149,7 @@ func (node *Node) Send(contactName string, data []byte, pubkey ...bc.PubKey) err
 	if pubkey != nil && len(pubkey) > 0 && pubkey[0] != nil { // third argument is optional pubkey override
 		destkey = pubkey[0]
 	} else {
-		s, err := node.qlGetContactPubKey(contactName)
+		s, err := node.dbGetContactPubKey(contactName)
 		if err != nil {
 			return err
 		} else if s == "" {
@@ -195,6 +194,7 @@ func (node *Node) SendMsg(msg api.Msg) error {
 		}
 		return chunking.SendChunked(node, chunkSize, msg)
 	}
+
 	data, err := node.contentKey.EncryptMessage(msg.Content.Bytes(), msg.PubKey)
 	if err != nil {
 		return err
@@ -220,10 +220,11 @@ func (node *Node) SendMsg(msg api.Msg) error {
 	}
 	data = append(rxsum, data...)
 	ts := time.Now().UnixNano()
+
 	if msg.IsChan {
-		return node.qlOutboxEnqueue(msg.Name, data, ts, false)
+		return node.dbOutboxEnqueue(msg.Name, data, ts, false)
 	}
-	return node.qlOutboxEnqueue("", data, ts, false)
+	return node.dbOutboxEnqueue("", data, ts, false)
 }
 
 // SendBulk : Transmit messages to a single key
@@ -233,7 +234,7 @@ func (node *Node) SendBulk(contactName string, data [][]byte, pubkey ...bc.PubKe
 	if pubkey != nil && len(pubkey) > 0 && pubkey[0] != nil { // third argument is optional pubkey override
 		destkey = pubkey[0]
 	} else {
-		s, err := node.qlGetContactPubKey(contactName)
+		s, err := node.dbGetContactPubKey(contactName)
 		if err != nil {
 			return err
 		}
@@ -327,7 +328,6 @@ func (node *Node) Start() error {
 			if !node.isRunning {
 				break
 			}
-
 			// read message off the input channel
 			message, more := <-node.In()
 			if !more {
@@ -338,7 +338,6 @@ func (node *Node) Start() error {
 			}
 		}
 	}()
-
 	// dechunking loop
 	go func() {
 		for {
@@ -348,19 +347,19 @@ func (node *Node) Start() error {
 				break
 			}
 			// get all streams
-			streams, err := node.qlGetStreams()
+			streams, err := node.dbGetStreams()
 			if err != nil {
 				events.Critical(node, err.Error())
 			}
 			// for each stream, count chunks for that header
 			for _, stream := range streams {
-				count, err := node.qlGetChunkCount(stream.StreamID)
+				count, err := node.dbGetChunkCount(stream.StreamID)
 				if err != nil {
 					events.Critical(node, err.Error())
 				}
 				// if chunks == total chunks, re-assemble Msg and call Handle
 				if count == uint64(stream.NumChunks) {
-					chunks, err := node.qlGetChunks(stream.StreamID)
+					chunks, err := node.dbGetChunks(stream.StreamID)
 					if err != nil {
 						events.Critical(node, err.Error())
 					}
@@ -378,7 +377,7 @@ func (node *Node) Start() error {
 					select {
 					case node.Out() <- msg:
 						events.Debug(node, "Sent message "+fmt.Sprint(msg.Content.Bytes()))
-						node.qlClearStream(stream.StreamID)
+						node.dbClearStream(stream.StreamID)
 					default:
 						events.Debug(node, "No message sent")
 					}
