@@ -85,7 +85,7 @@ func (node *Node) Handle(msg api.Msg) (bool, error) {
 
 func (node *Node) refreshChannels() { // todo: this could be selective or somehow less heavy
 	// refresh the channelKeys map
-	channels, _ := node.dbGetChannelPrivs()
+	channels, _ := node.dbGetChannelsPriv()
 	for _, element := range channels {
 		node.channelKeys[element.Name] = element.Privkey
 	}
