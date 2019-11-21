@@ -13,6 +13,8 @@ import (
 	"github.com/awgh/ratnet/router"
 )
 
+var OutBufferSize = 128
+
 type outboxMsg struct {
 	channel   string
 	msg       []byte
@@ -68,7 +70,7 @@ func New(contentKey, routingKey bc.KeyPair, basePath string) *Node {
 
 	// setup chans
 	node.in = make(chan api.Msg)
-	node.out = make(chan api.Msg)
+	node.out = make(chan api.Msg, OutBufferSize)
 	node.events = make(chan api.Event)
 
 	// setup default router
