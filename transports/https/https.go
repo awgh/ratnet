@@ -23,28 +23,28 @@ func init() {
 
 // NewFromMap : Makes a new instance of this transport module from a map of arguments (for deserialization support)
 func NewFromMap(node api.Node, t map[string]interface{}) api.Transport {
-	var certBytes, keyBytes []byte
+	var certPem, keyPem string
 	eccMode := true
 
 	if _, ok := t["Cert"]; ok {
-		certBytes = t["Cert"].([]byte)
+		certPem = t["Cert"].(string)
 	}
 	if _, ok := t["Key"]; ok {
-		keyBytes = t["Key"].([]byte)
+		keyPem = t["Key"].(string)
 	}
 	if _, ok := t["EccMode"]; ok {
 		eccMode = t["EccMode"].(bool)
 	}
-	return New(certBytes, keyBytes, node, eccMode)
+	return New([]byte(certPem), []byte(keyPem), node, eccMode)
 }
 
 // New : Makes a new instance of this transport module
-func New(cert []byte, key []byte, node api.Node, eccMode bool) *Module {
+func New(certPem []byte, keyPem []byte, node api.Node, eccMode bool) *Module {
 
 	web := new(Module)
 
-	web.Cert = cert
-	web.Key = key
+	web.Cert = certPem
+	web.Key = keyPem
 	web.node = node
 	web.EccMode = eccMode
 
@@ -84,8 +84,8 @@ func (*Module) Name() string {
 func (h *Module) MarshalJSON() (b []byte, e error) {
 	return json.Marshal(map[string]interface{}{
 		"Transport": "https",
-		"Cert":      h.Cert,
-		"Key":       h.Key,
+		"Cert":      string(h.Cert),
+		"Key":       string(h.Key),
 		"EccMode":   h.EccMode})
 }
 
