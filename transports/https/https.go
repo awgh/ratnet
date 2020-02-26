@@ -23,7 +23,7 @@ func init() {
 
 // NewFromMap : Makes a new instance of this transport module from a map of arguments (for deserialization support)
 func NewFromMap(node api.Node, t map[string]interface{}) api.Transport {
-	var certBytes, keyBytes []byte //, _ := bc.GenerateSSLCertBytes()
+	var certBytes, keyBytes []byte
 	eccMode := true
 
 	if _, ok := t["Cert"]; ok {
@@ -84,8 +84,8 @@ func (*Module) Name() string {
 func (h *Module) MarshalJSON() (b []byte, e error) {
 	return json.Marshal(map[string]interface{}{
 		"Transport": "https",
-		"Certfile":  h.Cert,
-		"Keyfile":   h.Key,
+		"Cert":      h.Cert,
+		"Key":       h.Key,
 		"EccMode":   h.EccMode})
 }
 
