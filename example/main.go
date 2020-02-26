@@ -328,7 +328,7 @@ func main() {
 		Name: "SetClientTransport",
 		Help: "Enable a polling policy, UDP transport within this node",
 		Func: func(args []string) {
-			node.SetPolicy(policy.NewPoll(udp.New(node), node, 500))
+			node.SetPolicy(policy.NewPoll(udp.New(node), node, 500, 0))
 		},
 	})
 

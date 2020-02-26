@@ -105,7 +105,7 @@ func (node *Node) dbGetChannels() ([]api.Channel, error) {
 	return retval, nil
 }
 
-func (node *Node) dbGetChannelPrivs() ([]api.ChannelPriv, error) {
+func (node *Node) dbGetChannelsPriv() ([]api.ChannelPriv, error) {
 	col := node.db.Collection("channels")
 	res := col.Find()
 	var channels []api.ChannelPrivDB
@@ -186,6 +186,42 @@ func (node *Node) dbGetProfiles() ([]api.Profile, error) {
 		retval = append(retval, api.Profile{Name: v.Name, Enabled: v.Enabled, Pubkey: prv.GetPubKey().ToB64()})
 	}
 	return retval, nil
+}
+
+func (node *Node) dbGetProfilesPriv() ([]api.ProfilePrivDB, error) {
+	col := node.db.Collection("profiles")
+	res := col.Find()
+	var profiles []api.ProfilePrivDB
+	if err := res.All(&profiles); err != nil {
+		return nil, err
+	}
+	return profiles, nil
+}
+
+func (node *Node) dbAddProfilePriv(name string, enabled bool, b64key string) error {
+	col := node.db.Collection("profiles")
+	res := col.Find().Where("name = ?", name)
+	count, err := res.Count()
+	if err != nil {
+		return err
+	}
+	var profile api.ProfilePrivDB
+	if count == 0 {
+		// insert new profile
+		profile.Name = name
+		profile.Enabled = enabled
+		profile.Privkey = b64key
+		_, err = col.Insert(profile)
+		return err
+	}
+	err = res.One(&profile)
+	if err != nil {
+		return err
+	}
+	profile.Name = name
+	profile.Enabled = enabled
+	profile.Privkey = b64key
+	return res.Update(profile)
 }
 
 func (node *Node) dbAddProfile(name string, enabled bool) error {

@@ -16,6 +16,8 @@ import (
 	_ "modernc.org/ql/driver" // load the QL database driver
 )
 
+var OutBufferSize = 128
+
 // Node : defines an instance of the API with a ql-DB backed Node
 type Node struct {
 	contentKey  bc.KeyPair
@@ -52,7 +54,7 @@ func New(contentKey, routingKey bc.KeyPair) *Node {
 
 	// setup chans
 	node.in = make(chan api.Msg)
-	node.out = make(chan api.Msg)
+	node.out = make(chan api.Msg, OutBufferSize)
 	node.events = make(chan api.Event)
 
 	// setup default router
