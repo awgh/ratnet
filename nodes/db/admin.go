@@ -304,10 +304,10 @@ func (node *Node) sendBulk(channelName string, destkey bc.PubKey, msg [][]byte) 
 // Start : starts the Connection Policy threads
 func (node *Node) Start() error {
 	// do not start again if the node is already running
-	if node.isRunning {
+	if node.getIsRunning() {
 		return nil
 	}
-	node.isRunning = true
+	node.setIsRunning(true)
 
 	// start the signal monitor
 	node.signalMonitor()
@@ -323,27 +323,20 @@ func (node *Node) Start() error {
 
 	// input loop
 	go func() {
-		for {
-			// check if we should stop running
-			if !node.isRunning {
-				break
-			}
-			// read message off the input channel
-			message, more := <-node.In()
-			if !more {
-				break
-			}
+		// read message off the input channel
+		for message := range node.In() {
 			if err := node.SendMsg(message); err != nil {
 				events.Error(node, err.Error())
 			}
 		}
 	}()
+
 	// dechunking loop
 	go func() {
 		for {
 			time.Sleep(10 * time.Millisecond)
 			// check if we should stop running
-			if !node.isRunning {
+			if !node.getIsRunning() {
 				break
 			}
 			// get all streams
@@ -391,7 +384,7 @@ func (node *Node) Start() error {
 
 // Stop : sets the isRunning flag to false, indicating that all go routines should end
 func (node *Node) Stop() {
-	node.isRunning = false
+	node.setIsRunning(false)
 	for _, policy := range node.policies {
 		policy.Stop()
 	}

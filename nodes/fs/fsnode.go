@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	"github.com/awgh/bencrypt/bc"
@@ -28,7 +29,7 @@ type Node struct {
 
 	policies  []api.Policy
 	router    api.Router
-	isRunning bool
+	isRunning uint32
 	debugMode bool
 
 	// external data members
@@ -80,6 +81,19 @@ func New(contentKey, routingKey bc.KeyPair, basePath string) *Node {
 	os.Mkdir(basePath, 0700)
 
 	return node
+}
+
+func (node *Node) getIsRunning() bool {
+	return atomic.LoadUint32(&node.isRunning) == 1
+}
+
+func (node *Node) setIsRunning(b bool) {
+	var running uint32 = 0
+	if b {
+		running = 1
+	}
+
+	atomic.StoreUint32(&node.isRunning, running)
 }
 
 func hex(n uint32) string {

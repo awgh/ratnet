@@ -55,7 +55,7 @@ type ImportedNode struct {
 // Import : Load a node configuration from a JSON config
 func (node *Node) Import(jsonConfig []byte) error {
 	restartNode := false
-	if node.isRunning {
+	if node.getIsRunning() {
 		node.Stop()
 		restartNode = true
 	}

@@ -1,6 +1,8 @@
 package ram
 
 import (
+	"sync/atomic"
+
 	"github.com/awgh/bencrypt/ecc"
 
 	"github.com/awgh/bencrypt/bc"
@@ -18,8 +20,8 @@ type Node struct {
 
 	policies []api.Policy
 	router   api.Router
-	//firstRun  bool
-	isRunning bool
+
+	isRunning uint32
 
 	debugMode bool
 
@@ -79,6 +81,19 @@ func New(contentKey, routingKey bc.KeyPair) *Node {
 	node.outbox.node = node
 
 	return node
+}
+
+func (node *Node) getIsRunning() bool {
+	return atomic.LoadUint32(&node.isRunning) == 1
+}
+
+func (node *Node) setIsRunning(b bool) {
+	var running uint32 = 0
+	if b {
+		running = 1
+	}
+
+	atomic.StoreUint32(&node.isRunning, running)
 }
 
 // GetPolicies : returns the array of Policy objects for this Node
