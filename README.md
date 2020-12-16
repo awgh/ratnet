@@ -14,9 +14,8 @@
 - [Ratnet, onion-routed messaging system with pluggable transports](https://github.com/awgh/ratnet)
 - [HushCom, simple IRC-like client & server](https://github.com/awgh/hushcom)
 
-# Authors 
+# Authors and Contributors
 - awgh@awgh.org (@awgh)
 
-# Contributors
 - vyrus001@gmail.com (@vyrus001)
 - capnspacehook (@capnspacehook)
