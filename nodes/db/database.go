@@ -252,7 +252,7 @@ func (node *Node) dbGetProfilePrivateKey(name string) string {
 	col := node.db.Collection("profiles")
 	res := col.Find(db.Cond{"name": name})
 	var profile api.ProfilePrivDB
-	if err := res.One(profile); err != nil {
+	if err := res.One(&profile); err != nil {
 		return ""
 	}
 	return profile.Privkey

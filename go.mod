@@ -5,6 +5,7 @@ go 1.15
 require (
 	github.com/AlexsJones/cli v0.0.0-20200618222640-740e329af210
 	github.com/awgh/bencrypt v0.0.0-20190918184257-b65cb460b2c8
+	github.com/awgh/debouncer v0.0.0-20200721022636-91ed01fa9bc9
 	github.com/fatih/color v1.10.0
 	github.com/klauspost/cpuid/v2 v2.0.3 // indirect
 	github.com/klauspost/reedsolomon v1.9.10 // indirect

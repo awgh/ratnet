@@ -56,6 +56,13 @@ func (node *Node) Handle(msg api.Msg) (bool, error) {
 		}
 		clearMsg = api.Msg{Name: msg.Name, IsChan: true, Chunked: msg.Chunked, StreamHeader: msg.StreamHeader}
 		tagOK, clear, err = v.DecryptMessage(msg.Content.Bytes())
+	} else if len(msg.Name) > 0 {
+		clearMsg = api.Msg{Name: msg.Name, IsChan: false, Chunked: msg.Chunked, StreamHeader: msg.StreamHeader}
+		key, err := node.privProfile(msg.Name)
+		if err != nil {
+			return false, err
+		}
+		tagOK, clear, err = key.DecryptMessage(msg.Content.Bytes())
 	} else {
 		clearMsg = api.Msg{Name: "[content]", IsChan: false, Chunked: msg.Chunked, StreamHeader: msg.StreamHeader}
 		tagOK, clear, err = node.contentKey.DecryptMessage(msg.Content.Bytes())

@@ -88,6 +88,7 @@ func (node *Node) Handle(msg api.Msg) (bool, error) {
 		if err != nil {
 			return false, err
 		}
+		node.debouncer.Trigger()
 		return true, err
 	}
 
@@ -121,6 +122,7 @@ func (node *Node) AddStream(streamID uint32, totalChunks uint32, channelName str
 	stream.NumChunks = totalChunks
 	stream.ChannelName = channelName
 	node.streams[streamID] = stream
+	node.debouncer.Trigger()
 	return nil
 }
 
@@ -134,5 +136,6 @@ func (node *Node) AddChunk(streamID uint32, chunkNum uint32, data []byte) error 
 		node.chunks[streamID] = make(map[uint32]*api.Chunk)
 	}
 	node.chunks[streamID][chunkNum] = chunk
+	node.debouncer.Trigger()
 	return nil
 }

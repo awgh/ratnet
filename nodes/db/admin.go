@@ -118,6 +118,21 @@ func (node *Node) LoadProfile(name string) (bc.PubKey, error) {
 	return profileKey.GetPubKey(), nil
 }
 
+// privProfile : Internal call to load secret key only for decryption operation
+func (node *Node) privProfile(name string) (bc.KeyPair, error) {
+	pk := node.dbGetProfilePrivateKey(name)
+	if pk == "" {
+		return nil, errors.New("No matching profile key found")
+	}
+	profileKey := node.contentKey.Clone()
+	if err := profileKey.FromB64(pk); err != nil {
+		events.Error(node, err)
+		return nil, err
+	}
+	events.Debug(node, "Profile Loaded: "+profileKey.GetPubKey().ToB64())
+	return profileKey, nil
+}
+
 // GetPeer : Retrieve a peer by name
 func (node *Node) GetPeer(name string) (*api.Peer, error) {
 	return node.dbGetPeer(name)

@@ -6,6 +6,8 @@ github.com/PuerkitoBio/goquery v1.5.1/go.mod h1:GsLWisAFVj4WgDibEWF4pvYnkVQBpKBK
 github.com/andybalholm/cascadia v1.1.0/go.mod h1:GsXiBklL0woXo1j/WYWtSYYC4ouU9PqHO0sqidkEA4Y=
 github.com/awgh/bencrypt v0.0.0-20190918184257-b65cb460b2c8 h1:+PV40XAZWC7pwkPDW/aJQE0IXBl8dHQ/MKFEJjZjwOM=
 github.com/awgh/bencrypt v0.0.0-20190918184257-b65cb460b2c8/go.mod h1:Z5/JiO71bJ2Q0nrj/B1M3LoDcPU8Sn2d/f7KfCT3SXk=
+github.com/awgh/debouncer v0.0.0-20200721022636-91ed01fa9bc9 h1:dDKvKPDhXhDIsNB9IWAycQz3ZM8IeJzapusoRZfMMks=
+github.com/awgh/debouncer v0.0.0-20200721022636-91ed01fa9bc9/go.mod h1:XMkLxrQK+vcIuCccJjcaewvZwLDH+F1jXe9mO3wK05U=
 github.com/census-instrumentation/opencensus-proto v0.2.1/go.mod h1:f6KPmirojxKA12rnyqOA5BBL4O983OfeGPqjHWSTneU=
 github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e/go.mod h1:nSuG5e5PlCu98SY8svDHJxuZscDgtXS6KTTbou5AhLI=
 github.com/client9/misspell v0.3.4/go.mod h1:qj6jICC3Q7zFZvVWo7KLAzC3yx5G7kyvSDkc90ppPyw=

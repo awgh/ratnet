@@ -51,7 +51,7 @@ var nodeType int
 var transportType int
 
 func init() {
-	nodeType = QL
+	nodeType = DB
 	transportType = TLS
 }
 

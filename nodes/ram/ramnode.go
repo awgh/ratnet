@@ -2,6 +2,7 @@ package ram
 
 import (
 	"github.com/awgh/bencrypt/ecc"
+	"github.com/awgh/debouncer"
 
 	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/ratnet/api"
@@ -9,6 +10,7 @@ import (
 	"github.com/awgh/ratnet/router"
 )
 
+// OutBufferSize - size of the buffer in messages for the Out() channel
 var OutBufferSize = 128
 
 // Node : defines an instance of the API with a ql-DB backed Node
@@ -37,6 +39,8 @@ type Node struct {
 	profiles map[string]*api.ProfilePriv
 	streams  map[uint32]*api.StreamHeader
 	chunks   map[uint32]map[uint32]*api.Chunk
+
+	debouncer *debouncer.Debouncer
 }
 
 // New : creates a new instance of API

@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/awgh/bencrypt/bc"
+	"github.com/awgh/bencrypt/ecc"
 	"github.com/awgh/ratnet/api"
 	"github.com/awgh/ratnet/nodes"
 	"github.com/awgh/ratnet/router"
@@ -50,6 +51,18 @@ func New(contentKey, routingKey bc.KeyPair) *Node {
 	node.channelKeys = make(map[string]bc.KeyPair)
 
 	// set crypto modes
+	if contentKey == nil {
+		contentKey = new(ecc.KeyPair)
+	}
+	if contentKey.GetPubKey() == contentKey.GetPubKey().Nil() {
+		contentKey.GenerateKey()
+	}
+	if routingKey == nil {
+		routingKey = new(ecc.KeyPair)
+	}
+	if routingKey.GetPubKey() == routingKey.GetPubKey().Nil() {
+		routingKey.GenerateKey()
+	}
 	node.contentKey = contentKey
 	node.routingKey = routingKey
 

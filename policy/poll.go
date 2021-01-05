@@ -28,7 +28,11 @@ type Poll struct {
 	interval int32
 	jitter   int32
 
-	Group string
+	Groups        []string
+	curGroupIndex int
+
+	RetryForever  bool
+	RetryAttempts int
 }
 
 func init() {
@@ -40,22 +44,33 @@ func NewPollFromMap(transport api.Transport, node api.Node,
 	t map[string]interface{}) api.Policy {
 	interval := int(t["Interval"].(float64))
 	jitter := int(t["Jitter"].(float64))
-	group := string(t["Group"].(string))
-	return NewPoll(transport, node, interval, jitter, group)
+	var groups []string
+	gi := []interface{}(t["Groups"].([]interface{}))
+	for _, g := range gi {
+		gstr := string(g.(string))
+		groups = append(groups, gstr)
+	}
+
+	//groups :=
+	return NewPoll(transport, node, interval, jitter, groups...)
 }
 
 // NewPoll : Returns a new instance of a Poll Connection Policy
 func NewPoll(transport api.Transport, node api.Node, interval, jitter int, group ...string) *Poll {
 	p := new(Poll)
-	// if we don't have a specified group, it's ""
-	p.Group = ""
 	if len(group) > 0 {
-		p.Group = group[0]
+		p.Groups = group
+	} else {
+		p.Groups = []string{""} // if we don't have a specified group, it's ""
 	}
 	p.Transport = transport
 	p.node = node
 	p.interval = int32(interval)
 	p.jitter = int32(jitter)
+
+	p.RetryForever = true
+	p.RetryAttempts = 3
+	p.curGroupIndex = 0
 
 	return p
 }
@@ -87,7 +102,7 @@ func (p *Poll) MarshalJSON() (b []byte, e error) {
 		"Transport": p.Transport,
 		"Interval":  p.GetInterval(),
 		"Jitter":    p.GetJitter(),
-		"Group":     p.Group})
+		"Groups":    p.Groups})
 }
 
 // RunPolicy : Poll
@@ -112,6 +127,7 @@ func (p *Poll) RunPolicy() error {
 			events.Critical(p.node, "Couldn't get routing key in Poll.RunPolicy:\n"+err.Error())
 		}
 
+		fails := make(map[string]int)
 		b := make([]byte, 1)
 		counter := 0
 		for {
@@ -134,20 +150,39 @@ func (p *Poll) RunPolicy() error {
 			}
 
 			// Get Server List for this Poll's assigned Group
-			peers, err := p.node.GetPeers(p.Group)
+			peers, err := p.node.GetPeers(p.Groups[p.curGroupIndex])
 			if err != nil {
 				events.Warning(p.node, "Poll.RunPolicy error in loop: ", err)
 				continue
 			}
+			tries := 0
 			for _, element := range peers {
-				if element.Enabled {
+				if _, ok := fails[element.URI]; !ok {
+					fails[element.URI] = 0
+				}
+				if element.Enabled && fails[element.URI] < p.RetryAttempts {
+					tries++
+
 					_, err := PollServer(p.Transport, p.node, element.URI, pubsrv)
 					if err != nil {
 						events.Warning(p.node, "pollServer error: ", err.Error())
+						fails[element.URI]++
+					} else {
+						fails[element.URI] = 0
 					}
 				}
 			}
-
+			if tries == 0 {
+				if p.curGroupIndex < len(p.Groups)-1 {
+					fails = make(map[string]int)
+					p.curGroupIndex++
+				} else if p.RetryForever {
+					fails = make(map[string]int)
+					p.curGroupIndex = 0
+				} else {
+					events.Warning(p.node, "pollServer error: All Peers have been disabled or hit retry limits")
+				}
+			}
 			if counter%500 == 0 {
 				p.node.FlushOutbox(300) // seconds to cache
 			}

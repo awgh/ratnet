@@ -94,8 +94,9 @@ func (node *Node) Import(jsonConfig []byte) error {
 			return err
 		}
 	}
+	node.peers = make(map[string]*api.Peer)
 	for i := 0; i < len(nj.Peers); i++ {
-		if err := node.AddPeer(nj.Peers[i].Name, nj.Peers[i].Enabled, nj.Peers[i].URI); err != nil {
+		if err := node.AddPeer(nj.Peers[i].Name, nj.Peers[i].Enabled, nj.Peers[i].URI, nj.Peers[i].Group); err != nil {
 			return err
 		}
 	}
@@ -115,6 +116,7 @@ func (node *Node) Import(jsonConfig []byte) error {
 		node.SetRouter(ratnet.NewRouterFromMap(nj.Router))
 	}
 
+	node.policies = make([]api.Policy, 0)
 	for _, p := range nj.Policies {
 		// extract the inner Transport first
 		t := p["Transport"].(map[string]interface{})
@@ -163,6 +165,7 @@ func (node *Node) Export() ([]byte, error) {
 		nj.Peers[i].Name = v.Name
 		nj.Peers[i].Enabled = v.Enabled
 		nj.Peers[i].URI = v.URI
+		nj.Peers[i].Group = v.Group
 		i++
 	}
 	nj.Router = node.router

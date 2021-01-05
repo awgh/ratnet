@@ -211,21 +211,15 @@ func (r *DefaultRouter) Route(node api.Node, message []byte) error {
 		}
 	} else { // private message (zero length channel)
 		// content key case (to be removed, deprecated)
-		consumed := false
+		consumedContent := false
 		if r.CheckContent {
-			consumed, err = node.Handle(msg)
+			consumedContent, err = node.Handle(msg)
 			if err != nil {
 				return err
 			}
 		}
-		if (!consumed && r.ForwardUnknownContent) || (consumed && r.ForwardConsumedContent) {
-			if err := r.forward(node, msg); err != nil {
-				return err
-			}
-		}
-
 		// profile keys case
-		consumed = false
+		consumedProfile := false
 		if r.CheckProfiles {
 			profiles, err := node.GetProfiles()
 			if err != nil {
@@ -235,18 +229,20 @@ func (r *DefaultRouter) Route(node api.Node, message []byte) error {
 				if !profile.Enabled {
 					continue
 				}
-				pubkey := cid.Clone()
-				pubkey.FromB64(profile.Pubkey)
-				consumed, err = node.Handle(msg)
+				msg.Name = profile.Name
+				consumedProfile, err = node.Handle(msg)
 				if err != nil {
 					return err
 				}
-				if consumed {
+				if consumedProfile {
 					break
 				}
 			}
 		}
-		if (!consumed && r.ForwardUnknownProfiles) || (consumed && r.ForwardConsumedProfiles) {
+		fwdUnknowns := r.ForwardUnknownContent || r.ForwardUnknownProfiles // todo: these are redundant fields
+		if (!consumedContent && !consumedProfile && fwdUnknowns) ||
+			(consumedContent && r.ForwardConsumedContent) ||
+			(consumedProfile && r.ForwardConsumedProfiles) {
 			if err := r.forward(node, msg); err != nil {
 				return err
 			}
