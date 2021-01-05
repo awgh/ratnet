@@ -51,8 +51,8 @@ var nodeType int
 var transportType int
 
 func init() {
-	nodeType = DB
-	transportType = TLS
+	nodeType = RAM
+	transportType = UDP
 }
 
 var (
