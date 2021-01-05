@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	kcp "github.com/xtaci/kcp-go"
+	kcp "github.com/xtaci/kcp-go/v5"
 
 	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
