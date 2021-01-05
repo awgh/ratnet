@@ -1,7 +1,6 @@
 package db
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -9,8 +8,7 @@ import (
 	"github.com/awgh/ratnet/api"
 	"github.com/awgh/ratnet/api/events"
 
-	"upper.io/db.v3"
-	"upper.io/db.v3/lib/sqlbuilder"
+	"github.com/upper/db/v4"
 )
 
 var sqlDebug = false
@@ -18,7 +16,7 @@ var sqlDebug = false
 // THIS SHOULD BE THE ONLY FILE THAT INCLUDES upper db !!!
 // ... other than the database var definition in dbnode.go and tests
 
-func closeDB(database db.Database) {
+func closeDB(database db.Session) {
 	_ = database.Close()
 }
 
@@ -27,8 +25,7 @@ func closeDB(database db.Database) {
 //
 
 func (node *Node) dbGetContactPubKey(name string) (string, error) {
-	col := node.db.Collection("contacts")
-	res := col.Find().Where("name = ?", name)
+	res := node.db.SQL().SelectFrom("contacts").Where("name = ?", name)
 	var contact api.Contact
 
 	if err := res.One(&contact); err != nil {
@@ -38,8 +35,7 @@ func (node *Node) dbGetContactPubKey(name string) (string, error) {
 }
 
 func (node *Node) dbGetContacts() ([]api.Contact, error) {
-	col := node.db.Collection("contacts")
-	res := col.Find()
+	res := node.db.SQL().SelectFrom("contacts")
 	var contacts []api.Contact
 
 	if err := res.All(&contacts); err != nil {
@@ -49,26 +45,24 @@ func (node *Node) dbGetContacts() ([]api.Contact, error) {
 }
 
 func (node *Node) dbAddContact(name, pubkey string) error {
-	tx, err := node.db.NewTx(context.TODO())
-	if err != nil {
-		return err
-	}
-	col := tx.Collection("contacts")
-	res := col.Find("name = ?", name)
-	cnt, err := res.Count()
-	if err != nil {
-		return err
-	}
-	if cnt > 0 {
-		_ = res.Delete()
-	}
-	contact := api.Contact{Name: name, Pubkey: pubkey}
-	_, err = col.Insert(&contact)
-	if err != nil {
-		events.Error(node, err.Error())
-		return err
-	}
-	return tx.Commit()
+	return node.db.Tx(func(tx db.Session) error {
+		col := tx.Collection("contacts")
+		res := col.Find("name = ?", name)
+		cnt, err := res.Count()
+		if err != nil {
+			return err
+		}
+		if cnt > 0 {
+			_ = res.Delete()
+		}
+		contact := api.Contact{Name: name, Pubkey: pubkey}
+		_, err = col.Insert(&contact)
+		if err != nil {
+			events.Error(node, err.Error())
+			return err
+		}
+		return nil
+	})
 }
 
 func (node *Node) dbDeleteContact(name string) {
@@ -78,8 +72,7 @@ func (node *Node) dbDeleteContact(name string) {
 }
 
 func (node *Node) dbGetChannelPrivKey(name string) (string, error) {
-	col := node.db.Collection("channels")
-	res := col.Find().Where("name = ?", name)
+	res := node.db.SQL().SelectFrom("channels").Where("name = ?", name)
 	var channel api.ChannelPrivDB
 	if err := res.One(&channel); err != nil {
 		return "", err
@@ -88,8 +81,7 @@ func (node *Node) dbGetChannelPrivKey(name string) (string, error) {
 }
 
 func (node *Node) dbGetChannels() ([]api.Channel, error) {
-	col := node.db.Collection("channels")
-	res := col.Find()
+	res := node.db.SQL().SelectFrom("channels")
 	var channels []api.ChannelPrivDB
 	if err := res.All(&channels); err != nil {
 		return nil, err
@@ -124,30 +116,28 @@ func (node *Node) dbGetChannelsPriv() ([]api.ChannelPriv, error) {
 }
 
 func (node *Node) dbAddChannel(name, privkey string) error {
-	tx, err := node.db.NewTx(context.TODO())
-	if err != nil {
-		return err
-	}
-	col := tx.Collection("channels")
-	res := col.Find("name = ?", name)
-	cnt, err := res.Count()
-	if err != nil {
-		return err
-	}
-	if cnt > 0 {
-		_ = res.Delete()
-	}
-	prv := node.contentKey.Clone()
-	if err := prv.FromB64(privkey); err != nil {
-		return err
-	}
-	channel := api.ChannelPrivDB{Name: name, Privkey: prv.ToB64()}
-	_, err = col.Insert(&channel)
-	if err != nil {
-		events.Error(node, err.Error())
-		return err
-	}
-	return tx.Commit()
+	return node.db.Tx(func(tx db.Session) error {
+		col := tx.Collection("channels")
+		res := col.Find("name = ?", name)
+		cnt, err := res.Count()
+		if err != nil {
+			return err
+		}
+		if cnt > 0 {
+			_ = res.Delete()
+		}
+		prv := node.contentKey.Clone()
+		if err := prv.FromB64(privkey); err != nil {
+			return err
+		}
+		channel := api.ChannelPrivDB{Name: name, Privkey: prv.ToB64()}
+		_, err = col.Insert(&channel)
+		if err != nil {
+			events.Error(node, err.Error())
+			return err
+		}
+		return nil
+	})
 }
 
 func (node *Node) dbDeleteChannel(name string) {
@@ -157,8 +147,7 @@ func (node *Node) dbDeleteChannel(name string) {
 }
 
 func (node *Node) dbGetProfile(name string) (*api.Profile, error) {
-	col := node.db.Collection("profiles")
-	res := col.Find().Where("name = ?", name)
+	res := node.db.SQL().SelectFrom("profiles").Where("name = ?", name)
 	var profile api.ProfilePrivDB
 	if err := res.One(&profile); err != nil {
 		return nil, err
@@ -200,7 +189,7 @@ func (node *Node) dbGetProfilesPriv() ([]api.ProfilePrivDB, error) {
 
 func (node *Node) dbAddProfilePriv(name string, enabled bool, b64key string) error {
 	col := node.db.Collection("profiles")
-	res := col.Find().Where("name = ?", name)
+	res := col.Find("name = ?", name)
 	count, err := res.Count()
 	if err != nil {
 		return err
@@ -226,7 +215,7 @@ func (node *Node) dbAddProfilePriv(name string, enabled bool, b64key string) err
 
 func (node *Node) dbAddProfile(name string, enabled bool) error {
 	col := node.db.Collection("profiles")
-	res := col.Find().Where("name = ?", name)
+	res := col.Find("name = ?", name)
 	count, err := res.Count()
 	if err != nil {
 		return err
@@ -255,13 +244,13 @@ func (node *Node) dbAddProfile(name string, enabled bool) error {
 
 func (node *Node) dbDeleteProfile(name string) {
 	col := node.db.Collection("profiles")
-	res := col.Find("name = ?", name)
+	res := col.Find(db.Cond{"name": name})
 	_ = res.Delete()
 }
 
 func (node *Node) dbGetProfilePrivateKey(name string) string {
 	col := node.db.Collection("profiles")
-	res := col.Find().Where("name = ?", name)
+	res := col.Find(db.Cond{"name": name})
 	var profile api.ProfilePrivDB
 	if err := res.One(profile); err != nil {
 		return ""
@@ -271,7 +260,7 @@ func (node *Node) dbGetProfilePrivateKey(name string) string {
 
 func (node *Node) dbGetPeer(name string) (*api.Peer, error) {
 	col := node.db.Collection("peers")
-	res := col.Find().Where("name = ?", name)
+	res := col.Find(db.Cond{"name": name})
 	var peer api.Peer
 	if err := res.One(&peer); err != nil {
 		return nil, err
@@ -281,7 +270,7 @@ func (node *Node) dbGetPeer(name string) (*api.Peer, error) {
 
 func (node *Node) dbGetPeers(group string) ([]api.Peer, error) {
 	col := node.db.Collection("peers")
-	res := col.Find().Where("peergroup = ?", group)
+	res := col.Find(db.Cond{"peergroup": group})
 	var peers []api.Peer
 	if err := res.All(&peers); err != nil {
 		return nil, err
@@ -291,7 +280,7 @@ func (node *Node) dbGetPeers(group string) ([]api.Peer, error) {
 
 func (node *Node) dbAddPeer(name string, enabled bool, uri string, group string) error {
 	col := node.db.Collection("peers")
-	res := col.Find().Where("name = ?", name).And("peergroup = ?", group)
+	res := col.Find(db.Cond{"name": name}).And(db.Cond{"peergroup": group})
 	count, err := res.Count()
 	if err != nil {
 		return err
@@ -319,7 +308,7 @@ func (node *Node) dbAddPeer(name string, enabled bool, uri string, group string)
 
 func (node *Node) dbDeletePeer(name string) {
 	col := node.db.Collection("peers")
-	res := col.Find("name = ?", name)
+	res := col.Find(db.Cond{"name": name})
 	_ = res.Delete()
 }
 
@@ -330,7 +319,7 @@ func (node *Node) dbOutboxEnqueue(channelName string, msg []byte, ts int64, chec
 
 	if checkExists {
 		// save message in my outbox, if not already present
-		res := col.Find("channel = ?", channelName).And("msg = ?", msg)
+		res := col.Find(db.Cond{"channel": channelName}).And(db.Cond{"msg": msg})
 		if err := res.One(&outboxmsg); err != nil {
 			return err
 		}
@@ -354,25 +343,21 @@ func (node *Node) dbOutboxEnqueue(channelName string, msg []byte, ts int64, chec
 }
 
 func (node *Node) outboxBulkInsert(channelName string, timestamp int64, msgs [][]byte) error {
-	tx, err := node.db.NewTx(context.TODO())
-	if err != nil {
-		return err
-	}
-	col := tx.Collection("outbox")
-	//todo: convert this to BatchInserter?
-	for i, v := range msgs {
-		var outboxmsg api.OutboxMsg
-		outboxmsg.Channel = channelName
-		outboxmsg.Msg = v
-		outboxmsg.Timestamp = timestamp + int64(i) // increment timestamp by one each message to simplify queueing
-		_, err := col.Insert(outboxmsg)
-		if err != nil {
-			tx.Rollback()
-			return err
+	return node.db.Tx(func(tx db.Session) error {
+		col := tx.Collection("outbox")
+		//todo: convert this to BatchInserter?
+		for i, v := range msgs {
+			var outboxmsg api.OutboxMsg
+			outboxmsg.Channel = channelName
+			outboxmsg.Msg = v
+			outboxmsg.Timestamp = timestamp + int64(i) // increment timestamp by one each message to simplify queueing
+			_, err := col.Insert(outboxmsg)
+			if err != nil {
+				return err
+			}
 		}
-	}
-	tx.Commit()
-	return nil
+		return nil
+	})
 }
 
 func (node *Node) dbGetMessages(lastTime, maxBytes int64, channelNames ...string) ([][]byte, int64, error) {
@@ -406,7 +391,7 @@ func (node *Node) dbGetMessages(lastTime, maxBytes int64, channelNames ...string
 		sqlq = sqlq + " )"
 	}
 	sqlq = sqlq + " ORDER BY timestamp ASC;"
-	res, err := node.db.Query(sqlq, args...)
+	res, err := node.db.SQL().Query(sqlq, args...)
 
 	if res == nil || err != nil {
 		return nil, lastTimeReturned, err
@@ -436,17 +421,17 @@ func (node *Node) dbGetMessages(lastTime, maxBytes int64, channelNames ...string
 
 func (node *Node) dbClearStream(streamID uint32) error {
 	col := node.db.Collection("chunks")
-	res := col.Find("streamid = ?", streamID)
+	res := col.Find(db.Cond{"streamid": streamID})
 	_ = res.Delete()
 	col = node.db.Collection("streams")
-	res = col.Find("streamid = ?", streamID)
+	res = col.Find(db.Cond{"streamid": streamID})
 	return res.Delete()
 }
 
 // AddStream - implemented from Node API
 func (node *Node) AddStream(streamID uint32, totalChunks uint32, channelName string) error {
 	col := node.db.Collection("streams")
-	res := col.Find().Where("streamid = ?", streamID)
+	res := col.Find(db.Cond{"streamid": streamID})
 	count, err := res.Count()
 	if err != nil {
 		return err
@@ -474,7 +459,7 @@ func (node *Node) AddStream(streamID uint32, totalChunks uint32, channelName str
 // AddChunk - implemented from Node API
 func (node *Node) AddChunk(streamID uint32, chunkNum uint32, data []byte) error {
 	col := node.db.Collection("chunks")
-	res := col.Find().Where("streamid = ?", streamID).And("chunknum = ?", chunkNum)
+	res := col.Find(db.Cond{"streamid": streamID}).And(db.Cond{"chunknum": chunkNum})
 	count, err := res.Count()
 	if err != nil {
 		return err
@@ -511,13 +496,13 @@ func (node *Node) dbGetStreams() ([]api.StreamHeader, error) {
 
 func (node *Node) dbGetChunkCount(streamID uint32) (uint64, error) {
 	col := node.db.Collection("chunks")
-	res := col.Find().Where("streamid = ?", streamID)
+	res := col.Find(db.Cond{"streamid": streamID})
 	return res.Count()
 }
 
 func (node *Node) dbGetChunks(streamID uint32) ([]api.Chunk, error) {
 	col := node.db.Collection("chunks")
-	res := col.Find().Where("streamid = ?", streamID).OrderBy("chunknum")
+	res := col.Find(db.Cond{"streamid": streamID}).OrderBy("chunknum")
 	var chunks []api.Chunk
 	if err := res.All(&chunks); err != nil {
 		return nil, err
@@ -541,12 +526,12 @@ type connectionURL struct {
 func (c connectionURL) String() string { return c.url }
 
 // BootstrapDB - Initialize or open a database file
-func (node *Node) BootstrapDB(dbAdapter, dbConnectionString string) sqlbuilder.Database {
+func (node *Node) BootstrapDB(dbAdapter, dbConnectionString string) db.Session {
 	if node.db != nil {
 		return node.db
 	}
 	var err error
-	node.db, err = sqlbuilder.Open(dbAdapter, connectionURL{url: dbConnectionString})
+	node.db, err = db.Open(dbAdapter, connectionURL{url: dbConnectionString})
 	if err != nil {
 		events.Critical(node, err.Error())
 	}
@@ -562,7 +547,7 @@ func (node *Node) BootstrapDB(dbAdapter, dbConnectionString string) sqlbuilder.D
 	}
 
 	// One-time Initialization
-	_, err = node.db.Exec(fmt.Sprintf(`
+	_, err = node.db.SQL().Exec(fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS contacts (
 			name	%s	NOT NULL,
 			pubkey	%s	NOT NULL
@@ -570,7 +555,7 @@ func (node *Node) BootstrapDB(dbAdapter, dbConnectionString string) sqlbuilder.D
 	`, strName, strName))
 	checkErr(err)
 
-	_, err = node.db.Exec(fmt.Sprintf(`
+	_, err = node.db.SQL().Exec(fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS channels ( 			
 			name	%s	NOT NULL,
 			privkey	%s	NOT NULL
@@ -578,7 +563,7 @@ func (node *Node) BootstrapDB(dbAdapter, dbConnectionString string) sqlbuilder.D
 	`, strName, strName))
 	checkErr(err)
 
-	_, err = node.db.Exec(fmt.Sprintf(`
+	_, err = node.db.SQL().Exec(fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS config ( 
 			name	%s	NOT NULL,
 			value	%s	NOT NULL
@@ -586,7 +571,7 @@ func (node *Node) BootstrapDB(dbAdapter, dbConnectionString string) sqlbuilder.D
 	`, strName, strName))
 	checkErr(err)
 
-	_, err = node.db.Exec(fmt.Sprintf(`
+	_, err = node.db.SQL().Exec(fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS outbox (
 			channel		%s, 
 			msg			%s	NOT NULL,
@@ -595,12 +580,12 @@ func (node *Node) BootstrapDB(dbAdapter, dbConnectionString string) sqlbuilder.D
 	`, strName, blobName, int64Name))
 	checkErr(err)
 
-	_, err = node.db.Exec(`
+	_, err = node.db.SQL().Exec(`
 			CREATE INDEX IF NOT EXISTS outboxID ON outbox (timestamp);
 	`)
 	checkErr(err)
 
-	_, err = node.db.Exec(fmt.Sprintf(`
+	_, err = node.db.SQL().Exec(fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS peers (
 			name		%s		NOT NULL,  
 			uri			%s		NOT NULL,
@@ -611,7 +596,7 @@ func (node *Node) BootstrapDB(dbAdapter, dbConnectionString string) sqlbuilder.D
 	`, strName, strName, strName, strName))
 	checkErr(err)
 
-	_, err = node.db.Exec(fmt.Sprintf(`
+	_, err = node.db.SQL().Exec(fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS profiles (
 			name	%s		NOT NULL,
 			privkey	%s		NOT NULL,
@@ -620,7 +605,7 @@ func (node *Node) BootstrapDB(dbAdapter, dbConnectionString string) sqlbuilder.D
 	`, strName, strName))
 	checkErr(err)
 
-	_, err = node.db.Exec(fmt.Sprintf(`
+	_, err = node.db.SQL().Exec(fmt.Sprintf(`
 	CREATE TABLE IF NOT EXISTS chunks (		
 		streamid	%s	NOT NULL,
 		chunknum	%s	NOT NULL,
@@ -629,7 +614,7 @@ func (node *Node) BootstrapDB(dbAdapter, dbConnectionString string) sqlbuilder.D
 	`, int64Name, int64Name, blobName))
 	checkErr(err)
 
-	_, err = node.db.Exec(fmt.Sprintf(`
+	_, err = node.db.SQL().Exec(fmt.Sprintf(`
 	CREATE TABLE IF NOT EXISTS streams (		
 		streamid		%s	NOT NULL,
 		parts			%s	NOT NULL,
@@ -640,7 +625,7 @@ func (node *Node) BootstrapDB(dbAdapter, dbConnectionString string) sqlbuilder.D
 
 	// Content Key Setup
 	col := node.db.Collection("config")
-	res1 := col.Find("name = ?", "contentkey")
+	res1 := col.Find(db.Cond{"name": "contentkey"})
 	cnt, err := res1.Count()
 	if err != nil {
 		events.Critical(node, err)
@@ -659,7 +644,7 @@ func (node *Node) BootstrapDB(dbAdapter, dbConnectionString string) sqlbuilder.D
 	}
 
 	// Routing Key Setup
-	res2 := col.Find("name = ?", "routingkey")
+	res2 := col.Find(db.Cond{"name": "routingkey"})
 	cnt, err = res2.Count()
 	if err != nil {
 		events.Critical(node, err)

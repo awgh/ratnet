@@ -22,8 +22,7 @@ import (
 	"github.com/awgh/ratnet/transports/tls"
 	"github.com/awgh/ratnet/transports/udp"
 
-	//_ "modernc.org/ql/driver"
-	_ "upper.io/db.v3/ql" // this requires PR #507: https://github.com/upper/db/pull/507
+	_ "github.com/upper/db/v4/adapter/ql"
 )
 
 type TestNode struct {
@@ -52,7 +51,7 @@ var nodeType int
 var transportType int
 
 func init() {
-	nodeType = DB
+	nodeType = QL
 	transportType = TLS
 }
 

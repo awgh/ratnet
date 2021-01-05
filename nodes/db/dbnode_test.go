@@ -9,7 +9,7 @@ import (
 	"github.com/awgh/bencrypt/ecc"
 	"github.com/awgh/ratnet/api"
 
-	_ "upper.io/db.v3/ql"
+	_ "github.com/upper/db/v4/adapter/ql"
 )
 
 var (

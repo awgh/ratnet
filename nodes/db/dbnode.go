@@ -1,7 +1,7 @@
 package db
 
 // To install upper db:
-// go get -v -u upper.io/db.v3
+// go get -v -u github.com/upper/db
 // FOR POSTGRES DRIVER: go get -v -u github.com/lib/pq
 
 import (
@@ -11,9 +11,10 @@ import (
 	"github.com/awgh/ratnet/api"
 	"github.com/awgh/ratnet/nodes"
 	"github.com/awgh/ratnet/router"
-	"upper.io/db.v3/lib/sqlbuilder"
+	"github.com/upper/db/v4"
 )
 
+// OutBufferSize - Out() output go channel buffer size
 var OutBufferSize = 128
 
 // Node : defines an instance of the API with a ql-DB backed Node
@@ -25,7 +26,7 @@ type Node struct {
 	policies []api.Policy
 	router   api.Router
 
-	db sqlbuilder.Database
+	db db.Session
 
 	mutex *sync.Mutex
 
