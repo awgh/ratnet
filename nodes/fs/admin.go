@@ -329,7 +329,7 @@ func (node *Node) SendMsg(msg api.Msg) error {
 // Start : starts the Connection Policy threads
 func (node *Node) Start() error {
 	// do not start again if the node is already running
-	if node.isRunning {
+	if node.IsRunning() {
 		return nil
 	}
 
@@ -340,7 +340,7 @@ func (node *Node) Start() error {
 	// start the signal monitor
 	node.signalMonitor()
 
-	node.isRunning = true
+	node.setIsRunning(true)
 
 	// start the policies
 	if node.policies != nil {
@@ -355,7 +355,7 @@ func (node *Node) Start() error {
 	go func() {
 		for {
 			// check if we should stop running
-			if !node.isRunning {
+			if !node.IsRunning() {
 				break
 			}
 			// read message off the input channel
@@ -372,7 +372,7 @@ func (node *Node) Start() error {
 		for {
 			time.Sleep(10 * time.Millisecond)
 			// check if we should stop running
-			if !node.isRunning {
+			if !node.IsRunning() {
 				break
 			}
 			// for each stream, count chunks for that header
@@ -419,5 +419,5 @@ func (node *Node) Stop() {
 	for _, policy := range node.policies {
 		policy.Stop()
 	}
-	node.isRunning = false
+	node.setIsRunning(false)
 }

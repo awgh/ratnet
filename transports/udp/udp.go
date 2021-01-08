@@ -88,6 +88,8 @@ func (m *Module) Listen(listen string, adminMode bool) {
 
 		// read from socket
 		for m.isRunning {
+			lis.SetReadDeadline(time.Now().Add(1 * time.Second))
+			lis.SetWriteDeadline(time.Now().Add(1 * time.Second))
 			c, err := lis.Accept()
 			if err != nil {
 				events.Error(m.node, err.Error())
@@ -267,10 +269,10 @@ func (m *Module) RPC(host string, method string, args ...interface{}) (interface
 // Stop : Stops module
 func (m *Module) Stop() {
 	m.isRunning = false
-	m.wg.Wait()
 
 	for k, v := range cachedSessions {
 		delete(cachedSessions, k)
 		_ = v.Close()
 	}
+	m.wg.Wait()
 }

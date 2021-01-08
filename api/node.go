@@ -17,6 +17,7 @@ type Node interface {
 	GetChannelPrivKey(name string) (string, error)
 	Handle(msg Msg) (bool, error)
 	Forward(msg Msg) error
+	IsRunning() bool
 
 	// Chunking
 	// AddStream - inform node of receipt of a stream header
@@ -112,10 +113,6 @@ type Node interface {
 	Out() chan Msg
 	// Events : Returns the Err channel of this node
 	Events() chan Event
-
-	// Debug
-	GetDebug() bool
-	SetDebug(mode bool)
 }
 
 // Contact : object that describes a contact (named public key)

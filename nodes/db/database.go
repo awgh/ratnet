@@ -11,7 +11,7 @@ import (
 	"github.com/upper/db/v4"
 )
 
-var sqlDebug = false
+var sqlDebug = true
 
 // THIS SHOULD BE THE ONLY FILE THAT INCLUDES upper db !!!
 // ... other than the database var definition in dbnode.go and tests

@@ -231,11 +231,12 @@ func (h *Module) RPC(host string, method string, args ...interface{}) (interface
 // Stop : stops the TLS transport from running
 func (h *Module) Stop() {
 	h.isRunning = false
+	for k, v := range cachedSessions {
+		delete(cachedSessions, k)
+		_ = v.Close()
+	}
 	for _, listener := range h.listeners {
 		listener.Close()
 	}
 	h.wg.Wait()
-	for _, v := range cachedSessions {
-		_ = v.Close()
-	}
 }

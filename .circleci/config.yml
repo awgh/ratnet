@@ -32,8 +32,8 @@ jobs:
       - run: mkdir ratnet/tmp
 
       #- run: go test -v ./...
-      - run: go test -v github.com/awgh/ratnet/nodes/qldb
-      - run: go test -v github.com/awgh/ratnet/nodes/ram
-      - run: go test -v github.com/awgh/ratnet/nodes/fs
-      - run: go test -v github.com/awgh/ratnet/ratnet
+      - run: go test -v -tags debug -timeout 0 github.com/awgh/ratnet/nodes/qldb
+      - run: go test -v -tags debug -timeout 0 github.com/awgh/ratnet/nodes/ram
+      - run: go test -v -tags debug -timeout 0 github.com/awgh/ratnet/nodes/fs
+      - run: go test -v -tags debug -timeout 0 github.com/awgh/ratnet/ratnet
 

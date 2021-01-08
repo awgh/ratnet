@@ -7,9 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/awgh/ratnet"
@@ -64,10 +62,9 @@ func New(certPem []byte, keyPem []byte, node api.Node, eccMode bool) *Module {
 type Module struct {
 	transport *http.Transport
 	client    *http.Client
+	server    *http.Server
 	node      api.Node
 	isRunning bool
-	wg        sync.WaitGroup
-	listeners []net.Listener
 
 	Cert, Key []byte
 	EccMode   bool
@@ -116,27 +113,15 @@ func (h *Module) Listen(listen string, adminMode bool) {
 		h.handleResponse(w, r, h.node, adminMode)
 	})
 
-	// setup Listener
-	listener, err := net.Listen("tcp", listen)
-	if err != nil {
-		events.Error(h.node, err.Error())
-		return
+	h.server = &http.Server{
+		Addr:      listen,
+		TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}},
+		Handler:   serveMux,
 	}
 
-	// transform Listener into TLS Listener
-	tlsListener := tls.NewListener(
-		listener,
-		&tls.Config{Certificates: []tls.Certificate{cert}},
-	)
-
-	// add Listener to the Listener pool
-	h.listeners = append(h.listeners, listener)
-
 	// start
-	h.wg.Add(1)
 	go func() {
-		defer h.wg.Done()
-		if err := http.Serve(tlsListener, serveMux); err != nil {
+		if err := h.server.ListenAndServeTLS("", ""); err != nil {
 			events.Error(h.node, err.Error())
 		}
 	}()
@@ -217,9 +202,6 @@ func (h *Module) RPC(host string, method string, args ...interface{}) (interface
 
 // Stop : stops the HTTPS transport from running
 func (h *Module) Stop() {
+	h.server.Close()
 	h.isRunning = false
-	for _, listener := range h.listeners {
-		listener.Close()
-	}
-	h.wg.Wait()
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	"github.com/awgh/bencrypt/bc"
@@ -28,8 +29,7 @@ type Node struct {
 
 	policies  []api.Policy
 	router    api.Router
-	isRunning bool
-	debugMode bool
+	isRunning uint32
 
 	// external data members
 	in     chan api.Msg
@@ -84,6 +84,19 @@ func New(contentKey, routingKey bc.KeyPair, basePath string) *Node {
 
 func hex(n uint32) string {
 	return fmt.Sprintf("%08x", n)
+}
+
+// IsRunning - returns true if this node is running
+func (node *Node) IsRunning() bool {
+	return atomic.LoadUint32(&node.isRunning) == 1
+}
+
+func (node *Node) setIsRunning(b bool) {
+	var running uint32 = 0
+	if b {
+		running = 1
+	}
+	atomic.StoreUint32(&node.isRunning, running)
 }
 
 // GetPolicies : returns the array of Policy objects for this Node
@@ -153,16 +166,4 @@ func (node *Node) AdminRPC(transport api.Transport, call api.RemoteCall) (interf
 // PublicRPC :
 func (node *Node) PublicRPC(transport api.Transport, call api.RemoteCall) (interface{}, error) {
 	return nodes.PublicRPC(transport, node, call)
-}
-
-// Debug
-
-// GetDebug : Returns the debug mode status of this node
-func (node *Node) GetDebug() bool {
-	return node.debugMode
-}
-
-// SetDebug : Sets the debug mode status of this node
-func (node *Node) SetDebug(mode bool) {
-	node.debugMode = mode
 }

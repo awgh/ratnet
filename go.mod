@@ -20,5 +20,6 @@ require (
 	golang.org/x/crypto v0.0.0-20201221181555-eec23a3978ad // indirect
 	golang.org/x/net v0.0.0-20201224014010-6772e930b67b // indirect
 	golang.org/x/sys v0.0.0-20210104204734-6f8348627aad // indirect
-	modernc.org/ql v1.3.1
+	golang.org/x/tools v0.0.0-20210104081019-d8d6ddbec6ee // indirect
+	modernc.org/ql v1.3.2-0.20201221110958-fea8432768cf
 )
