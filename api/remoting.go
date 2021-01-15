@@ -668,20 +668,21 @@ func readLV(r io.Reader) ([]byte, error) {
 	return v, nil
 }
 
-// ReadBuffer - reads a serialized buffer from the wire, returns buffer
+// ReadBuffer - reads a serialized buffer from the wire, returns buffer.
+// If the reader is not an io.ByteReader, it will be wrapped with one
+// internally
 func ReadBuffer(reader io.Reader) (*[]byte, error) {
-	blen := make([]byte, 4)
-	n, err := io.ReadFull(reader, blen)
-	if n != 4 {
-		return nil, errors.New("ReadBuffer len underflow")
+	br, ok := reader.(io.ByteReader)
+	if !ok {
+		br = newByteReader(reader)
 	}
+	rlen, err := binary.ReadUvarint(br)
 	if err != nil {
 		return nil, err
 	}
-	rlen := binary.LittleEndian.Uint32(blen)
 	buf := make([]byte, rlen)
-	n, err = io.ReadFull(reader, buf)
-	if uint32(n) != rlen {
+	n, err := io.ReadFull(reader, buf)
+	if uint64(n) != rlen {
 		return nil, errors.New("ReadBuffer read underflow")
 	}
 	if err != nil {
@@ -692,9 +693,9 @@ func ReadBuffer(reader io.Reader) (*[]byte, error) {
 
 // WriteBuffer - writes a serialized buffer to the wire
 func WriteBuffer(writer io.Writer, b *[]byte) error {
-	wlen := make([]byte, 4)
-	binary.LittleEndian.PutUint32(wlen, uint32(len(*b)))
-	rb := append(wlen, *b...)
+	lenBuf := make([]byte, binary.MaxVarintLen64)
+	n := binary.PutUvarint(lenBuf, uint64(len(*b)))
+	rb := append(lenBuf[:n], *b...)
 	if _, err := writer.Write(rb); err != nil {
 		return err
 	}
