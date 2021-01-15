@@ -43,10 +43,14 @@ const (
 
 // API Parameter Data types
 const (
-	APITypeNil    byte = 0x0
-	APITypeInt64  byte = 0x1
-	APITypeString byte = 0x2
-	APITypeBytes  byte = 0x3
+	APITypeInvalid        byte = 0x0
+	APITypeNil            byte = 0x1
+	APITypeInt64          byte = 0x2
+	APITypeUint64         byte = 0x3
+	APITypeString         byte = 0x4
+	APITypeBytes          byte = 0x5
+	APITypeBytesBytes     byte = 0x6
+	APITypeInterfaceArray byte = 0x7
 
 	APITypePubKeyECC byte = 0x10
 	APITypePubKeyRSA byte = 0x11
@@ -192,39 +196,26 @@ func ActionFromUint16(action uint16) string {
 func ArgsToBytes(args []interface{}) []byte {
 	b := bytes.NewBuffer([]byte{})
 	w := bufio.NewWriter(b)
-	for _, i := range args {
-		serialize(w, i)
-	}
+	serialize(w, args)
 	w.Flush()
 	return b.Bytes()
 }
 
 // ArgsFromBytes - converts a byte array to an interface array
 func ArgsFromBytes(args []byte) ([]interface{}, error) {
-	var output []interface{}
 	r := bufio.NewReader(bytes.NewBuffer(args))
-
-	for i := 0; i < len(args); i++ {
-		// read a TLV field, add it to output array
-		t, v, err := readTLV(r)
-		if err != nil {
-			return nil, err
-		}
-		i += 3 + len(v)
-		b := bytes.NewBuffer(v)
-		rt, err := deserialize(b, t, v)
-		if err != nil {
-			return nil, err
-		}
-		output = append(output, rt)
+	rv, err := deserialize(r)
+	var retval []interface{}
+	if rv != nil {
+		retval = rv.([]interface{})
 	}
-	return output, nil
+	return retval, err
 }
 
 // Serialization byte order is BigEndian / network-order
 
 // RemoteCallToBytes - converts a RemoteCall to a byte array
-func RemoteCallToBytes(call *RemoteCall) []byte {
+func RemoteCallToBytes(call *RemoteCall) *[]byte {
 	b := bytes.NewBuffer([]byte{})
 	w := bufio.NewWriter(b)
 	// Action - bytes [0-1] uint16
@@ -232,18 +223,19 @@ func RemoteCallToBytes(call *RemoteCall) []byte {
 	// Args - everything else
 	binary.Write(w, binary.BigEndian, ArgsToBytes(call.Args))
 	w.Flush()
-	return b.Bytes()
+	rb := b.Bytes()
+	return &rb
 }
 
 // RemoteCallFromBytes - converts a RemoteCall from a byte array
-func RemoteCallFromBytes(input []byte) (*RemoteCall, error) {
-	if len(input) < 2 {
+func RemoteCallFromBytes(input *[]byte) (*RemoteCall, error) {
+	if len(*input) < 2 {
 		return nil, errors.New("Input array too short")
 	}
 	call := new(RemoteCall)
-	action := binary.BigEndian.Uint16(input[:2])
+	action := binary.BigEndian.Uint16((*input)[:2])
 	call.Action = ActionFromUint16(action)
-	args, err := ArgsFromBytes(input[2:])
+	args, err := ArgsFromBytes((*input)[2:])
 	if err != nil {
 		return nil, err
 	}
@@ -252,55 +244,91 @@ func RemoteCallFromBytes(input []byte) (*RemoteCall, error) {
 }
 
 // RemoteResponseToBytes - converts a RemoteResponse to a byte array
-func RemoteResponseToBytes(resp *RemoteResponse) []byte {
+func RemoteResponseToBytes(resp *RemoteResponse) *[]byte {
 	b := bytes.NewBuffer([]byte{})
 	w := bufio.NewWriter(b)
-
-	writeTLV(w, APITypeString, []byte(resp.Error))
-
+	serialize(w, resp.Error)
 	serialize(w, resp.Value)
 	w.Flush()
-	return b.Bytes()
+	retval := b.Bytes()
+	return &retval
 }
 
 // RemoteResponseFromBytes - converts a RemoteResponse from a byte array
-func RemoteResponseFromBytes(input []byte) (*RemoteResponse, error) {
+func RemoteResponseFromBytes(input *[]byte) (*RemoteResponse, error) {
 	resp := new(RemoteResponse)
-	r := bufio.NewReader(bytes.NewBuffer(input))
+	r := bufio.NewReader(bytes.NewBuffer(*input))
 
-	// read the two TLV fields, add to struct
+	// read the two fields, add to struct
 	// Error string
-	t, v, err := readTLV(r)
+	errString, err := deserialize(r)
 	if err != nil {
 		return nil, err
 	}
-	resp.Error = string(v)
+	resp.Error = errString.(string)
 
 	// Value interface{}
-	t, v, err = readTLV(r)
+	value, err := deserialize(r)
 	if err != nil {
 		return nil, err
 	}
-	rv, err := deserialize(r, t, v)
-	if err != nil {
-		return nil, err
-	}
-	resp.Value = rv
+	resp.Value = value
 	return resp, nil
+}
+
+// BytesBytesToBytes - converts an array of byte arrays to a byte array
+func BytesBytesToBytes(bba *[][]byte) *[]byte {
+	b := bytes.NewBuffer([]byte{})
+	w := bufio.NewWriter(b)
+	serialize(w, *bba)
+	w.Flush()
+	retval := b.Bytes()
+	return &retval
+}
+
+// BytesBytesFromBytes - converts an array of byte arrays from a byte array
+func BytesBytesFromBytes(input *[]byte) (*[][]byte, error) {
+	r := bufio.NewReader(bytes.NewBuffer(*input))
+	bytesBytesArray, err := deserialize(r)
+	if err != nil {
+		return nil, err
+	}
+	retval := bytesBytesArray.([][]byte)
+	return &retval, nil
 }
 
 func serialize(w io.Writer, v interface{}) {
 	switch v.(type) {
+	case nil:
+		writeTLV(w, APITypeNil, nil)
 	case int64:
 		binary.Write(w, binary.BigEndian, APITypeInt64) //type
-		binary.Write(w, binary.BigEndian, uint16(8))    //length
 		binary.Write(w, binary.BigEndian, v)            //value
+	case uint64:
+		binary.Write(w, binary.BigEndian, APITypeUint64) //type
+		binary.Write(w, binary.BigEndian, v)             //value
 	case string:
 		s := v.(string)
 		writeTLV(w, APITypeString, []byte(s))
 	case []byte:
 		ba := v.([]byte)
 		writeTLV(w, APITypeBytes, ba)
+	case [][]byte:
+		bba := v.([][]byte)
+		b := bytes.NewBuffer([]byte{})
+		binary.Write(b, binary.BigEndian, uint32(len(bba))) // number of byte arrays
+		for i := range bba {
+			writeLV(b, bba[i])
+		}
+		writeTLV(w, APITypeBytesBytes, b.Bytes())
+	case []interface{}:
+		ia := v.([]interface{})
+		b := bytes.NewBuffer([]byte{})
+		binary.Write(b, binary.BigEndian, uint32(len(ia))) // number of elements in array
+		for _, i := range ia {
+			serialize(b, i) // recursively serialize
+		}
+		writeTLV(w, APITypeInterfaceArray, b.Bytes())
 	case bc.PubKey:
 		pk, ok := v.(*ecc.PubKey)
 		var kb []byte
@@ -323,6 +351,7 @@ func serialize(w io.Writer, v interface{}) {
 	case []Contact:
 		ac := v.([]Contact)
 		b := bytes.NewBuffer([]byte{})
+		binary.Write(b, binary.BigEndian, uint32(len(ac))) // number of elements in array
 		for _, c := range ac {
 			writeLV(b, []byte(c.Name))
 			writeLV(b, []byte(c.Pubkey))
@@ -337,6 +366,7 @@ func serialize(w io.Writer, v interface{}) {
 	case []Channel:
 		ac := v.([]Channel)
 		b := bytes.NewBuffer([]byte{})
+		binary.Write(b, binary.BigEndian, uint32(len(ac))) // number of elements in array
 		for _, c := range ac {
 			writeLV(b, []byte(c.Name))
 			writeLV(b, []byte(c.Pubkey))
@@ -356,6 +386,7 @@ func serialize(w io.Writer, v interface{}) {
 	case []Profile:
 		ac := v.([]Profile)
 		b := bytes.NewBuffer([]byte{})
+		binary.Write(b, binary.BigEndian, uint32(len(ac))) // number of elements in array
 		for _, c := range ac {
 			writeLV(b, []byte(c.Name))
 			writeLV(b, []byte(c.Pubkey))
@@ -382,6 +413,7 @@ func serialize(w io.Writer, v interface{}) {
 	case []Peer:
 		ac := v.([]Peer)
 		b := bytes.NewBuffer([]byte{})
+		binary.Write(b, binary.BigEndian, uint32(len(ac))) // number of elements in array
 		for _, c := range ac {
 			writeLV(b, []byte(c.Name))
 			writeLV(b, []byte(c.Group))
@@ -399,10 +431,20 @@ func serialize(w io.Writer, v interface{}) {
 		writeLV(b, bundle.Data)
 		binary.Write(b, binary.BigEndian, bundle.Time)
 		writeTLV(w, APITypeBundle, b.Bytes())
+		//default:
+		//	log.Printf("Unknown type in serialize: %T\n", v)
 	}
 }
 
-func deserialize(r io.Reader, t byte, v []byte) (interface{}, error) {
+// deserialize - reads the next value from the io.Reader
+func deserialize(r io.Reader) (interface{}, error) {
+	// read the type byte
+	var t byte
+	if err := binary.Read(r, binary.BigEndian, &t); err != nil {
+		return nil, err
+	}
+
+	// Values with no length
 	switch t {
 	case APITypeNil:
 		return nil, nil
@@ -412,10 +454,56 @@ func deserialize(r io.Reader, t byte, v []byte) (interface{}, error) {
 			return nil, err
 		}
 		return vint, nil
+	case APITypeUint64:
+		var vint uint64
+		if err := binary.Read(r, binary.BigEndian, &vint); err != nil {
+			return nil, err
+		}
+		return vint, nil
+	}
+
+	// read length and value
+	v, err := readLV(r)
+	if err != nil {
+		return nil, err
+	}
+
+	// Values with a length
+	switch t {
 	case APITypeString:
 		return string(v), nil
 	case APITypeBytes:
 		return v, nil
+	case APITypeBytesBytes:
+		var bba [][]byte
+		var n uint32
+		b := bytes.NewBuffer(v)
+		if err := binary.Read(b, binary.BigEndian, &n); err != nil {
+			return nil, err
+		}
+		for i := uint32(0); i < n; i++ {
+			ba, err := readLV(b)
+			if err != nil {
+				return nil, err
+			}
+			bba = append(bba, ba)
+		}
+		return bba, nil
+	case APITypeInterfaceArray:
+		var ia []interface{}
+		var n uint32
+		b := bytes.NewBuffer(v)
+		if err := binary.Read(b, binary.BigEndian, &n); err != nil {
+			return nil, err
+		}
+		for i := uint32(0); i < n; i++ {
+			element, err := deserialize(b)
+			if err != nil {
+				return nil, err
+			}
+			ia = append(ia, element)
+		}
+		return ia, nil
 	case APITypePubKeyECC:
 		key := new(ecc.PubKey)
 		if err := key.FromBytes(v); err != nil {
@@ -445,22 +533,23 @@ func deserialize(r io.Reader, t byte, v []byte) (interface{}, error) {
 		return &contact, nil
 
 	case APITypeContactArray:
-		bytesRead := 0
 		var contacts []Contact
+		var n uint32
 		b := bytes.NewBuffer(v)
-		for bytesRead < len(v) {
+		if err := binary.Read(b, binary.BigEndian, &n); err != nil {
+			return nil, err
+		}
+		for i := uint32(0); i < n; i++ {
 			var contact Contact
 			va, err := readLV(b)
 			if err != nil {
 				return nil, err
 			}
-			bytesRead += len(va) + 2
 			contact.Name = string(va)
 			va, err = readLV(b)
 			if err != nil {
 				return nil, err
 			}
-			bytesRead += len(va) + 2
 			contact.Pubkey = string(va)
 			contacts = append(contacts, contact)
 		}
@@ -482,22 +571,23 @@ func deserialize(r io.Reader, t byte, v []byte) (interface{}, error) {
 		return &channel, nil
 
 	case APITypeChannelArray:
-		bytesRead := 0
 		var channels []Channel
+		var n uint32
 		b := bytes.NewBuffer(v)
-		for bytesRead < len(v) {
+		if err := binary.Read(b, binary.BigEndian, &n); err != nil {
+			return nil, err
+		}
+		for i := uint32(0); i < n; i++ {
 			var channel Channel
 			va, err := readLV(b)
 			if err != nil {
 				return nil, err
 			}
-			bytesRead += len(va) + 2
 			channel.Name = string(va)
 			va, err = readLV(b)
 			if err != nil {
 				return nil, err
 			}
-			bytesRead += len(va) + 2
 			channel.Pubkey = string(va)
 			channels = append(channels, channel)
 		}
@@ -528,29 +618,29 @@ func deserialize(r io.Reader, t byte, v []byte) (interface{}, error) {
 		return &profile, nil
 
 	case APITypeProfileArray:
-		bytesRead := 0
 		var profiles []Profile
+		var n uint32
 		b := bytes.NewBuffer(v)
-		for bytesRead < len(v) {
+		if err := binary.Read(b, binary.BigEndian, &n); err != nil {
+			return nil, err
+		}
+		for i := uint32(0); i < n; i++ {
 			var profile Profile
 			va, err := readLV(b)
 			if err != nil {
 				return nil, err
 			}
-			bytesRead += len(va) + 2
 			profile.Name = string(va)
 			va, err = readLV(b)
 			if err != nil {
 				return nil, err
 			}
-			bytesRead += len(va) + 2
 			profile.Pubkey = string(va)
 
 			bt, err := b.ReadByte()
 			if err != nil {
 				return nil, err
 			}
-			bytesRead++
 			if bt == 1 {
 				profile.Enabled = true
 			} else {
@@ -590,34 +680,33 @@ func deserialize(r io.Reader, t byte, v []byte) (interface{}, error) {
 		return &peer, nil
 
 	case APITypePeerArray:
-		bytesRead := 0
 		var peers []Peer
+		var n uint32
 		b := bytes.NewBuffer(v)
-		for bytesRead < len(v) {
+		if err := binary.Read(b, binary.BigEndian, &n); err != nil {
+			return nil, err
+		}
+		for i := uint32(0); i < n; i++ {
 			var peer Peer
 			va, err := readLV(b)
 			if err != nil {
 				return nil, err
 			}
-			bytesRead += len(va) + 2
 			peer.Name = string(va)
 			va, err = readLV(b)
 			if err != nil {
 				return nil, err
 			}
-			bytesRead += len(va) + 2
 			peer.Group = string(va)
 			va, err = readLV(b)
 			if err != nil {
 				return nil, err
 			}
-			bytesRead += len(va) + 2
 			peer.URI = string(va)
 			bt, err := b.ReadByte()
 			if err != nil {
 				return nil, err
 			}
-			bytesRead++
 			if bt == 1 {
 				peer.Enabled = true
 			} else {
@@ -647,28 +736,35 @@ func deserialize(r io.Reader, t byte, v []byte) (interface{}, error) {
 
 func writeTLV(w io.Writer, typ byte, value []byte) {
 	binary.Write(w, binary.BigEndian, typ) //type
-	writeLV(w, value)
+	if typ != APITypeNil {
+		writeLV(w, value)
+	}
 }
 
 func writeLV(w io.Writer, value []byte) {
-	length := uint16(len(value))
+	length := uint32(len(value))
 	binary.Write(w, binary.BigEndian, length) //length
 	w.Write(value)                            //value
 }
 
+/*
+// readTLV - returns type as byte, value as []byte
 func readTLV(r io.Reader) (byte, []byte, error) {
 	var t byte
-	if err := binary.Read(r, binary.BigEndian, &t); err == io.EOF {
+	if err := binary.Read(r, binary.BigEndian, &t); err != io.EOF {
 		return 0, nil, nil //EOF
 	} else if err != nil {
 		return t, nil, err
+	} else if t == APITypeNil {
+		return t, nil, nil
 	}
 	v, err := readLV(r)
 	return t, v, err
 }
+*/
 
 func readLV(r io.Reader) ([]byte, error) {
-	var l uint16
+	var l uint32
 	if err := binary.Read(r, binary.BigEndian, &l); err != nil {
 		return nil, err
 	}
@@ -681,3 +777,63 @@ func readLV(r io.Reader) ([]byte, error) {
 	}
 	return v, nil
 }
+
+// ReadBuffer - reads a serialized buffer from the wire, returns buffer
+func ReadBuffer(reader io.Reader) (*[]byte, error) {
+	blen := make([]byte, 4)
+	n, err := io.ReadFull(reader, blen)
+	if n != 4 {
+		return nil, errors.New("ReadBuffer len underflow")
+	}
+	if err != nil {
+		return nil, err
+	}
+	rlen := binary.LittleEndian.Uint32(blen)
+	buf := make([]byte, rlen)
+	n, err = io.ReadFull(reader, buf)
+	if uint32(n) != rlen {
+		return nil, errors.New("ReadBuffer read underflow")
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &buf, nil
+}
+
+// WriteBuffer - writes a serialized buffer to the wire
+func WriteBuffer(writer io.Writer, b *[]byte) error {
+	wlen := make([]byte, 4)
+	binary.LittleEndian.PutUint32(wlen, uint32(len(*b)))
+	rb := append(wlen, *b...)
+	if _, err := writer.Write(rb); err != nil {
+		return err
+	}
+	return nil
+}
+
+/*
+// BundleToBytes - converts a Bundle to a byte array
+func BundleToBytes(bundle *Bundle) *[]byte {
+	b := bytes.NewBuffer([]byte{})
+	w := bufio.NewWriter(b)
+	serialize(w, bundle)
+	w.Flush()
+	retval := b.Bytes()
+	return &retval
+}
+
+// BundleFromBytes - converts a Bundle from a byte array
+func BundleFromBytes(input *[]byte) (*Bundle, error) {
+	r := bufio.NewReader(bytes.NewBuffer(*input))
+	t, v, err := readTLV(r)
+	if err != nil {
+		return nil, err
+	}
+	rv, err := deserialize(r, t, v)
+	if err != nil {
+		return nil, err
+	}
+	bundle := rv.(Bundle)
+	return &bundle, nil
+}
+*/

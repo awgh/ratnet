@@ -1,13 +1,14 @@
 package https
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/tls"
-	"encoding/gob"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/awgh/ratnet"
@@ -64,7 +65,7 @@ type Module struct {
 	client    *http.Client
 	server    *http.Server
 	node      api.Node
-	isRunning bool
+	isRunning uint32
 
 	Cert, Key []byte
 	EccMode   bool
@@ -95,7 +96,7 @@ func (h *Module) SetByteLimit(limit int64) { h.byteLimit = limit }
 // Listen : Server interface
 func (h *Module) Listen(listen string, adminMode bool) {
 	// make sure we are not already running
-	if h.isRunning {
+	if h.IsRunning() {
 		events.Warning(h.node, "This listener is already running.")
 		return
 	}
@@ -125,38 +126,42 @@ func (h *Module) Listen(listen string, adminMode bool) {
 			events.Error(h.node, err.Error())
 		}
 	}()
-	h.isRunning = true
+	h.setIsRunning(true)
 }
 
 func (h *Module) handleResponse(w http.ResponseWriter, r *http.Request, node api.Node, adminMode bool) {
 
-	var a api.RemoteCall
-
-	dec := gob.NewDecoder(r.Body)
-	if err := dec.Decode(&a); err != nil {
-		events.Warning(h.node, "https handleResponse gob decode failed: "+err.Error())
+	buf, err := api.ReadBuffer(r.Body)
+	if err != nil {
+		events.Warning(h.node, err.Error())
+		return
+	}
+	a, err := api.RemoteCallFromBytes(buf)
+	if err != nil {
+		events.Warning(h.node, "https listen remote deserialize failed: "+err.Error())
 		return
 	}
 
-	var err error
 	var result interface{}
 	if adminMode {
-		result, err = node.AdminRPC(h, a)
+		result, err = node.AdminRPC(h, *a)
 	} else {
-		result, err = node.PublicRPC(h, a)
+		result, err = node.PublicRPC(h, *a)
 	}
 
 	rr := api.RemoteResponse{}
 	if err != nil {
 		rr.Error = err.Error()
 	}
-	if result != nil { // gob cannot encode typed Nils, only interface{} Nils...wtf?
+	if result != nil {
 		rr.Value = result
 	}
 
-	enc := gob.NewEncoder(w)
-	if err := enc.Encode(rr); err != nil {
-		events.Warning(h.node, "https listen gob encode failed: "+err.Error())
+	rbytes := api.RemoteResponseToBytes(&rr)
+	err = api.WriteBuffer(w, rbytes)
+	if err != nil {
+		events.Warning(h.node, "https listen remote write failed: "+err.Error())
+		return
 	}
 }
 
@@ -168,26 +173,32 @@ func (h *Module) RPC(host string, method string, args ...interface{}) (interface
 	a.Action = method
 	a.Args = args
 
-	var buf bytes.Buffer
-	//use default gob encoder
-	enc := gob.NewEncoder(&buf)
-	if err := enc.Encode(a); err != nil {
-		events.Error(h.node, "https rpc gob encode failed: "+err.Error())
+	rbytes := api.RemoteCallToBytes(&a)
+	var bbuf bytes.Buffer
+	writer := bufio.NewWriter(&bbuf)
+	err := api.WriteBuffer(writer, rbytes)
+	if err != nil {
+		events.Warning(h.node, "https RPC buffer write failed: "+err.Error())
 		return nil, err
 	}
+	writer.Flush()
 
-	req, _ := http.NewRequest("POST", "https://"+host, &buf)
-
+	req, _ := http.NewRequest("POST", "https://"+host, &bbuf)
 	resp, err := h.client.Do(req)
 	if err != nil {
+		events.Warning(h.node, "https RPC remote write failed: "+err.Error())
 		return nil, err
 	}
 	defer resp.Body.Close()
 
-	var rr api.RemoteResponse
-	dec := gob.NewDecoder(resp.Body)
-	if err := dec.Decode(&rr); err != nil {
-		events.Warning(h.node, "https rpc gob decode failed: "+err.Error())
+	buf, err := api.ReadBuffer(resp.Body)
+	if err != nil {
+		events.Warning(h.node, "https RPC remote read failed: "+err.Error())
+		return nil, err
+	}
+	rr, err := api.RemoteResponseFromBytes(buf)
+	if err != nil {
+		events.Warning(h.node, "https RPC decode failed: "+err.Error())
 		return nil, err
 	}
 
@@ -203,5 +214,18 @@ func (h *Module) RPC(host string, method string, args ...interface{}) (interface
 // Stop : stops the HTTPS transport from running
 func (h *Module) Stop() {
 	h.server.Close()
-	h.isRunning = false
+	h.setIsRunning(false)
+}
+
+// IsRunning - returns true if this node is running
+func (h *Module) IsRunning() bool {
+	return atomic.LoadUint32(&h.isRunning) == 1
+}
+
+func (h *Module) setIsRunning(b bool) {
+	var running uint32 = 0
+	if b {
+		running = 1
+	}
+	atomic.StoreUint32(&h.isRunning, running)
 }

@@ -56,8 +56,8 @@ var (
 )
 
 func init() {
-	TransportTypes = []TransportType{HTTPS, TLS, UDP}
-	NodeTypes = []NodeType{RAM, DB, FS, QL}
+	TransportTypes = []TransportType{UDP, TLS, HTTPS}
+	NodeTypes = []NodeType{RAM, FS, QL} //, DB}
 }
 
 // Get preferred outbound ip of this machine

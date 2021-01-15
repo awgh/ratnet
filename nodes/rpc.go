@@ -284,7 +284,7 @@ func AdminRPC(transport api.Transport, node api.Node, call api.RemoteCall) (inte
 		if err != nil {
 			return nil, errors.New("Invalid bool format")
 		}
-		if len(call.Args) > 3 {
+		if len(call.Args) > 3 && call.Args[3] != nil {
 			group, ok := call.Args[3].(string)
 			if !ok {
 				return nil, errors.New("Invalid argument")

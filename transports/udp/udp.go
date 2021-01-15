@@ -2,13 +2,13 @@ package udp
 
 import (
 	"bufio"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	kcp "github.com/xtaci/kcp-go/v5"
@@ -45,7 +45,7 @@ func New(node api.Node) *Module {
 // Module : UDP Implementation of a Transport module
 type Module struct {
 	node      api.Node
-	isRunning bool
+	isRunning uint32
 	wg        sync.WaitGroup
 	byteLimit int64
 }
@@ -70,7 +70,7 @@ func (m *Module) SetByteLimit(limit int64) { m.byteLimit = limit }
 // Listen : opens a UDP socket and listens
 func (m *Module) Listen(listen string, adminMode bool) {
 	// make sure we dont run twice
-	if m.isRunning {
+	if m.IsRunning() {
 		return
 	}
 	lis, err := kcp.ListenWithOptions(listen, nil, 10, 0) //disabled FEC
@@ -78,7 +78,7 @@ func (m *Module) Listen(listen string, adminMode bool) {
 		events.Error(m.node, err.Error())
 		return
 	}
-	m.isRunning = true
+	m.setIsRunning(true)
 	m.wg.Add(1)
 
 	// read loop
@@ -87,7 +87,7 @@ func (m *Module) Listen(listen string, adminMode bool) {
 		defer m.wg.Done()
 
 		// read from socket
-		for m.isRunning {
+		for m.IsRunning() {
 			lis.SetReadDeadline(time.Now().Add(1 * time.Second))
 			lis.SetWriteDeadline(time.Now().Add(1 * time.Second))
 			c, err := lis.Accept()
@@ -105,35 +105,16 @@ func (m *Module) Listen(listen string, adminMode bool) {
 				reader := bufio.NewReader(conn)
 				writer := bufio.NewWriter(conn)
 
-				for m.isRunning { // read multiple messages on the same connection
+				for m.IsRunning() { // read multiple messages on the same connection
 
-					// read
-					blen := make([]byte, 4)
-					n, err := io.ReadFull(reader, blen)
-					if n != 4 {
-						events.Warning(m.node, "Listen remote read len underflow: n =", n)
-						break
-					}
+					buf, err := api.ReadBuffer(reader)
 					if err != nil {
-						events.Warning(m.node, "Listen remote read len failed: "+err.Error())
+						events.Warning(m.node, err.Error())
 						break
 					}
-					rlen := binary.LittleEndian.Uint32(blen)
-					buf := make([]byte, rlen)
-					n, err = io.ReadFull(reader, buf)
-					if uint32(n) != rlen {
-						events.Warning(m.node, "Listen remote read underflow: n =", n)
-						break
-					}
-					if err != nil {
-						events.Warning(m.node, "Listen remote read failed: "+err.Error())
-						break
-					}
-					//
-
 					a, err := api.RemoteCallFromBytes(buf)
 					if err != nil {
-						events.Warning(m.node, "Listen remote deserialize failed: "+err.Error())
+						events.Warning(m.node, "udp listen remote deserialize failed: "+err.Error())
 						break
 					}
 
@@ -148,21 +129,17 @@ func (m *Module) Listen(listen string, adminMode bool) {
 					if err != nil {
 						rr.Error = err.Error()
 					}
-					if result != nil { //
+					if result != nil {
 						rr.Value = result
 					}
 
 					rbytes := api.RemoteResponseToBytes(&rr)
-					// write
-					wlen := make([]byte, 4)
-					binary.LittleEndian.PutUint32(wlen, uint32(len(rbytes)))
-					rbytes = append(wlen, rbytes...)
-					if _, err := writer.Write(rbytes); err != nil {
-						events.Warning(m.node, "Listen remote write failed: "+err.Error())
+					err = api.WriteBuffer(writer, rbytes)
+					if err != nil {
+						events.Warning(m.node, "udp listen remote write failed: "+err.Error())
 						break
 					}
 					writer.Flush()
-					//
 				}
 			}(c)
 		}
@@ -201,59 +178,30 @@ func (m *Module) RPC(host string, method string, args ...interface{}) (interface
 	a.Args = args
 
 	rbytes := api.RemoteCallToBytes(&a)
-
-	// write
-	rlen := make([]byte, 4)
-	binary.LittleEndian.PutUint32(rlen, uint32(len(rbytes)))
-	rbytes = append(rlen, rbytes...)
-	if _, err := writer.Write(rbytes); err != nil {
-		events.Warning(m.node, "RPC remote write failed: "+err.Error())
+	err := api.WriteBuffer(writer, rbytes)
+	if err != nil {
+		events.Warning(m.node, "udp RPC remote write failed: "+err.Error())
 		delete(cachedSessions, host) // something's wrong, make a new session next attempt
 		_ = conn.Close()
 		return nil, err
 	}
 	writer.Flush()
-	//
 
-	// read
-	blen := make([]byte, 4)
-	n, err := io.ReadFull(reader, blen)
-	if n != 4 {
-		events.Warning(m.node, "RPC remote read len underflow: n =", n)
-		delete(cachedSessions, host) // something's wrong, make a new session next attempt
-		_ = conn.Close()
-		return nil, err
-	}
+	buf, err := api.ReadBuffer(reader)
 	if err != nil {
-		events.Warning(m.node, "RPC remote read len failed: "+err.Error())
+		events.Warning(m.node, "udp RPC remote read failed: "+err.Error())
 		delete(cachedSessions, host) // something's wrong, make a new session next attempt
 		_ = conn.Close()
 		return nil, err
 	}
-	wlen := binary.LittleEndian.Uint32(blen)
-	buf := make([]byte, wlen)
-	n, err = io.ReadFull(reader, buf)
-	if uint32(n) != wlen {
-		events.Warning(m.node, "RPC remote read underflow: n =", n)
-		delete(cachedSessions, host) // something's wrong, make a new session next attempt
-		_ = conn.Close()
-		return nil, err
-	}
-	if err != nil {
-		events.Warning(m.node, "RPC remote read failed: "+err.Error())
-		delete(cachedSessions, host) // something's wrong, make a new session next attempt
-		_ = conn.Close()
-		return nil, err
-	}
-	//
 	rr, err := api.RemoteResponseFromBytes(buf)
-	if err == io.EOF {
-		rr = nil
-	}
 	if err != nil {
-		events.Warning(m.node, "RPC decode failed: "+err.Error())
 		delete(cachedSessions, host) // something's wrong, make a new session next attempt
 		_ = conn.Close()
+		if err == io.EOF {
+			return nil, nil
+		}
+		events.Warning(m.node, "udp RPC decode failed: "+err.Error())
 		return nil, err
 	}
 
@@ -268,11 +216,24 @@ func (m *Module) RPC(host string, method string, args ...interface{}) (interface
 
 // Stop : Stops module
 func (m *Module) Stop() {
-	m.isRunning = false
+	m.setIsRunning(false)
 
 	for k, v := range cachedSessions {
 		delete(cachedSessions, k)
 		_ = v.Close()
 	}
 	m.wg.Wait()
+}
+
+// IsRunning - returns true if this node is running
+func (m *Module) IsRunning() bool {
+	return atomic.LoadUint32(&m.isRunning) == 1
+}
+
+func (m *Module) setIsRunning(b bool) {
+	var running uint32 = 0
+	if b {
+		running = 1
+	}
+	atomic.StoreUint32(&m.isRunning, running)
 }

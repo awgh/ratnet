@@ -5,6 +5,25 @@ import (
 	"testing"
 )
 
+func Test_ArgsRoundTrip_1(t *testing.T) {
+
+	// Nil
+	argsBytes := ArgsToBytes(nil)
+	args, err := ArgsFromBytes(argsBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// int64
+	argsBytes = ArgsToBytes([]interface{}{int64(4096)})
+	args, err = ArgsFromBytes(argsBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Logf("%+v\n", args)
+
+}
+
 func Test_RoundTrip_1(t *testing.T) {
 	var call RemoteCall
 	call.Action = ActionFromUint16(APIID)

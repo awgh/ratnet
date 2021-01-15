@@ -3,12 +3,12 @@ package tls
 import (
 	"bufio"
 	"crypto/tls"
-	"encoding/gob"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"sync"
+	"sync/atomic"
 
 	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
@@ -58,7 +58,7 @@ func New(certPem, keyPem []byte, node api.Node, eccMode bool) *Module {
 // Module : TLS Implementation of a Transport module
 type Module struct {
 	node      api.Node
-	isRunning bool
+	isRunning uint32
 	wg        sync.WaitGroup
 	listeners []net.Listener
 
@@ -93,7 +93,7 @@ func (h *Module) SetByteLimit(limit int64) {
 // Listen : Server interface
 func (h *Module) Listen(listen string, adminMode bool) {
 	// make sure we are not already running
-	if h.isRunning {
+	if h.IsRunning() {
 		events.Warning(h.node, "This listener is already running.")
 		return
 	}
@@ -120,13 +120,13 @@ func (h *Module) Listen(listen string, adminMode bool) {
 
 	// add Listener to the Listener pool
 	h.listeners = append(h.listeners, listener)
-	h.isRunning = true
+	h.setIsRunning(true)
 
 	h.wg.Add(1)
 	go func() {
 		defer tlsListener.Close()
 		defer h.wg.Done()
-		for h.isRunning {
+		for h.IsRunning() {
 			conn, err := tlsListener.Accept()
 			if err != nil {
 				events.Error(h.node, err.Error())
@@ -144,34 +144,37 @@ func (h *Module) handleConnection(conn net.Conn, node api.Node, adminMode bool) 
 	reader := bufio.NewReader(conn)
 	writer := bufio.NewWriter(conn)
 
-	for h.isRunning { // read multiple messages on the same connection
-		var a api.RemoteCall
-
-		//use default gob encoder
-		dec := gob.NewDecoder(reader)
-		if err := dec.Decode(&a); err != nil {
-			events.Warning(h.node, "tls handleConnection gob decode failed: "+err.Error())
+	for h.IsRunning() { // read multiple messages on the same connection
+		buf, err := api.ReadBuffer(reader)
+		if err != nil {
+			events.Warning(h.node, err.Error())
+			break
+		}
+		a, err := api.RemoteCallFromBytes(buf)
+		if err != nil {
+			events.Warning(h.node, "tls listen remote deserialize failed: "+err.Error())
 			break
 		}
 
-		var err error
 		var result interface{}
 		if adminMode {
-			result, err = node.AdminRPC(h, a)
+			result, err = node.AdminRPC(h, *a)
 		} else {
-			result, err = node.PublicRPC(h, a)
+			result, err = node.PublicRPC(h, *a)
 		}
 
 		rr := api.RemoteResponse{}
 		if err != nil {
 			rr.Error = err.Error()
 		}
-		if result != nil { // gob cannot encode typed Nils, only interface{} Nils...wtf?
+		if result != nil {
 			rr.Value = result
 		}
-		enc := gob.NewEncoder(writer)
-		if err := enc.Encode(rr); err != nil {
-			events.Warning(h.node, "tls handleConnection gob encode failed: "+err.Error())
+
+		rbytes := api.RemoteResponseToBytes(&rr)
+		err = api.WriteBuffer(writer, rbytes)
+		if err != nil {
+			events.Warning(h.node, "tls listen remote write failed: "+err.Error())
 			break
 		}
 		writer.Flush()
@@ -201,21 +204,28 @@ func (h *Module) RPC(host string, method string, args ...interface{}) (interface
 	a.Action = method
 	a.Args = args
 
-	//use default gob encoder
-	enc := gob.NewEncoder(writer)
-	if err := enc.Encode(a); err != nil {
-		events.Warning(h.node, "tls rpc gob encode failed: "+err.Error())
+	rbytes := api.RemoteCallToBytes(&a)
+	err := api.WriteBuffer(writer, rbytes)
+	if err != nil {
+		events.Warning(h.node, "tls RPC remote write failed: "+err.Error())
 		delete(cachedSessions, host) // something's wrong, make a new session next attempt
 		_ = conn.Close()
 		return nil, err
 	}
 	writer.Flush()
-	var rr api.RemoteResponse
-	dec := gob.NewDecoder(reader)
-	if err := dec.Decode(&rr); err != nil {
-		events.Warning(h.node, "tls rpc gob decode failed: "+err.Error())
+
+	buf, err := api.ReadBuffer(reader)
+	if err != nil {
+		events.Warning(h.node, "tls RPC remote read failed: "+err.Error())
 		delete(cachedSessions, host) // something's wrong, make a new session next attempt
 		_ = conn.Close()
+		return nil, err
+	}
+	rr, err := api.RemoteResponseFromBytes(buf)
+	if err != nil {
+		delete(cachedSessions, host) // something's wrong, make a new session next attempt
+		_ = conn.Close()
+		events.Warning(h.node, "tls RPC decode failed: "+err.Error())
 		return nil, err
 	}
 
@@ -230,7 +240,7 @@ func (h *Module) RPC(host string, method string, args ...interface{}) (interface
 
 // Stop : stops the TLS transport from running
 func (h *Module) Stop() {
-	h.isRunning = false
+	h.setIsRunning(false)
 	for k, v := range cachedSessions {
 		delete(cachedSessions, k)
 		_ = v.Close()
@@ -239,4 +249,17 @@ func (h *Module) Stop() {
 		listener.Close()
 	}
 	h.wg.Wait()
+}
+
+// IsRunning - returns true if this node is running
+func (h *Module) IsRunning() bool {
+	return atomic.LoadUint32(&h.isRunning) == 1
+}
+
+func (h *Module) setIsRunning(b bool) {
+	var running uint32 = 0
+	if b {
+		running = 1
+	}
+	atomic.StoreUint32(&h.isRunning, running)
 }
