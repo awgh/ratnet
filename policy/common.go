@@ -36,7 +36,7 @@ func PollServer(transport api.Transport, node api.Node, host string, pubsrv bc.P
 	peer, _ := readPeerTable(host)
 
 	if peer.RoutingPub == nil {
-		rpubkey, err := transport.RPC(host, "ID")
+		rpubkey, err := transport.RPC(host, api.ID)
 		if err != nil {
 			events.Error(node, err.Error())
 			return false, err
@@ -58,7 +58,7 @@ func PollServer(transport api.Transport, node api.Node, host string, pubsrv bc.P
 	events.Debug(node, "pollServer Pickup Local result len: ", len(toRemote.Data))
 
 	// Pickup Remote
-	toLocalRaw, err := transport.RPC(host, "Pickup", pubsrv, peer.LastPollRemote)
+	toLocalRaw, err := transport.RPC(host, api.Pickup, pubsrv, peer.LastPollRemote)
 	if err != nil {
 		events.Error(node, "remote pickup error: "+err.Error())
 		return false, err
@@ -76,7 +76,7 @@ func PollServer(transport api.Transport, node api.Node, host string, pubsrv bc.P
 	}
 	// Dropoff Remote
 	if len(toRemote.Data) > 0 {
-		if _, err := transport.RPC(host, "Dropoff", toRemote); err != nil {
+		if _, err := transport.RPC(host, api.Dropoff, toRemote); err != nil {
 			events.Error(node, "remote dropoff error: "+err.Error())
 			return false, err
 		}

@@ -182,9 +182,9 @@ func (h *Module) handleConnection(conn net.Conn, node api.Node, adminMode bool) 
 }
 
 // RPC : client interface
-func (h *Module) RPC(host string, method string, args ...interface{}) (interface{}, error) {
+func (h *Module) RPC(host string, method api.Action, args ...interface{}) (interface{}, error) {
 
-	events.Info(h.node, fmt.Sprintf("\n***\n***RPC %s on %s called with: %+v\n***\n", method, host, args))
+	events.Info(h.node, fmt.Sprintf("\n***\n***RPC %d on %s called with: %+v\n***\n", method, host, args))
 
 	conn, ok := cachedSessions[host]
 	if !ok {

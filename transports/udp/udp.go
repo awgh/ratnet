@@ -147,9 +147,9 @@ func (m *Module) Listen(listen string, adminMode bool) {
 }
 
 // RPC : transmit data via UDP
-func (m *Module) RPC(host string, method string, args ...interface{}) (interface{}, error) {
+func (m *Module) RPC(host string, method api.Action, args ...interface{}) (interface{}, error) {
 
-	events.Info(m.node, fmt.Sprintf("\n***\n***RPC %s on %s called with: %+v\n***\n", method, host, args))
+	events.Info(m.node, fmt.Sprintf("\n***\n***RPC %d on %s called with: %+v\n***\n", method, host, args))
 
 	conn, ok := cachedSessions[host]
 	if !ok {

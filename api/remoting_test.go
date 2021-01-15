@@ -26,7 +26,7 @@ func Test_ArgsRoundTrip_1(t *testing.T) {
 
 func Test_RoundTrip_1(t *testing.T) {
 	var call RemoteCall
-	call.Action = ActionFromUint16(APIID)
+	call.Action = ID
 	b := RemoteCallToBytes(&call)
 	recall, err := RemoteCallFromBytes(b)
 	if err != nil {
@@ -39,7 +39,7 @@ func Test_RoundTrip_1(t *testing.T) {
 
 func Test_RoundTrip_2(t *testing.T) {
 	var call RemoteCall
-	call.Action = ActionFromUint16(APIAddProfile)
+	call.Action = AddProfile
 	var x uint64
 	x = 1234
 	y := "abcd1234"

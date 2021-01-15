@@ -4,7 +4,7 @@ package api
 type Transport interface {
 	Listen(listen string, adminMode bool)
 	Name() string
-	RPC(host string, method string, args ...interface{}) (interface{}, error)
+	RPC(host string, method Action, args ...interface{}) (interface{}, error)
 	Stop()
 	MarshalJSON() (b []byte, e error)
 

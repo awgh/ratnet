@@ -175,13 +175,13 @@ func Test_server_ID_1(ot *testing.T) {
 		defer server1.Destroy(t)
 		var err error
 		var r1, r2 interface{}
-		if r1, err = server1.Public.RPC("localhost:30001", "ID"); err != nil {
+		if r1, err = server1.Public.RPC("localhost:30001", api.ID); err != nil {
 			t.Fatal(err.Error())
 		} else {
 			t.Logf("%+v\n", r1)
 		}
 		// should work on both interfaces
-		if r2, err = server1.Admin.RPC("localhost:30101", "ID"); err != nil {
+		if r2, err = server1.Admin.RPC("localhost:30101", api.ID); err != nil {
 			t.Error(err.Error())
 		} else {
 			t.Logf("%+v\n", r2)
@@ -206,12 +206,12 @@ func Test_server_CID_1(ot *testing.T) {
 		server1 := initNode(1, nodeType, transportType, false)
 		defer server1.Destroy(t)
 		// should not work on public interface
-		_, err := server1.Public.RPC("localhost:30001", "CID")
+		_, err := server1.Public.RPC("localhost:30001", api.CID)
 		if err == nil {
 			t.Fatal(errors.New("CID was accessible on Public network interface"))
 		}
 
-		_, err = server1.Admin.RPC("localhost:30101", "CID")
+		_, err = server1.Admin.RPC("localhost:30101", api.CID)
 		if err != nil {
 			t.Fatal(err.Error())
 		}
@@ -226,7 +226,7 @@ func Test_server_AddContact_1(ot *testing.T) {
 		server2 := initNode(2, nodeType, transportType, false)
 		defer server2.Destroy(t)
 
-		p1, err := server2.Admin.RPC("localhost:30202", "CID")
+		p1, err := server2.Admin.RPC("localhost:30202", api.CID)
 		if err != nil {
 			t.Fatal(err.Error())
 		}
@@ -236,12 +236,12 @@ func Test_server_AddContact_1(ot *testing.T) {
 
 		t.Log("Trying AddContact on Public interface")
 		// should not work on public interface
-		if _, erra := server1.Public.RPC("localhost:30001", "AddContact", "destname1", r1.ToB64()); erra == nil {
+		if _, erra := server1.Public.RPC("localhost:30001", api.AddContact, "destname1", r1.ToB64()); erra == nil {
 			t.Fatal(errors.New("AddContact was accessible on Public network interface"))
 		}
 
 		t.Log("Trying AddContact on Admin interface")
-		_, errb := server1.Admin.RPC("localhost:30101", "AddContact", "destname1", r1.ToB64())
+		_, errb := server1.Admin.RPC("localhost:30101", api.AddContact, "destname1", r1.ToB64())
 		if errb != nil {
 			t.Fatal(errb.Error())
 		}
@@ -263,25 +263,25 @@ func Test_server_GetContact_1(ot *testing.T) {
 
 		t.Log("Trying GetContact on Public interface")
 		// should not work on public interface
-		if _, erra := server1.Public.RPC("localhost:30001", "GetContact", "destname1"); erra == nil {
+		if _, erra := server1.Public.RPC("localhost:30001", api.GetContact, "destname1"); erra == nil {
 			t.Fatal(errors.New("GetContact was accessible on Public network interface"))
 		}
 
 		t.Log("Trying GetContacts on Public interface")
 		// should not work on public interface
-		if _, erra := server1.Public.RPC("localhost:30001", "GetContacts"); erra == nil {
+		if _, erra := server1.Public.RPC("localhost:30001", api.GetContacts); erra == nil {
 			t.Fatal(errors.New("GetContacts was accessible on Public network interface"))
 		}
 
 		t.Log("Trying GetContact on Admin interface")
-		contact, err := server1.Admin.RPC("localhost:30101", "GetContact", "destname1")
+		contact, err := server1.Admin.RPC("localhost:30101", api.GetContact, "destname1")
 		if err != nil {
 			t.Fatal(err.Error())
 		}
 		t.Logf("Got Contact: %+v\n", contact)
 
 		t.Log("Trying GetContacts on Admin interface")
-		contactsRaw, err := server1.Admin.RPC("localhost:30101", "GetContacts")
+		contactsRaw, err := server1.Admin.RPC("localhost:30101", api.GetContacts)
 		if err != nil {
 			t.Fatal(err.Error())
 		}
@@ -303,13 +303,13 @@ func Test_server_AddChannel_1(ot *testing.T) {
 
 		t.Log("Trying AddChannel on Public interface")
 		// should not work on public interface
-		_, err := server1.Public.RPC("localhost:30001", "AddChannel", "channel1", chankey)
+		_, err := server1.Public.RPC("localhost:30001", api.AddChannel, "channel1", chankey)
 		if err == nil {
 			t.Fatal(errors.New("AddChannel was accessible on Public network interface"))
 		}
 
 		t.Log("Trying AddChannel on Admin interface")
-		_, err = server1.Admin.RPC("localhost:30101", "AddChannel", "channel1", chankey)
+		_, err = server1.Admin.RPC("localhost:30101", api.AddChannel, "channel1", chankey)
 		if err != nil {
 			t.Fatal(err.Error())
 		}
@@ -324,18 +324,18 @@ func Test_server_GetChannel_1(ot *testing.T) {
 		server1.Node.AddChannel("channel1", pubprivkeyb64Ecc)
 		t.Log("Trying GetChannel on Public interface")
 		// should not work on public interface
-		if _, erra := server1.Public.RPC("localhost:30001", "GetChannel", "channel1"); erra == nil {
+		if _, erra := server1.Public.RPC("localhost:30001", api.GetChannel, "channel1"); erra == nil {
 			t.Fatal(errors.New("GetChannel was accessible on Public network interface"))
 		}
 
 		t.Log("Trying GetChannels on Public interface")
 		// should not work on public interface
-		if _, erra := server1.Public.RPC("localhost:30001", "GetChannels"); erra == nil {
+		if _, erra := server1.Public.RPC("localhost:30001", api.GetChannels); erra == nil {
 			t.Fatal(errors.New("GetChannels was accessible on Public network interface"))
 		}
 
 		t.Log("Trying GetChannel on Admin interface")
-		channel, err := server1.Admin.RPC("localhost:30101", "GetChannel", "channel1")
+		channel, err := server1.Admin.RPC("localhost:30101", api.GetChannel, "channel1")
 		if err != nil {
 			t.Fatal(err.Error())
 		}
@@ -345,7 +345,7 @@ func Test_server_GetChannel_1(ot *testing.T) {
 		}
 
 		t.Log("Trying GetChannels on Admin interface")
-		channelsRaw, err := server1.Admin.RPC("localhost:30101", "GetChannels")
+		channelsRaw, err := server1.Admin.RPC("localhost:30101", api.GetChannels)
 		if err != nil {
 			t.Fatal(err.Error())
 		}
@@ -364,12 +364,12 @@ func Test_server_AddProfile_1(ot *testing.T) {
 		defer server1.Destroy(t)
 		t.Log("Trying AddProfile on Public interface")
 		// should not work on public interface
-		if _, erra := server1.Public.RPC("localhost:30001", "AddProfile", "profile1", "false"); erra == nil {
+		if _, erra := server1.Public.RPC("localhost:30001", api.AddProfile, "profile1", "false"); erra == nil {
 			t.Fatal(errors.New("AddProfile was accessible on Public network interface"))
 		}
 
 		t.Log("Trying AddProfile on Admin interface")
-		_, errb := server1.Admin.RPC("localhost:30101", "AddProfile", "profile1", "false")
+		_, errb := server1.Admin.RPC("localhost:30101", api.AddProfile, "profile1", "false")
 		if errb != nil {
 			t.Fatal(errb.Error())
 		}
@@ -391,18 +391,18 @@ func Test_server_GetProfile_1(ot *testing.T) {
 
 		t.Log("Trying GetProfile on Public interface")
 		// should not work on public interface
-		if _, erra := server1.Public.RPC("localhost:30001", "GetProfile", "profile1"); erra == nil {
+		if _, erra := server1.Public.RPC("localhost:30001", api.GetProfile, "profile1"); erra == nil {
 			t.Fatal(errors.New("GetProfile was accessible on Public network interface"))
 		}
 
 		t.Log("Trying GetProfiles on Public interface")
 		// should not work on public interface
-		if _, erra := server1.Public.RPC("localhost:30001", "GetProfiles"); erra == nil {
+		if _, erra := server1.Public.RPC("localhost:30001", api.GetProfiles); erra == nil {
 			t.Fatal(errors.New("GetProfiles was accessible on Public network interface"))
 		}
 
 		t.Log("Trying GetProfile on Admin interface")
-		profile, err := server1.Admin.RPC("localhost:30101", "GetProfile", "profile1")
+		profile, err := server1.Admin.RPC("localhost:30101", api.GetProfile, "profile1")
 		if err != nil {
 			t.Fatal(err.Error())
 		}
@@ -412,7 +412,7 @@ func Test_server_GetProfile_1(ot *testing.T) {
 		}
 
 		t.Log("Trying GetProfiles on Admin interface")
-		profilesRaw, err := server1.Admin.RPC("localhost:30101", "GetProfiles")
+		profilesRaw, err := server1.Admin.RPC("localhost:30101", api.GetProfiles)
 		if err != nil {
 			t.Fatal(err.Error())
 		}
@@ -431,24 +431,24 @@ func Test_server_AddPeer_1(ot *testing.T) {
 		defer server1.Destroy(t)
 		t.Log("Trying AddPeer on Public interface")
 		// should not work on public interface
-		if _, erra := server1.Public.RPC("localhost:30001", "AddPeer", "peer1", "false", "https://1.2.3.4:443"); erra == nil {
+		if _, erra := server1.Public.RPC("localhost:30001", api.AddPeer, "peer1", "false", "https://1.2.3.4:443"); erra == nil {
 			t.Fatal(errors.New("AddPeer was accessible on Public network interface"))
 		}
 
 		t.Log("Trying AddPeer on Admin interface")
-		_, errb := server1.Admin.RPC("localhost:30101", "AddPeer", "peer1", "false", "https://1.2.3.4:443")
+		_, errb := server1.Admin.RPC("localhost:30101", api.AddPeer, "peer1", "false", "https://1.2.3.4:443")
 		if errb != nil {
 			t.Fatal(errb.Error())
 		}
 
 		t.Log("Trying AddPeer on Admin interface with a group name")
-		_, errc := server1.Admin.RPC("localhost:30101", "AddPeer", "peer2", "false", "https://2.3.4.5:123", "groupnametest")
+		_, errc := server1.Admin.RPC("localhost:30101", api.AddPeer, "peer2", "false", "https://2.3.4.5:123", "groupnametest")
 		if errc != nil {
 			t.Fatal(errc.Error())
 		}
 
 		t.Log("Trying AddPeer on Admin interface with a group name that already exists")
-		_, errd := server1.Admin.RPC("localhost:30101", "AddPeer", "peer3", "false", "https://3.4.5.6:234", "groupnametest")
+		_, errd := server1.Admin.RPC("localhost:30101", api.AddPeer, "peer3", "false", "https://3.4.5.6:234", "groupnametest")
 		if errd != nil {
 			t.Fatal(errd.Error())
 		}
@@ -466,18 +466,18 @@ func Test_server_GetPeer_1(ot *testing.T) {
 
 		t.Log("Trying GetPeer on Public interface")
 		// should not work on public interface
-		if _, erra := server1.Public.RPC("localhost:30001", "GetPeer", "peer1"); erra == nil {
+		if _, erra := server1.Public.RPC("localhost:30001", api.GetPeer, "peer1"); erra == nil {
 			t.Fatal(errors.New("GetPeer was accessible on Public network interface"))
 		}
 
 		t.Log("Trying GetPeers on Public interface")
 		// should not work on public interface
-		if _, erra := server1.Public.RPC("localhost:30001", "GetPeers"); erra == nil {
+		if _, erra := server1.Public.RPC("localhost:30001", api.GetPeers); erra == nil {
 			t.Fatal(errors.New("GetPeers was accessible on Public network interface"))
 		}
 
 		t.Log("Trying GetPeer on Admin interface")
-		peer, err := server1.Admin.RPC("localhost:30101", "GetPeer", "peer1")
+		peer, err := server1.Admin.RPC("localhost:30101", api.GetPeer, "peer1")
 		if err != nil {
 			t.Fatal(err.Error())
 		}
@@ -487,7 +487,7 @@ func Test_server_GetPeer_1(ot *testing.T) {
 		}
 
 		t.Log("Trying GetPeers on Admin interface")
-		peersRaw, err := server1.Admin.RPC("localhost:30101", "GetPeers")
+		peersRaw, err := server1.Admin.RPC("localhost:30101", api.GetPeers)
 		if err != nil {
 			t.Fatal(err.Error())
 		}
@@ -498,7 +498,7 @@ func Test_server_GetPeer_1(ot *testing.T) {
 		}
 
 		t.Log("Trying GetPeers on Admin interface with a group that has no peers")
-		groupedPeers, err := server1.Admin.RPC("localhost:30101", "GetPeers", "not-a-group")
+		groupedPeers, err := server1.Admin.RPC("localhost:30101", api.GetPeers, "not-a-group")
 		if err != nil {
 			t.Fatal(err.Error())
 		}
@@ -510,7 +510,7 @@ func Test_server_GetPeer_1(ot *testing.T) {
 		}
 
 		t.Log("Trying GetPeers on Admin interface with a group that has peers")
-		peers2, err := server1.Admin.RPC("localhost:30101", "GetPeers", "groupnametest")
+		peers2, err := server1.Admin.RPC("localhost:30101", api.GetPeers, "groupnametest")
 		if err != nil {
 			t.Fatal(err.Error())
 		}
@@ -530,12 +530,12 @@ func Test_server_Send_1(ot *testing.T) {
 		defer server1.Destroy(t)
 		server1.Node.AddContact("destname1", pubkeyb64Ecc)
 		// should not work on public interface
-		_, err := server1.Public.RPC("localhost:30001", "Send", "destname1", []byte(testMessage1))
+		_, err := server1.Public.RPC("localhost:30001", api.Send, "destname1", []byte(testMessage1))
 		if err == nil {
 			t.Fatal(errors.New("Send was accessible on Public network interface"))
 		}
 
-		_, err = server1.Admin.RPC("localhost:30101", "Send", "destname1", []byte(testMessage1))
+		_, err = server1.Admin.RPC("localhost:30101", api.Send, "destname1", []byte(testMessage1))
 		if err != nil {
 			t.Fatal(err.Error())
 		}
@@ -549,12 +549,12 @@ func Test_server_SendChannel_1(ot *testing.T) {
 		defer server1.Destroy(t)
 		server1.Node.AddChannel("channel1", pubprivkeyb64Ecc)
 		// should not work on public interface
-		_, err := server1.Public.RPC("localhost:30001", "SendChannel", "channel1", []byte(testMessage2))
+		_, err := server1.Public.RPC("localhost:30001", api.SendChannel, "channel1", []byte(testMessage2))
 		if err == nil {
 			t.Fatal(errors.New("SendChannel was accessible on Public network interface"))
 		}
 
-		_, err = server1.Admin.RPC("localhost:30101", "SendChannel", "channel1", []byte(testMessage2))
+		_, err = server1.Admin.RPC("localhost:30101", api.SendChannel, "channel1", []byte(testMessage2))
 		if err != nil {
 			t.Fatal(err.Error())
 		}
@@ -579,21 +579,21 @@ func Test_server_PickupDropoff_1(ot *testing.T) {
 		server1.Node.SendChannel("channel1", []byte(testMessage2))
 
 		t.Log("Trying AddChannel on server2 Admin interface")
-		_, err := server2.Admin.RPC("localhost:30202", "AddChannel", "channel1", pubprivkeyb64Ecc)
+		_, err := server2.Admin.RPC("localhost:30202", api.AddChannel, "channel1", pubprivkeyb64Ecc)
 		if err != nil {
 			t.Fatal(err.Error())
 		}
 
-		pubsrv, err := server1.Public.RPC("localhost:30002", "ID")
+		pubsrv, err := server1.Public.RPC("localhost:30002", api.ID)
 		if err != nil {
 			t.Fatal("XXX:" + err.Error())
 		}
-		bundle, err := server1.Public.RPC("localhost:30001", "Pickup", pubsrv, int64(31536000)) // 31536000 seconds in a year
+		bundle, err := server1.Public.RPC("localhost:30001", api.Pickup, pubsrv, int64(31536000)) // 31536000 seconds in a year
 		if err != nil {
 			t.Fatal("YYY:" + err.Error())
 		}
 
-		_, err = server1.Public.RPC("localhost:30002", "Dropoff", bundle)
+		_, err = server1.Public.RPC("localhost:30002", api.Dropoff, bundle)
 		if err != nil {
 			t.Fatal("ZZZ:" + err.Error())
 		}
@@ -618,22 +618,22 @@ func Test_server_PickupDropoff_2(ot *testing.T) {
 		server1.Node.SendChannel("channel1", []byte(testMessage2))
 
 		t.Log("Trying AddChannel on server2 Admin interface")
-		_, err := server2.Admin.RPC("localhost:30202", "AddChannel", "channel1", pubprivkeyb64Ecc)
+		_, err := server2.Admin.RPC("localhost:30202", api.AddChannel, "channel1", pubprivkeyb64Ecc)
 		if err != nil {
 			t.Fatal(err.Error())
 		}
 
-		pubsrv, err := server1.Public.RPC("localhost:30002", "ID")
+		pubsrv, err := server1.Public.RPC("localhost:30002", api.ID)
 		if err != nil {
 			t.Fatal("XXX:" + err.Error())
 		}
 		time.Sleep(1 * time.Second)
-		bundle, err := server1.Public.RPC("localhost:30001", "Pickup", pubsrv, int64(31536000), "channel1") // 31536000 seconds in a year
+		bundle, err := server1.Public.RPC("localhost:30001", api.Pickup, pubsrv, int64(31536000), "channel1") // 31536000 seconds in a year
 		if err != nil {
 			t.Fatal("YYY:" + err.Error())
 		}
 
-		_, err = server1.Public.RPC("localhost:30002", "Dropoff", bundle)
+		_, err = server1.Public.RPC("localhost:30002", api.Dropoff, bundle)
 		if err != nil {
 			t.Fatal("ZZZ:" + err.Error())
 		}
