@@ -1,7 +1,7 @@
 package api
 
 // Action - API Call ID numbers
-type Action uint16
+type Action uint8
 
 const (
 	Null          Action = 0

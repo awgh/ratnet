@@ -40,6 +40,11 @@ const (
 	APITypeBundle byte = 0x40
 )
 
+var (
+	ErrInputTooShort = errors.New("input too short")
+	ErrLenOverflow   = errors.New("uvarint overflow")
+)
+
 // RemoteCall : defines a Remote Procedure Call
 type RemoteCall struct {
 	Action Action
@@ -84,7 +89,7 @@ func ArgsFromBytes(args []byte) ([]interface{}, error) {
 func RemoteCallToBytes(call *RemoteCall) *[]byte {
 	b := bytes.NewBuffer([]byte{})
 	w := bufio.NewWriter(b)
-	// Action - bytes [0-1] uint16
+	// Action - first byte
 	binary.Write(w, binary.BigEndian, call.Action)
 	// Args - everything else
 	binary.Write(w, binary.BigEndian, ArgsToBytes(call.Args))
@@ -96,12 +101,12 @@ func RemoteCallToBytes(call *RemoteCall) *[]byte {
 // RemoteCallFromBytes - converts a RemoteCall from a byte array
 func RemoteCallFromBytes(input *[]byte) (*RemoteCall, error) {
 	if len(*input) < 2 {
-		return nil, errors.New("Input array too short")
+		return nil, ErrInputTooShort
 	}
 	call := new(RemoteCall)
-	action := binary.BigEndian.Uint16((*input)[:2])
+	action := (*input)[0]
 	call.Action = Action(action)
-	args, err := ArgsFromBytes((*input)[2:])
+	args, err := ArgsFromBytes((*input)[1:])
 	if err != nil {
 		return nil, err
 	}
@@ -168,11 +173,11 @@ func serialize(w io.Writer, v interface{}) {
 	case nil:
 		writeTLV(w, APITypeNil, nil)
 	case int64:
-		binary.Write(w, binary.BigEndian, APITypeInt64) //type
-		binary.Write(w, binary.BigEndian, v)            //value
+		binary.Write(w, binary.BigEndian, APITypeInt64) // type
+		binary.Write(w, binary.BigEndian, v)            // value
 	case uint64:
-		binary.Write(w, binary.BigEndian, APITypeUint64) //type
-		binary.Write(w, binary.BigEndian, v)             //value
+		binary.Write(w, binary.BigEndian, APITypeUint64) // type
+		binary.Write(w, binary.BigEndian, v)             // value
 	case string:
 		s := v.(string)
 		writeTLV(w, APITypeString, []byte(s))
@@ -181,16 +186,18 @@ func serialize(w io.Writer, v interface{}) {
 		writeTLV(w, APITypeBytes, ba)
 	case [][]byte:
 		bba := v.([][]byte)
-		b := bytes.NewBuffer([]byte{})
-		binary.Write(b, binary.BigEndian, uint32(len(bba))) // number of byte arrays
+		lenBuf := make([]byte, binary.MaxVarintLen64)
+		n := binary.PutUvarint(lenBuf, uint64(len(bba))) // number of byte arrays
+		b := bytes.NewBuffer(lenBuf[:n])
 		for i := range bba {
 			writeLV(b, bba[i])
 		}
 		writeTLV(w, APITypeBytesBytes, b.Bytes())
 	case []interface{}:
 		ia := v.([]interface{})
-		b := bytes.NewBuffer([]byte{})
-		binary.Write(b, binary.BigEndian, uint32(len(ia))) // number of elements in array
+		lenBuf := make([]byte, binary.MaxVarintLen64)
+		n := binary.PutUvarint(lenBuf, uint64(len(ia))) // number of elements in array
+		b := bytes.NewBuffer(lenBuf[:n])
 		for _, i := range ia {
 			serialize(b, i) // recursively serialize
 		}
@@ -216,8 +223,9 @@ func serialize(w io.Writer, v interface{}) {
 		writeTLV(w, APITypeContact, b.Bytes())
 	case []Contact:
 		ac := v.([]Contact)
-		b := bytes.NewBuffer([]byte{})
-		binary.Write(b, binary.BigEndian, uint32(len(ac))) // number of elements in array
+		lenBuf := make([]byte, binary.MaxVarintLen64)
+		n := binary.PutUvarint(lenBuf, uint64(len(ac))) // number of elements in array
+		b := bytes.NewBuffer(lenBuf[:n])
 		for _, c := range ac {
 			writeLV(b, []byte(c.Name))
 			writeLV(b, []byte(c.Pubkey))
@@ -231,8 +239,9 @@ func serialize(w io.Writer, v interface{}) {
 		writeTLV(w, APITypeChannel, b.Bytes())
 	case []Channel:
 		ac := v.([]Channel)
-		b := bytes.NewBuffer([]byte{})
-		binary.Write(b, binary.BigEndian, uint32(len(ac))) // number of elements in array
+		lenBuf := make([]byte, binary.MaxVarintLen64)
+		n := binary.PutUvarint(lenBuf, uint64(len(ac))) // number of elements in array
+		b := bytes.NewBuffer(lenBuf[:n])
 		for _, c := range ac {
 			writeLV(b, []byte(c.Name))
 			writeLV(b, []byte(c.Pubkey))
@@ -251,8 +260,9 @@ func serialize(w io.Writer, v interface{}) {
 		writeTLV(w, APITypeProfile, b.Bytes())
 	case []Profile:
 		ac := v.([]Profile)
-		b := bytes.NewBuffer([]byte{})
-		binary.Write(b, binary.BigEndian, uint32(len(ac))) // number of elements in array
+		lenBuf := make([]byte, binary.MaxVarintLen64)
+		n := binary.PutUvarint(lenBuf, uint64(len(ac))) // number of elements in array
+		b := bytes.NewBuffer(lenBuf[:n])
 		for _, c := range ac {
 			writeLV(b, []byte(c.Name))
 			writeLV(b, []byte(c.Pubkey))
@@ -278,8 +288,9 @@ func serialize(w io.Writer, v interface{}) {
 		writeTLV(w, APITypePeer, b.Bytes())
 	case []Peer:
 		ac := v.([]Peer)
-		b := bytes.NewBuffer([]byte{})
-		binary.Write(b, binary.BigEndian, uint32(len(ac))) // number of elements in array
+		lenBuf := make([]byte, binary.MaxVarintLen64)
+		n := binary.PutUvarint(lenBuf, uint64(len(ac))) // number of elements in array
+		b := bytes.NewBuffer(lenBuf[:n])
 		for _, c := range ac {
 			writeLV(b, []byte(c.Name))
 			writeLV(b, []byte(c.Group))
@@ -297,7 +308,7 @@ func serialize(w io.Writer, v interface{}) {
 		writeLV(b, bundle.Data)
 		binary.Write(b, binary.BigEndian, bundle.Time)
 		writeTLV(w, APITypeBundle, b.Bytes())
-		//default:
+		// default:
 		//	log.Printf("Unknown type in serialize: %T\n", v)
 	}
 }
@@ -342,12 +353,14 @@ func deserialize(r io.Reader) (interface{}, error) {
 		return v, nil
 	case APITypeBytesBytes:
 		var bba [][]byte
-		var n uint32
-		b := bytes.NewBuffer(v)
-		if err := binary.Read(b, binary.BigEndian, &n); err != nil {
-			return nil, err
+		l, n := binary.Uvarint(v)
+		if n == 0 {
+			return nil, ErrInputTooShort
+		} else if n < 0 {
+			return nil, ErrLenOverflow
 		}
-		for i := uint32(0); i < n; i++ {
+		b := bytes.NewReader(v[n:])
+		for i := uint64(0); i < l; i++ {
 			ba, err := readLV(b)
 			if err != nil {
 				return nil, err
@@ -357,12 +370,14 @@ func deserialize(r io.Reader) (interface{}, error) {
 		return bba, nil
 	case APITypeInterfaceArray:
 		var ia []interface{}
-		var n uint32
-		b := bytes.NewBuffer(v)
-		if err := binary.Read(b, binary.BigEndian, &n); err != nil {
-			return nil, err
+		l, n := binary.Uvarint(v)
+		if n == 0 {
+			return nil, ErrInputTooShort
+		} else if n < 0 {
+			return nil, ErrLenOverflow
 		}
-		for i := uint32(0); i < n; i++ {
+		b := bytes.NewReader(v[n:])
+		for i := uint64(0); i < l; i++ {
 			element, err := deserialize(b)
 			if err != nil {
 				return nil, err
@@ -400,12 +415,14 @@ func deserialize(r io.Reader) (interface{}, error) {
 
 	case APITypeContactArray:
 		var contacts []Contact
-		var n uint32
-		b := bytes.NewBuffer(v)
-		if err := binary.Read(b, binary.BigEndian, &n); err != nil {
-			return nil, err
+		l, n := binary.Uvarint(v)
+		if n == 0 {
+			return nil, ErrInputTooShort
+		} else if n < 0 {
+			return nil, ErrLenOverflow
 		}
-		for i := uint32(0); i < n; i++ {
+		b := bytes.NewReader(v[n:])
+		for i := uint64(0); i < l; i++ {
 			var contact Contact
 			va, err := readLV(b)
 			if err != nil {
@@ -438,12 +455,14 @@ func deserialize(r io.Reader) (interface{}, error) {
 
 	case APITypeChannelArray:
 		var channels []Channel
-		var n uint32
-		b := bytes.NewBuffer(v)
-		if err := binary.Read(b, binary.BigEndian, &n); err != nil {
-			return nil, err
+		l, n := binary.Uvarint(v)
+		if n == 0 {
+			return nil, ErrInputTooShort
+		} else if n < 0 {
+			return nil, ErrLenOverflow
 		}
-		for i := uint32(0); i < n; i++ {
+		b := bytes.NewReader(v[n:])
+		for i := uint64(0); i < l; i++ {
 			var channel Channel
 			va, err := readLV(b)
 			if err != nil {
@@ -485,12 +504,14 @@ func deserialize(r io.Reader) (interface{}, error) {
 
 	case APITypeProfileArray:
 		var profiles []Profile
-		var n uint32
-		b := bytes.NewBuffer(v)
-		if err := binary.Read(b, binary.BigEndian, &n); err != nil {
-			return nil, err
+		l, n := binary.Uvarint(v)
+		if n == 0 {
+			return nil, ErrInputTooShort
+		} else if n < 0 {
+			return nil, ErrLenOverflow
 		}
-		for i := uint32(0); i < n; i++ {
+		b := bytes.NewReader(v[n:])
+		for i := uint64(0); i < l; i++ {
 			var profile Profile
 			va, err := readLV(b)
 			if err != nil {
@@ -547,12 +568,14 @@ func deserialize(r io.Reader) (interface{}, error) {
 
 	case APITypePeerArray:
 		var peers []Peer
-		var n uint32
-		b := bytes.NewBuffer(v)
-		if err := binary.Read(b, binary.BigEndian, &n); err != nil {
-			return nil, err
+		l, n := binary.Uvarint(v)
+		if n == 0 {
+			return nil, ErrInputTooShort
+		} else if n < 0 {
+			return nil, ErrLenOverflow
 		}
-		for i := uint32(0); i < n; i++ {
+		b := bytes.NewReader(v[n:])
+		for i := uint64(0); i < l; i++ {
 			var peer Peer
 			va, err := readLV(b)
 			if err != nil {
@@ -601,16 +624,17 @@ func deserialize(r io.Reader) (interface{}, error) {
 }
 
 func writeTLV(w io.Writer, typ byte, value []byte) {
-	binary.Write(w, binary.BigEndian, typ) //type
+	binary.Write(w, binary.BigEndian, typ) // type
 	if typ != APITypeNil {
 		writeLV(w, value)
 	}
 }
 
 func writeLV(w io.Writer, value []byte) {
-	length := uint32(len(value))
-	binary.Write(w, binary.BigEndian, length) //length
-	w.Write(value)                            //value
+	lenBuf := make([]byte, binary.MaxVarintLen64)
+	n := binary.PutUvarint(lenBuf, uint64(len(value)))
+	w.Write(lenBuf[:n]) // length
+	w.Write(value)      // value
 }
 
 /*
@@ -630,8 +654,8 @@ func readTLV(r io.Reader) (byte, []byte, error) {
 */
 
 func readLV(r io.Reader) ([]byte, error) {
-	var l uint32
-	if err := binary.Read(r, binary.BigEndian, &l); err != nil {
+	l, err := binary.ReadUvarint(r.(io.ByteReader))
+	if err != nil {
 		return nil, err
 	}
 	if l == 0 {
