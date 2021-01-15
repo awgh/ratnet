@@ -1,7 +1,6 @@
 package api
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/binary"
 	"errors"
@@ -45,6 +44,11 @@ var (
 	ErrLenOverflow   = errors.New("uvarint overflow")
 )
 
+type bytesReader interface {
+	io.Reader
+	io.ByteReader
+}
+
 // RemoteCall : defines a Remote Procedure Call
 type RemoteCall struct {
 	Action Action
@@ -65,16 +69,14 @@ func (r *RemoteResponse) IsErr() bool { return r.Error != "" }
 
 // ArgsToBytes - converts an interface array to a byte array
 func ArgsToBytes(args []interface{}) []byte {
-	b := bytes.NewBuffer([]byte{})
-	w := bufio.NewWriter(b)
-	serialize(w, args)
-	w.Flush()
+	b := new(bytes.Buffer)
+	serialize(b, args)
 	return b.Bytes()
 }
 
 // ArgsFromBytes - converts a byte array to an interface array
 func ArgsFromBytes(args []byte) ([]interface{}, error) {
-	r := bufio.NewReader(bytes.NewBuffer(args))
+	r := bytes.NewReader(args)
 	rv, err := deserialize(r)
 	var retval []interface{}
 	if rv != nil {
@@ -87,13 +89,11 @@ func ArgsFromBytes(args []byte) ([]interface{}, error) {
 
 // RemoteCallToBytes - converts a RemoteCall to a byte array
 func RemoteCallToBytes(call *RemoteCall) *[]byte {
-	b := bytes.NewBuffer([]byte{})
-	w := bufio.NewWriter(b)
+	b := new(bytes.Buffer)
 	// Action - first byte
-	binary.Write(w, binary.BigEndian, call.Action)
+	binary.Write(b, binary.BigEndian, call.Action)
 	// Args - everything else
-	binary.Write(w, binary.BigEndian, ArgsToBytes(call.Args))
-	w.Flush()
+	binary.Write(b, binary.BigEndian, ArgsToBytes(call.Args))
 	rb := b.Bytes()
 	return &rb
 }
@@ -116,11 +116,9 @@ func RemoteCallFromBytes(input *[]byte) (*RemoteCall, error) {
 
 // RemoteResponseToBytes - converts a RemoteResponse to a byte array
 func RemoteResponseToBytes(resp *RemoteResponse) *[]byte {
-	b := bytes.NewBuffer([]byte{})
-	w := bufio.NewWriter(b)
-	serialize(w, resp.Error)
-	serialize(w, resp.Value)
-	w.Flush()
+	b := new(bytes.Buffer)
+	serialize(b, resp.Error)
+	serialize(b, resp.Value)
 	retval := b.Bytes()
 	return &retval
 }
@@ -128,7 +126,7 @@ func RemoteResponseToBytes(resp *RemoteResponse) *[]byte {
 // RemoteResponseFromBytes - converts a RemoteResponse from a byte array
 func RemoteResponseFromBytes(input *[]byte) (*RemoteResponse, error) {
 	resp := new(RemoteResponse)
-	r := bufio.NewReader(bytes.NewBuffer(*input))
+	r := bytes.NewReader(*input)
 
 	// read the two fields, add to struct
 	// Error string
@@ -149,17 +147,15 @@ func RemoteResponseFromBytes(input *[]byte) (*RemoteResponse, error) {
 
 // BytesBytesToBytes - converts an array of byte arrays to a byte array
 func BytesBytesToBytes(bba *[][]byte) *[]byte {
-	b := bytes.NewBuffer([]byte{})
-	w := bufio.NewWriter(b)
-	serialize(w, *bba)
-	w.Flush()
+	b := new(bytes.Buffer)
+	serialize(b, *bba)
 	retval := b.Bytes()
 	return &retval
 }
 
 // BytesBytesFromBytes - converts an array of byte arrays from a byte array
 func BytesBytesFromBytes(input *[]byte) (*[][]byte, error) {
-	r := bufio.NewReader(bytes.NewBuffer(*input))
+	r := bytes.NewReader(*input)
 	bytesBytesArray, err := deserialize(r)
 	if err != nil {
 		return nil, err
@@ -217,7 +213,7 @@ func serialize(w io.Writer, v interface{}) {
 		writeTLV(w, typ, kb)
 	case *Contact:
 		ap := v.(*Contact)
-		b := bytes.NewBuffer([]byte{})
+		b := new(bytes.Buffer)
 		writeLV(b, []byte(ap.Name))
 		writeLV(b, []byte(ap.Pubkey))
 		writeTLV(w, APITypeContact, b.Bytes())
@@ -233,7 +229,7 @@ func serialize(w io.Writer, v interface{}) {
 		writeTLV(w, APITypeContactArray, b.Bytes())
 	case *Channel:
 		ap := v.(*Channel)
-		b := bytes.NewBuffer([]byte{})
+		b := new(bytes.Buffer)
 		writeLV(b, []byte(ap.Name))
 		writeLV(b, []byte(ap.Pubkey))
 		writeTLV(w, APITypeChannel, b.Bytes())
@@ -249,7 +245,7 @@ func serialize(w io.Writer, v interface{}) {
 		writeTLV(w, APITypeChannelArray, b.Bytes())
 	case *Profile:
 		ap := v.(*Profile)
-		b := bytes.NewBuffer([]byte{})
+		b := new(bytes.Buffer)
 		writeLV(b, []byte(ap.Name))
 		writeLV(b, []byte(ap.Pubkey))
 		if ap.Enabled {
@@ -276,7 +272,7 @@ func serialize(w io.Writer, v interface{}) {
 
 	case *Peer:
 		ap := v.(*Peer)
-		b := bytes.NewBuffer([]byte{})
+		b := new(bytes.Buffer)
 		writeLV(b, []byte(ap.Name))
 		writeLV(b, []byte(ap.Group))
 		writeLV(b, []byte(ap.URI))
@@ -304,7 +300,7 @@ func serialize(w io.Writer, v interface{}) {
 		writeTLV(w, APITypePeerArray, b.Bytes())
 	case Bundle:
 		bundle := v.(Bundle)
-		b := bytes.NewBuffer([]byte{})
+		b := new(bytes.Buffer)
 		writeLV(b, bundle.Data)
 		binary.Write(b, binary.BigEndian, bundle.Time)
 		writeTLV(w, APITypeBundle, b.Bytes())
@@ -314,10 +310,10 @@ func serialize(w io.Writer, v interface{}) {
 }
 
 // deserialize - reads the next value from the io.Reader
-func deserialize(r io.Reader) (interface{}, error) {
+func deserialize(r bytesReader) (interface{}, error) {
 	// read the type byte
-	var t byte
-	if err := binary.Read(r, binary.BigEndian, &t); err != nil {
+	t, err := r.ReadByte()
+	if err != nil {
 		return nil, err
 	}
 
@@ -637,8 +633,8 @@ func writeLV(w io.Writer, value []byte) {
 	w.Write(value)      // value
 }
 
-func readLV(r io.Reader) ([]byte, error) {
-	l, err := binary.ReadUvarint(r.(io.ByteReader))
+func readLV(r bytesReader) ([]byte, error) {
+	l, err := binary.ReadUvarint(r)
 	if err != nil {
 		return nil, err
 	}
@@ -658,6 +654,11 @@ func readLV(r io.Reader) ([]byte, error) {
 func ReadBuffer(reader io.Reader) (*[]byte, error) {
 	br, ok := reader.(io.ByteReader)
 	if !ok {
+		// we can't use a bufio.Reader here which is what is recommended
+		// when you want to create an io.ByteReader from an io.Reader,
+		// because a bufio.Reader will fill its internal buffer when
+		// it first reads from its io.Reader, which will cause the
+		// io.ReadFull call below to fail.
 		br = newByteReader(reader)
 	}
 	rlen, err := binary.ReadUvarint(br)
