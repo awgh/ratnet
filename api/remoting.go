@@ -637,22 +637,6 @@ func writeLV(w io.Writer, value []byte) {
 	w.Write(value)      // value
 }
 
-/*
-// readTLV - returns type as byte, value as []byte
-func readTLV(r io.Reader) (byte, []byte, error) {
-	var t byte
-	if err := binary.Read(r, binary.BigEndian, &t); err != io.EOF {
-		return 0, nil, nil //EOF
-	} else if err != nil {
-		return t, nil, err
-	} else if t == APITypeNil {
-		return t, nil, nil
-	}
-	v, err := readLV(r)
-	return t, v, err
-}
-*/
-
 func readLV(r io.Reader) ([]byte, error) {
 	l, err := binary.ReadUvarint(r.(io.ByteReader))
 	if err != nil {
@@ -701,30 +685,3 @@ func WriteBuffer(writer io.Writer, b *[]byte) error {
 	}
 	return nil
 }
-
-/*
-// BundleToBytes - converts a Bundle to a byte array
-func BundleToBytes(bundle *Bundle) *[]byte {
-	b := bytes.NewBuffer([]byte{})
-	w := bufio.NewWriter(b)
-	serialize(w, bundle)
-	w.Flush()
-	retval := b.Bytes()
-	return &retval
-}
-
-// BundleFromBytes - converts a Bundle from a byte array
-func BundleFromBytes(input *[]byte) (*Bundle, error) {
-	r := bufio.NewReader(bytes.NewBuffer(*input))
-	t, v, err := readTLV(r)
-	if err != nil {
-		return nil, err
-	}
-	rv, err := deserialize(r, t, v)
-	if err != nil {
-		return nil, err
-	}
-	bundle := rv.(Bundle)
-	return &bundle, nil
-}
-*/
