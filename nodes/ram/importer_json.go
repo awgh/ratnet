@@ -11,49 +11,6 @@ import (
 	"github.com/awgh/ratnet/api"
 )
 
-// ProfilePrivB64 - Private Key for a Profile in base64
-type ProfilePrivB64 struct {
-	Name    string
-	Privkey string // base64 encoded
-	Enabled bool
-}
-
-// ChannelPrivB64 - Private Key for a Channel in base64
-type ChannelPrivB64 struct {
-	Name    string
-	Privkey string // base64 encoded
-}
-
-// ExportedNode - Node Config structure for export
-type ExportedNode struct {
-	ContentKey  string
-	ContentType string
-	RoutingKey  string
-	RoutingType string
-	Policies    []api.Policy
-
-	Profiles []ProfilePrivB64
-	Channels []ChannelPrivB64
-	Peers    []api.Peer
-	Contacts []api.Contact
-	Router   api.Router
-}
-
-// ImportedNode - Node Config structure for import
-type ImportedNode struct {
-	ContentKey  string
-	ContentType string
-	RoutingKey  string
-	RoutingType string
-	Policies    []map[string]interface{}
-
-	Profiles []ProfilePrivB64
-	Channels []ChannelPrivB64
-	Peers    []api.Peer
-	Contacts []api.Contact
-	Router   map[string]interface{}
-}
-
 // Import : Load a node configuration from a JSON config
 func (node *Node) Import(jsonConfig []byte) error {
 	restartNode := false
@@ -61,7 +18,7 @@ func (node *Node) Import(jsonConfig []byte) error {
 		node.Stop()
 		restartNode = true
 	}
-	var nj ImportedNode
+	var nj api.ImportedNode
 	if err := json.Unmarshal(jsonConfig, &nj); err != nil {
 		return err
 	}
@@ -134,12 +91,12 @@ func (node *Node) Import(jsonConfig []byte) error {
 
 // Export : Save a node configuration to a JSON config
 func (node *Node) Export() ([]byte, error) {
-	var nj ExportedNode
+	var nj api.ExportedNode
 	nj.ContentKey = node.contentKey.ToB64()
 	nj.ContentType = node.contentKey.GetName()
 	nj.RoutingKey = node.routingKey.ToB64()
 	nj.RoutingType = node.routingKey.GetName()
-	nj.Channels = make([]ChannelPrivB64, len(node.channels))
+	nj.Channels = make([]api.ChannelPrivB64, len(node.channels))
 	i := 0
 	for _, v := range node.channels {
 		nj.Channels[i].Name = v.Name
@@ -153,7 +110,7 @@ func (node *Node) Export() ([]byte, error) {
 		nj.Contacts[i].Pubkey = v.Pubkey
 		i++
 	}
-	nj.Profiles = make([]ProfilePrivB64, len(node.profiles))
+	nj.Profiles = make([]api.ProfilePrivB64, len(node.profiles))
 	i = 0
 	for _, v := range node.profiles {
 		nj.Profiles[i].Name = v.Name

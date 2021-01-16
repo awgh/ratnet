@@ -17,6 +17,7 @@ import (
 	_ "modernc.org/ql/driver" // load the QL database driver
 )
 
+// OutBufferSize - channel size for the node.Out() channel
 var OutBufferSize = 128
 
 // Node : defines an instance of the API with a ql-DB backed Node

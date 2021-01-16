@@ -73,7 +73,7 @@ func (node *Node) dbDeleteContact(name string) {
 
 func (node *Node) dbGetChannelPrivKey(name string) (string, error) {
 	res := node.db.SQL().SelectFrom("channels").Where("name = ?", name)
-	var channel api.ChannelPrivDB
+	var channel api.ChannelPrivB64
 	if err := res.One(&channel); err != nil {
 		return "", err
 	}
@@ -82,7 +82,7 @@ func (node *Node) dbGetChannelPrivKey(name string) (string, error) {
 
 func (node *Node) dbGetChannels() ([]api.Channel, error) {
 	res := node.db.SQL().SelectFrom("channels")
-	var channels []api.ChannelPrivDB
+	var channels []api.ChannelPrivB64
 	if err := res.All(&channels); err != nil {
 		return nil, err
 	}
@@ -100,7 +100,7 @@ func (node *Node) dbGetChannels() ([]api.Channel, error) {
 func (node *Node) dbGetChannelsPriv() ([]api.ChannelPriv, error) {
 	col := node.db.Collection("channels")
 	res := col.Find()
-	var channels []api.ChannelPrivDB
+	var channels []api.ChannelPrivB64
 	if err := res.All(&channels); err != nil {
 		return nil, err
 	}
@@ -130,7 +130,7 @@ func (node *Node) dbAddChannel(name, privkey string) error {
 		if err := prv.FromB64(privkey); err != nil {
 			return err
 		}
-		channel := api.ChannelPrivDB{Name: name, Privkey: prv.ToB64()}
+		channel := api.ChannelPrivB64{Name: name, Privkey: prv.ToB64()}
 		_, err = col.Insert(&channel)
 		if err != nil {
 			events.Error(node, err.Error())
@@ -148,7 +148,7 @@ func (node *Node) dbDeleteChannel(name string) {
 
 func (node *Node) dbGetProfile(name string) (*api.Profile, error) {
 	res := node.db.SQL().SelectFrom("profiles").Where("name = ?", name)
-	var profile api.ProfilePrivDB
+	var profile api.ProfilePrivB64
 	if err := res.One(&profile); err != nil {
 		return nil, err
 	}
@@ -162,7 +162,7 @@ func (node *Node) dbGetProfile(name string) (*api.Profile, error) {
 func (node *Node) dbGetProfiles() ([]api.Profile, error) {
 	col := node.db.Collection("profiles")
 	res := col.Find()
-	var profiles []api.ProfilePrivDB
+	var profiles []api.ProfilePrivB64
 	if err := res.All(&profiles); err != nil {
 		return nil, err
 	}
@@ -177,10 +177,10 @@ func (node *Node) dbGetProfiles() ([]api.Profile, error) {
 	return retval, nil
 }
 
-func (node *Node) dbGetProfilesPriv() ([]api.ProfilePrivDB, error) {
+func (node *Node) dbGetProfilesPriv() ([]api.ProfilePrivB64, error) {
 	col := node.db.Collection("profiles")
 	res := col.Find()
-	var profiles []api.ProfilePrivDB
+	var profiles []api.ProfilePrivB64
 	if err := res.All(&profiles); err != nil {
 		return nil, err
 	}
@@ -194,7 +194,7 @@ func (node *Node) dbAddProfilePriv(name string, enabled bool, b64key string) err
 	if err != nil {
 		return err
 	}
-	var profile api.ProfilePrivDB
+	var profile api.ProfilePrivB64
 	if count == 0 {
 		// insert new profile
 		profile.Name = name
@@ -220,7 +220,7 @@ func (node *Node) dbAddProfile(name string, enabled bool) error {
 	if err != nil {
 		return err
 	}
-	var profile api.ProfilePrivDB
+	var profile api.ProfilePrivB64
 	if count == 0 {
 		// generate new profile keypair
 		profileKey := node.contentKey.Clone()
@@ -251,7 +251,7 @@ func (node *Node) dbDeleteProfile(name string) {
 func (node *Node) dbGetProfilePrivateKey(name string) string {
 	col := node.db.Collection("profiles")
 	res := col.Find(db.Cond{"name": name})
-	var profile api.ProfilePrivDB
+	var profile api.ProfilePrivB64
 	if err := res.One(&profile); err != nil {
 		return ""
 	}

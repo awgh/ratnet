@@ -160,7 +160,7 @@ func (node *Node) qlGetChannels() ([]api.Channel, error) {
 	return channels, nil
 }
 
-func (node *Node) qlGetChannelPrivs() ([]api.ChannelPriv, error) {
+func (node *Node) qlGetChannelsPriv() ([]api.ChannelPriv, error) {
 	c := node.db()
 	defer closeDB(c)
 	sqlq := "SELECT name,privkey FROM channels;"
@@ -267,6 +267,33 @@ func (node *Node) qlGetProfiles() ([]api.Profile, error) {
 	return profiles, nil
 }
 
+func (node *Node) qlGetProfilesPriv() ([]api.ProfilePrivB64, error) {
+	c := node.db()
+	defer closeDB(c)
+	sqlq := "SELECT name,enabled,privkey FROM profiles;"
+	events.Info(node, sqlq)
+	r, err := c.Query(sqlq)
+	if r == nil || err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	var profiles []api.ProfilePrivB64
+	for r.Next() {
+		var p api.ProfilePrivB64
+		var prv string
+		if err := r.Scan(&p.Name, &p.Enabled, &prv); err != nil {
+			return nil, err
+		}
+		pk := node.contentKey.Clone()
+		if err := pk.FromB64(prv); err != nil {
+			return nil, err
+		}
+		p.Privkey = pk.ToB64()
+		profiles = append(profiles, p)
+	}
+	return profiles, nil
+}
+
 func (node *Node) qlAddProfile(name string, enabled bool) error {
 	c := node.db()
 	defer closeDB(c)
@@ -287,6 +314,32 @@ func (node *Node) qlAddProfile(name string, enabled bool) error {
 		// update profile
 		node.transactExec("UPDATE profiles SET enabled=$1 WHERE name==$2;",
 			enabled, name)
+	} else {
+		return err
+	}
+	return nil
+}
+
+func (node *Node) qlAddProfilePriv(name string, enabled bool, b64key string) error {
+	c := node.db()
+	defer closeDB(c)
+	sqlq := "SELECT * FROM profiles WHERE name==$1;"
+	events.Info(node, sqlq, name)
+	r := c.QueryRow(sqlq, name)
+	var n, key, al string
+	if err := r.Scan(&n, &key, &al); err == sql.ErrNoRows {
+		// generate new profile keypair
+		profileKey := node.contentKey.Clone()
+		profileKey.GenerateKey()
+
+		// insert new profile
+		node.transactExec("INSERT INTO profiles VALUES( $1, $2, $3 )",
+			name, b64key, enabled)
+
+	} else if err == nil {
+		// update profile
+		node.transactExec("UPDATE profiles SET enabled=$1,privkey=$2 WHERE name==$3;",
+			enabled, b64key, name)
 	} else {
 		return err
 	}
