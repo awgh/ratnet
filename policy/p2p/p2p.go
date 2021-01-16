@@ -3,7 +3,6 @@ package p2p
 import (
 	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"math/rand"
 	"net"
@@ -12,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
 	"github.com/awgh/ratnet/api/events"
 	"github.com/awgh/ratnet/policy"
@@ -51,19 +49,6 @@ var (
 	}
 )
 
-func init() {
-	ratnet.Policies["p2p"] = NewFromMap // register this module by name (for deserialization support)
-}
-
-// NewFromMap : Makes a new instance of this transport module from a map of arguments (for deserialization support)
-func NewFromMap(transport api.Transport, node api.Node, p map[string]interface{}) api.Policy {
-	listenURI := p["ListenURI"].(string)
-	adminMode := p["AdminMode"].(bool)
-	listenInterval := p["ListenInterval"].(int)
-	advertiseInterval := p["AdvertiseInterval"].(int)
-	return New(transport, listenURI, node, adminMode, listenInterval, advertiseInterval)
-}
-
 // New : Returns a new instance of a P2P Connection Policy
 //
 func New(transport api.Transport, listenURI string, node api.Node, adminMode bool,
@@ -78,18 +63,6 @@ func New(transport api.Transport, listenURI string, node api.Node, adminMode boo
 
 	s.rerollNegotiationRank()
 	return s
-}
-
-// MarshalJSON : Create a serialied representation of the config of this policy
-func (s *P2P) MarshalJSON() (b []byte, e error) {
-	return json.Marshal(map[string]interface{}{
-		"Policy":            "p2p",
-		"ListenURI":         s.ListenURI,
-		"AdminMode":         s.AdminMode,
-		"Transport":         s.Transport,
-		"ListenInterval":    s.ListenInterval,
-		"AdvertiseInterval": s.AdvertiseInterval,
-	})
 }
 
 func (s *P2P) initListenSocket() {
@@ -222,10 +195,12 @@ func (s *P2P) mdnsListen() error {
 					return err
 				}
 
-				t := make(map[string]interface{})
-				fromMapFn := ratnet.Transports[u.Scheme]
-				trans := fromMapFn(s.Node, t)
-				// todo: cache transports?
+				// todo: no_json breaks this, have to use the transport from the constructor for the moment
+				// t := make(map[string]interface{})
+				// fromMapFn := ratnet.Transports[u.Scheme]
+				// trans := fromMapFn(s.Node, t)
+
+				trans := s.Transport
 				peerlist[target] = trans
 				go func() {
 					for s.IsListening {

@@ -4,38 +4,15 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/tls"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"sync/atomic"
 	"time"
 
-	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
 	"github.com/awgh/ratnet/api/events"
 )
-
-func init() {
-	ratnet.Transports["https"] = NewFromMap // register this module by name (for deserialization support)
-}
-
-// NewFromMap : Makes a new instance of this transport module from a map of arguments (for deserialization support)
-func NewFromMap(node api.Node, t map[string]interface{}) api.Transport {
-	var certPem, keyPem string
-	eccMode := true
-
-	if _, ok := t["Cert"]; ok {
-		certPem = t["Cert"].(string)
-	}
-	if _, ok := t["Key"]; ok {
-		keyPem = t["Key"].(string)
-	}
-	if _, ok := t["EccMode"]; ok {
-		eccMode = t["EccMode"].(bool)
-	}
-	return New([]byte(certPem), []byte(keyPem), node, eccMode)
-}
 
 // New : Makes a new instance of this transport module
 func New(certPem []byte, keyPem []byte, node api.Node, eccMode bool) *Module {
@@ -76,16 +53,6 @@ type Module struct {
 // Name : Returns this module's common name, which should be unique
 func (*Module) Name() string {
 	return "https"
-}
-
-// MarshalJSON : Create a serialied representation of the config of this module
-func (h *Module) MarshalJSON() (b []byte, e error) {
-	return json.Marshal(map[string]interface{}{
-		"Transport": "https",
-		"Cert":      string(h.Cert),
-		"Key":       string(h.Key),
-		"EccMode":   h.EccMode,
-	})
 }
 
 // ByteLimit - get limit on bytes per bundle for this transport

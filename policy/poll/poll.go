@@ -2,13 +2,11 @@ package poll
 
 import (
 	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
 	"github.com/awgh/ratnet/api/events"
 	"github.com/awgh/ratnet/policy"
@@ -34,26 +32,6 @@ type Poll struct {
 
 	RetryForever  bool
 	RetryAttempts int
-}
-
-func init() {
-	ratnet.Policies["poll"] = NewFromMap // register this module by name (for deserialization support)
-}
-
-// NewFromMap : Makes a new instance of this transport module from a map of arguments (for deserialization support)
-func NewFromMap(transport api.Transport, node api.Node,
-	t map[string]interface{}) api.Policy {
-	interval := int(t["Interval"].(float64))
-	jitter := int(t["Jitter"].(float64))
-	var groups []string
-	gi := []interface{}(t["Groups"].([]interface{}))
-	for _, g := range gi {
-		gstr := string(g.(string))
-		groups = append(groups, gstr)
-	}
-
-	// groups :=
-	return New(transport, node, interval, jitter, groups...)
 }
 
 // New : Returns a new instance of a Poll Connection Policy
@@ -94,17 +72,6 @@ func (p *Poll) GetJitter() int {
 // SetJitter : Set the percentage of which the interval with be randomly skewed
 func (p *Poll) SetJitter(newJitter int) {
 	atomic.StoreInt32(&p.jitter, int32(newJitter))
-}
-
-// MarshalJSON : Create a serialied representation of the config of this policy
-func (p *Poll) MarshalJSON() (b []byte, e error) {
-	return json.Marshal(map[string]interface{}{
-		"Policy":    "poll",
-		"Transport": p.Transport,
-		"Interval":  p.GetInterval(),
-		"Jitter":    p.GetJitter(),
-		"Groups":    p.Groups,
-	})
 }
 
 // RunPolicy : Poll

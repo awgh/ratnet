@@ -1,3 +1,5 @@
+// +build !no_json
+
 package fs
 
 import (

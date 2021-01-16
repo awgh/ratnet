@@ -2,7 +2,6 @@ package udp
 
 import (
 	"bufio"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -13,7 +12,6 @@ import (
 
 	kcp "github.com/xtaci/kcp-go/v5"
 
-	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
 	"github.com/awgh/ratnet/api/events"
 )
@@ -21,14 +19,7 @@ import (
 var cachedSessions map[string]*kcp.UDPSession
 
 func init() {
-	ratnet.Transports["udp"] = NewFromMap // register this module by name (for deserialization support)
-
 	cachedSessions = make(map[string]*kcp.UDPSession)
-}
-
-// NewFromMap : Makes a new instance of this transport module from a map of arguments (for deserialization support)
-func NewFromMap(node api.Node, t map[string]interface{}) api.Transport {
-	return New(node)
 }
 
 // New : Makes a new instance of this transport module
@@ -52,13 +43,6 @@ type Module struct {
 // Name : Returns name of module
 func (m *Module) Name() string {
 	return "udp"
-}
-
-// MarshalJSON : Create a serialied representation of the config of this module
-func (m *Module) MarshalJSON() (b []byte, e error) {
-	return json.Marshal(map[string]interface{}{
-		"Transport": "udp",
-	})
 }
 
 // ByteLimit - get limit on bytes per bundle for this transport

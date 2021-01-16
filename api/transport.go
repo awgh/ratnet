@@ -6,10 +6,11 @@ type Transport interface {
 	Name() string
 	RPC(host string, method Action, args ...interface{}) (interface{}, error)
 	Stop()
-	MarshalJSON() (b []byte, e error)
 
 	ByteLimit() int64 // limit on bytes per bundle for this transport
 	SetByteLimit(limit int64)
+
+	JSON
 }
 
 // StreamHeader manifest for a chunked transfer (database version)
