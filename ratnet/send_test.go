@@ -9,7 +9,8 @@ import (
 	"github.com/awgh/ratnet/api"
 	"github.com/awgh/ratnet/api/events/defaultlogger"
 	"github.com/awgh/ratnet/nodes/ram"
-	"github.com/awgh/ratnet/policy"
+	"github.com/awgh/ratnet/policy/poll"
+	"github.com/awgh/ratnet/policy/server"
 	"github.com/awgh/ratnet/transports/udp"
 )
 
@@ -17,11 +18,11 @@ const URI = "127.0.0.1:20005"
 
 func Test_fast_sending(t *testing.T) {
 	receivingNode := ram.New(new(ecc.KeyPair), new(ecc.KeyPair))
-	receivingNode.SetPolicy(policy.NewServer(udp.New(receivingNode), URI, false))
+	receivingNode.SetPolicy(server.New(udp.New(receivingNode), URI, false))
 	defaultlogger.StartDefaultLogger(receivingNode, api.Info)
 
 	sendingNode := ram.New(new(ecc.KeyPair), new(ecc.KeyPair))
-	sendingNode.SetPolicy(policy.NewPoll(udp.New(sendingNode), sendingNode, 100, 0))
+	sendingNode.SetPolicy(poll.New(udp.New(sendingNode), sendingNode, 100, 0))
 	sendingNode.AddPeer("rc", true, URI)
 	key, _ := receivingNode.CID()
 	sendingNode.AddContact("rc", key.ToB64())

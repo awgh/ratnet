@@ -127,7 +127,7 @@ func initNode(n int, nodeType NodeType, transportType TransportType, p2pMode boo
 	defaultlogger.StartDefaultLogger(testNode.Node, api.Info)
 	if p2pMode {
 		ip := GetOutboundIP().String()
-		go p2p(testNode.Public, testNode.Admin, testNode.Node, ip+":3000"+num, ip+":30"+num+"0"+num)
+		go p2pServe(testNode.Public, testNode.Admin, testNode.Node, ip+":3000"+num, ip+":30"+num+"0"+num)
 	} else {
 		go serve(testNode.Public, testNode.Admin, testNode.Node, "localhost:3000"+num, "localhost:30"+num+"0"+num)
 	}

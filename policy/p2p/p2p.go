@@ -1,4 +1,4 @@
-package policy
+package p2p
 
 import (
 	"encoding/binary"
@@ -15,6 +15,7 @@ import (
 	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
 	"github.com/awgh/ratnet/api/events"
+	"github.com/awgh/ratnet/policy"
 
 	dns "github.com/miekg/dns"
 )
@@ -51,21 +52,21 @@ var (
 )
 
 func init() {
-	ratnet.Policies["p2p"] = NewP2PFromMap // register this module by name (for deserialization support)
+	ratnet.Policies["p2p"] = NewFromMap // register this module by name (for deserialization support)
 }
 
-// NewP2PFromMap : Makes a new instance of this transport module from a map of arguments (for deserialization support)
-func NewP2PFromMap(transport api.Transport, node api.Node, p map[string]interface{}) api.Policy {
+// NewFromMap : Makes a new instance of this transport module from a map of arguments (for deserialization support)
+func NewFromMap(transport api.Transport, node api.Node, p map[string]interface{}) api.Policy {
 	listenURI := p["ListenURI"].(string)
 	adminMode := p["AdminMode"].(bool)
 	listenInterval := p["ListenInterval"].(int)
 	advertiseInterval := p["AdvertiseInterval"].(int)
-	return NewP2P(transport, listenURI, node, adminMode, listenInterval, advertiseInterval)
+	return New(transport, listenURI, node, adminMode, listenInterval, advertiseInterval)
 }
 
-// NewP2P : Returns a new instance of a P2P Connection Policy
+// New : Returns a new instance of a P2P Connection Policy
 //
-func NewP2P(transport api.Transport, listenURI string, node api.Node, adminMode bool,
+func New(transport api.Transport, listenURI string, node api.Node, adminMode bool,
 	listenInterval int, advertiseInterval int) *P2P {
 	s := new(P2P)
 	s.Transport = transport
@@ -229,7 +230,7 @@ func (s *P2P) mdnsListen() error {
 				go func() {
 					for s.IsListening {
 						st := time.Now()
-						if happy, err := PollServer(trans, s.Node, target[len(u.Scheme)+3:], pubsrv); !happy {
+						if happy, err := policy.PollServer(trans, s.Node, target[len(u.Scheme)+3:], pubsrv); !happy {
 							if err != nil {
 								events.Warning(s.Node, err.Error())
 							}

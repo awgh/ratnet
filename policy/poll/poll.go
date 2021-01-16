@@ -1,4 +1,4 @@
-package policy
+package poll
 
 import (
 	"crypto/rand"
@@ -11,6 +11,7 @@ import (
 	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
 	"github.com/awgh/ratnet/api/events"
+	"github.com/awgh/ratnet/policy"
 )
 
 // Poll : defines a Polling Connection Policy, which will periodically connect to each remote Peer
@@ -36,11 +37,11 @@ type Poll struct {
 }
 
 func init() {
-	ratnet.Policies["poll"] = NewPollFromMap // register this module by name (for deserialization support)
+	ratnet.Policies["poll"] = NewFromMap // register this module by name (for deserialization support)
 }
 
-// NewPollFromMap : Makes a new instance of this transport module from a map of arguments (for deserialization support)
-func NewPollFromMap(transport api.Transport, node api.Node,
+// NewFromMap : Makes a new instance of this transport module from a map of arguments (for deserialization support)
+func NewFromMap(transport api.Transport, node api.Node,
 	t map[string]interface{}) api.Policy {
 	interval := int(t["Interval"].(float64))
 	jitter := int(t["Jitter"].(float64))
@@ -52,11 +53,11 @@ func NewPollFromMap(transport api.Transport, node api.Node,
 	}
 
 	// groups :=
-	return NewPoll(transport, node, interval, jitter, groups...)
+	return New(transport, node, interval, jitter, groups...)
 }
 
-// NewPoll : Returns a new instance of a Poll Connection Policy
-func NewPoll(transport api.Transport, node api.Node, interval, jitter int, group ...string) *Poll {
+// New : Returns a new instance of a Poll Connection Policy
+func New(transport api.Transport, node api.Node, interval, jitter int, group ...string) *Poll {
 	p := new(Poll)
 	if len(group) > 0 {
 		p.Groups = group
@@ -164,7 +165,7 @@ func (p *Poll) RunPolicy() error {
 				if element.Enabled && fails[element.URI] < p.RetryAttempts {
 					tries++
 
-					_, err := PollServer(p.Transport, p.node, element.URI, pubsrv)
+					_, err := policy.PollServer(p.Transport, p.node, element.URI, pubsrv)
 					if err != nil {
 						events.Warning(p.node, "pollServer error: ", err.Error())
 						fails[element.URI]++

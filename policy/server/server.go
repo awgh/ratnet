@@ -1,4 +1,4 @@
-package policy
+package server
 
 import (
 	"encoding/json"
@@ -23,12 +23,12 @@ func init() {
 func NewFromMap(transport api.Transport, node api.Node, p map[string]interface{}) api.Policy {
 	listenURI := p["ListenURI"].(string)
 	adminMode := p["AdminMode"].(bool)
-	return NewServer(transport, listenURI, adminMode)
+	return New(transport, listenURI, adminMode)
 }
 
-// NewServer : Returns a new instance of a Server Connection Policy
+// New : Returns a new instance of a Server Connection Policy
 //
-func NewServer(transport api.Transport, listenURI string, adminMode bool) *Server {
+func New(transport api.Transport, listenURI string, adminMode bool) *Server {
 	s := new(Server)
 	s.Transport = transport
 	s.ListenURI = listenURI
