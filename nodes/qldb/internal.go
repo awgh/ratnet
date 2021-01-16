@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"os"
-	"os/signal"
 	"time"
 
 	"github.com/awgh/ratnet/api"
@@ -20,7 +18,6 @@ func (node *Node) GetChannelPrivKey(name string) (string, error) {
 
 // Forward - Add an already-encrypted message to the outbound message queue (forward it along)
 func (node *Node) Forward(msg api.Msg) error {
-
 	flags := uint8(0)
 	if msg.IsChan {
 		flags |= api.ChannelFlag
@@ -39,7 +36,7 @@ func (node *Node) Forward(msg api.Msg) error {
 		rxsum = append(rxsum, []byte(msg.Name)...)
 	}
 	message := append(rxsum, msg.Content.Bytes()...)
-	return node.qlOutboxEnqueue(msg.Name, message, time.Now().UnixNano(), false) //true
+	return node.qlOutboxEnqueue(msg.Name, message, time.Now().UnixNano(), false) // true
 }
 
 // Handle - Decrypt and handle an encrypted message
@@ -89,18 +86,4 @@ func (node *Node) refreshChannels() { // todo: this could be selective or someho
 	for _, element := range channels {
 		node.channelKeys[element.Name] = element.Privkey
 	}
-}
-
-func (node *Node) signalMonitor() {
-	sigChannel := make(chan os.Signal, 1)
-	signal.Notify(sigChannel, nil)
-	go func() {
-		defer node.Stop()
-		for {
-			switch <-sigChannel {
-			case os.Kill:
-				return
-			}
-		}
-	}()
 }

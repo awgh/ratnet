@@ -79,7 +79,8 @@ func (node *Node) GetChannels() ([]api.Channel, error) {
 	var channels []api.Channel
 	for _, v := range node.channels {
 		channels = append(channels, api.Channel{
-			Name: v.Name, Pubkey: v.Pubkey})
+			Name: v.Name, Pubkey: v.Pubkey,
+		})
 	}
 	return channels, nil
 }
@@ -130,7 +131,8 @@ func (node *Node) GetProfiles() ([]api.Profile, error) {
 		profiles = append(profiles, api.Profile{
 			Name:    name,
 			Enabled: profile.Enabled,
-			Pubkey:  profile.Privkey.GetPubKey().ToB64()})
+			Pubkey:  profile.Privkey.GetPubKey().ToB64(),
+		})
 	}
 	return profiles, nil
 }
@@ -273,7 +275,6 @@ func (node *Node) SendChannel(channelName string, data []byte, pubkey ...bc.PubK
 
 // SendMsg : Transmits a message
 func (node *Node) SendMsg(msg api.Msg) error {
-
 	// determine if we need to chunk
 	chunkSize := chunking.ChunkSize(node)                               // finds the minimum transport byte limit
 	if msg.Content.Len() > 0 && uint32(msg.Content.Len()) > chunkSize { // we need to chunk
@@ -336,9 +337,6 @@ func (node *Node) Start() error {
 	// init crypto keys
 	node.contentKey.GenerateKey()
 	node.routingKey.GenerateKey()
-
-	// start the signal monitor
-	node.signalMonitor()
 
 	node.setIsRunning(true)
 
