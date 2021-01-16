@@ -45,7 +45,7 @@ type Node struct {
 	streams  map[uint32]*api.StreamHeader
 	chunks   map[uint32]map[uint32]*api.Chunk
 
-	//outbox   []*outboxMsg
+	// outbox   []*outboxMsg
 	basePath    string
 	outboxIndex uint32
 }

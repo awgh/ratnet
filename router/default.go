@@ -138,7 +138,7 @@ func (r *DefaultRouter) GetPatches() []api.Patch {
 }
 
 func (r *DefaultRouter) forward(node api.Node, msg api.Msg) error {
-	for _, p := range r.Patches { //todo: this could be constant-time
+	for _, p := range r.Patches { // todo: this could be constant-time
 		if msg.Name == p.From { // we don't check for IsChan here, we allow forwarding from "" chan to channels
 			for i := 0; i < len(p.To); i++ {
 				msg.Name = p.To[i]
@@ -162,7 +162,6 @@ func (r *DefaultRouter) forward(node api.Node, msg api.Msg) error {
 
 // Route - Router that does default behavior
 func (r *DefaultRouter) Route(node api.Node, message []byte) error {
-
 	//  Stuff Everything will need just about every time...
 	//
 	var msg api.Msg
@@ -253,7 +252,6 @@ func (r *DefaultRouter) Route(node api.Node, message []byte) error {
 
 // MarshalJSON : Create a serialized JSON blob out of the config of this router
 func (r *DefaultRouter) MarshalJSON() (b []byte, e error) {
-
 	return json.Marshal(map[string]interface{}{
 		"Router":                  "default",
 		"CheckContent":            r.CheckContent,
@@ -265,5 +263,6 @@ func (r *DefaultRouter) MarshalJSON() (b []byte, e error) {
 		"CheckChannels":           r.CheckChannels,
 		"ForwardConsumedChannels": r.ForwardConsumedChannels,
 		"ForwardUnknownChannels":  r.ForwardUnknownChannels,
-		"Patches":                 r.Patches})
+		"Patches":                 r.Patches,
+	})
 }

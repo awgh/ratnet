@@ -16,7 +16,6 @@ import (
 )
 
 func main() {
-
 	checkIfErr := func(err error) bool {
 		if err != nil {
 			fmt.Println(err)

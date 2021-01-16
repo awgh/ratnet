@@ -7,7 +7,6 @@ import (
 )
 
 func Test_Loop_OneMessage_1(t *testing.T) {
-
 	recentBuffer := newRecentBuffer()
 	b, err := bc.GenerateRandomBytes(nonceSize)
 	if err != nil {
@@ -27,7 +26,6 @@ func Test_Loop_OneMessage_1(t *testing.T) {
 }
 
 func Test_Loop_Random_1(t *testing.T) {
-
 	recentBuffer := newRecentBuffer()
 	for i := 0; i < 100000; i++ {
 		b, err := bc.GenerateRandomBytes(nonceSize)
@@ -35,7 +33,7 @@ func Test_Loop_Random_1(t *testing.T) {
 			t.Fatal(err)
 		}
 		seen := recentBuffer.SeenRecently(b)
-		//t.Log("seen? ", i, seen)
+		// t.Log("seen? ", i, seen)
 		if seen {
 			t.Fatal("SeenRecently returned true on random loop test on iteration:", i)
 		}
@@ -43,7 +41,6 @@ func Test_Loop_Random_1(t *testing.T) {
 }
 
 func Test_Loop_Fixed_1(t *testing.T) {
-
 	recentBuffer := newRecentBuffer()
 	var sendBuffers [][]byte
 	for i := 0; i < 1000; i++ {

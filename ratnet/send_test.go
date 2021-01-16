@@ -35,16 +35,13 @@ func Test_fast_sending(t *testing.T) {
 		t.Fatalf("sending node failed to start: %v", err)
 	}
 
-	var (
-		msgCounter int
-	)
+	var msgCounter int
 	go func() {
 		for {
 			msg := <-receivingNode.Out()
 			log.Printf("received message: %s", msg.Content.String())
 			msgCounter++
 		}
-
 	}()
 
 	for i := 0; i < 3; i++ {
@@ -55,8 +52,8 @@ func Test_fast_sending(t *testing.T) {
 	}
 
 	time.Sleep(3 * time.Second)
-	//sendingNode.Stop()
-	//receivingNode.Stop()
+	// sendingNode.Stop()
+	// receivingNode.Stop()
 
 	if msgCounter != 3 {
 		t.Fatalf("expected receiving 3 messages, got %d", msgCounter)

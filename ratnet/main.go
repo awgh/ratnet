@@ -16,7 +16,6 @@ import (
 // usage: ./ratnet -dbfile=ratnet2.ql -p=20003
 
 func serve(transportPublic api.Transport, transportAdmin api.Transport, node api.Node, listenPublic string, listenAdmin string) {
-
 	node.SetPolicy(
 		policy.NewServer(transportPublic, listenPublic, false),
 		policy.NewServer(transportAdmin, listenAdmin, true))
@@ -39,7 +38,6 @@ func p2p(transportPublic api.Transport, transportAdmin api.Transport, node api.N
 }
 
 func main() {
-
 	var dbFile string
 	var publicPort, adminPort int
 
@@ -56,7 +54,7 @@ func main() {
 	node.BootstrapDB(dbFile)
 
 	// RamNode Mode:
-	//node := ram.New(new(ecc.KeyPair), new(ecc.KeyPair))
+	// node := ram.New(new(ecc.KeyPair), new(ecc.KeyPair))
 
 	cert, key, err := bc.GenerateSSLCertBytes(true)
 	if err != nil {

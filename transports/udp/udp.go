@@ -33,11 +33,10 @@ func NewFromMap(node api.Node, t map[string]interface{}) api.Transport {
 
 // New : Makes a new instance of this transport module
 func New(node api.Node) *Module {
-
 	instance := new(Module)
 	instance.node = node
 
-	instance.byteLimit = 8000 * 1024 //125000
+	instance.byteLimit = 8000 * 1024 // 125000
 
 	return instance
 }
@@ -58,7 +57,8 @@ func (m *Module) Name() string {
 // MarshalJSON : Create a serialied representation of the config of this module
 func (m *Module) MarshalJSON() (b []byte, e error) {
 	return json.Marshal(map[string]interface{}{
-		"Transport": "udp"})
+		"Transport": "udp",
+	})
 }
 
 // ByteLimit - get limit on bytes per bundle for this transport
@@ -73,7 +73,7 @@ func (m *Module) Listen(listen string, adminMode bool) {
 	if m.IsRunning() {
 		return
 	}
-	lis, err := kcp.ListenWithOptions(listen, nil, 10, 0) //disabled FEC
+	lis, err := kcp.ListenWithOptions(listen, nil, 10, 0) // disabled FEC
 	if err != nil {
 		events.Error(m.node, err.Error())
 		return
@@ -148,7 +148,6 @@ func (m *Module) Listen(listen string, adminMode bool) {
 
 // RPC : transmit data via UDP
 func (m *Module) RPC(host string, method api.Action, args ...interface{}) (interface{}, error) {
-
 	events.Info(m.node, fmt.Sprintf("\n***\n***RPC %d on %s called with: %+v\n***\n", method, host, args))
 
 	conn, ok := cachedSessions[host]

@@ -39,7 +39,6 @@ func NewFromMap(node api.Node, t map[string]interface{}) api.Transport {
 
 // New : Makes a new instance of this transport module
 func New(certPem []byte, keyPem []byte, node api.Node, eccMode bool) *Module {
-
 	web := new(Module)
 
 	web.Cert = certPem
@@ -52,7 +51,8 @@ func New(certPem []byte, keyPem []byte, node api.Node, eccMode bool) *Module {
 	}
 	web.client = &http.Client{
 		Timeout:   time.Second * 10,
-		Transport: web.transport}
+		Transport: web.transport,
+	}
 
 	web.byteLimit = 125000 // 150000 was unstable, 125000 was 100% stable
 
@@ -84,7 +84,8 @@ func (h *Module) MarshalJSON() (b []byte, e error) {
 		"Transport": "https",
 		"Cert":      string(h.Cert),
 		"Key":       string(h.Key),
-		"EccMode":   h.EccMode})
+		"EccMode":   h.EccMode,
+	})
 }
 
 // ByteLimit - get limit on bytes per bundle for this transport
@@ -130,7 +131,6 @@ func (h *Module) Listen(listen string, adminMode bool) {
 }
 
 func (h *Module) handleResponse(w http.ResponseWriter, r *http.Request, node api.Node, adminMode bool) {
-
 	buf, err := api.ReadBuffer(r.Body)
 	if err != nil {
 		events.Warning(h.node, err.Error())

@@ -42,7 +42,6 @@ func NewFromMap(node api.Node, t map[string]interface{}) api.Transport {
 
 // New : Makes a new instance of this transport module
 func New(certPem, keyPem []byte, node api.Node, eccMode bool) *Module {
-
 	tls := new(Module)
 
 	tls.Cert = certPem
@@ -50,7 +49,7 @@ func New(certPem, keyPem []byte, node api.Node, eccMode bool) *Module {
 	tls.node = node
 	tls.EccMode = eccMode
 
-	tls.byteLimit = 8000 * 1024 //125000 stable, 150000 was unstable
+	tls.byteLimit = 8000 * 1024 // 125000 stable, 150000 was unstable
 
 	return tls
 }
@@ -79,7 +78,8 @@ func (h *Module) MarshalJSON() (b []byte, e error) {
 		"Transport": "tls",
 		"Cert":      string(h.Cert),
 		"Key":       string(h.Key),
-		"EccMode":   h.EccMode})
+		"EccMode":   h.EccMode,
+	})
 }
 
 // ByteLimit - get limit on bytes per bundle for this transport
@@ -135,7 +135,6 @@ func (h *Module) Listen(listen string, adminMode bool) {
 			go h.handleConnection(conn, h.node, adminMode)
 		}
 	}()
-
 }
 
 func (h *Module) handleConnection(conn net.Conn, node api.Node, adminMode bool) {
@@ -183,7 +182,6 @@ func (h *Module) handleConnection(conn net.Conn, node api.Node, adminMode bool) 
 
 // RPC : client interface
 func (h *Module) RPC(host string, method api.Action, args ...interface{}) (interface{}, error) {
-
 	events.Info(h.node, fmt.Sprintf("\n***\n***RPC %d on %s called with: %+v\n***\n", method, host, args))
 
 	conn, ok := cachedSessions[host]

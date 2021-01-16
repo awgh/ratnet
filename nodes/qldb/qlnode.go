@@ -1,8 +1,8 @@
 package qldb
 
 // To install ql:
-//force github.com/cznic/zappy to purego mode
-//go get -tags purego github.com/cznic/ql  (or ql+cgo seems to work on arm now, too)
+// force github.com/cznic/zappy to purego mode
+// go get -tags purego github.com/cznic/ql  (or ql+cgo seems to work on arm now, too)
 
 import (
 	"database/sql"

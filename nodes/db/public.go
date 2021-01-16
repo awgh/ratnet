@@ -33,7 +33,7 @@ func (node *Node) Dropoff(bundle api.Bundle) error {
 
 	for i := 0; i < len(*msgs); i++ {
 		if len((*msgs)[i]) < 16 { // aes.BlockSize == 16
-			continue //todo: remove padding before here?
+			continue // todo: remove padding before here?
 		}
 		err = node.router.Route(node, (*msgs)[i])
 		if err != nil {

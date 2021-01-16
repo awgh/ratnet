@@ -36,7 +36,7 @@ func (node *Node) Dropoff(bundle api.Bundle) error {
 	}
 	for i := 0; i < len(*msgs); i++ {
 		if len((*msgs)[i]) < 16 { // aes.BlockSize == 16
-			continue //todo: remove padding before here?
+			continue // todo: remove padding before here?
 		}
 		err = node.router.Route(node, (*msgs)[i])
 		if err != nil {
@@ -64,7 +64,7 @@ func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, maxBytes int64, channel
 		}
 		fileTime := info.ModTime().UnixNano()
 		if !info.IsDir() && fileTime > lastTime {
-			b, err := ioutil.ReadFile(path) //filepath.Join(node.basePath, path))
+			b, err := ioutil.ReadFile(path) // filepath.Join(node.basePath, path))
 			if err != nil {
 				events.Error(node, "prevent panic by handling failure reading a file:", path, err)
 				return err

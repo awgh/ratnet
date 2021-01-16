@@ -11,7 +11,6 @@ import (
 
 // PublicRPC : Entrypoint for RPC functions that are exposed to the public/Internet
 func PublicRPC(transport api.Transport, node api.Node, call api.RemoteCall) (interface{}, error) {
-
 	switch call.Action {
 	case api.ID:
 		var i bc.PubKey
@@ -197,7 +196,7 @@ func AdminRPC(transport api.Transport, node api.Node, call api.RemoteCall) (inte
 		if !ok {
 			return nil, errors.New("Invalid argument")
 		}
-		profileEnabled, ok := call.Args[1].(string) //todo: convert this to bool?
+		profileEnabled, ok := call.Args[1].(string) // todo: convert this to bool?
 		if !ok {
 			return nil, errors.New("Invalid argument")
 		}
@@ -248,7 +247,7 @@ func AdminRPC(transport api.Transport, node api.Node, call api.RemoteCall) (inte
 		return nil, nil
 
 	case api.GetPeers:
-		var group = ""
+		group := ""
 		if len(call.Args) > 1 {
 			return nil, errors.New("Invalid argument count")
 		}

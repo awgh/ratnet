@@ -12,9 +12,7 @@ import (
 	_ "github.com/upper/db/v4/adapter/ql"
 )
 
-var (
-	node *Node
-)
+var node *Node
 
 func Test_init(t *testing.T) {
 	node = New(new(ecc.KeyPair), new(ecc.KeyPair))
@@ -113,5 +111,7 @@ var pubkeyb64 = "LS0tLS1CRUdJTiBQVUJMSUMgS0VZLS0tLS0KTUlJQ0lqQU5CZ2txaGtpRzl3MEJ
 	"RUFBUT09Ci0tLS0tRU5EIFBVQkxJQyBLRVktLS0tLQo="
 
 // ECC TEST KEYS
-var pubprivkeyb64Ecc = "Tcksa18txiwMEocq7NXdeMwz6PPBD+nxCjb/WCtxq1+dln3M3IaOmg+YfTIbBpk+jIbZZZiT+4CoeFzaJGEWmg=="
-var pubkeyb64Ecc = "Tcksa18txiwMEocq7NXdeMwz6PPBD+nxCjb/WCtxq18="
+var (
+	pubprivkeyb64Ecc = "Tcksa18txiwMEocq7NXdeMwz6PPBD+nxCjb/WCtxq1+dln3M3IaOmg+YfTIbBpk+jIbZZZiT+4CoeFzaJGEWmg=="
+	pubkeyb64Ecc     = "Tcksa18txiwMEocq7NXdeMwz6PPBD+nxCjb/WCtxq18="
+)

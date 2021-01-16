@@ -51,7 +51,7 @@ func NewPollFromMap(transport api.Transport, node api.Node,
 		groups = append(groups, gstr)
 	}
 
-	//groups :=
+	// groups :=
 	return NewPoll(transport, node, interval, jitter, groups...)
 }
 
@@ -102,7 +102,8 @@ func (p *Poll) MarshalJSON() (b []byte, e error) {
 		"Transport": p.Transport,
 		"Interval":  p.GetInterval(),
 		"Jitter":    p.GetJitter(),
-		"Groups":    p.Groups})
+		"Groups":    p.Groups,
+	})
 }
 
 // RunPolicy : Poll

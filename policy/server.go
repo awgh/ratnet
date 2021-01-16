@@ -42,7 +42,8 @@ func (s *Server) MarshalJSON() (b []byte, e error) {
 		"Policy":    "server",
 		"ListenURI": s.ListenURI,
 		"AdminMode": s.AdminMode,
-		"Transport": s.Transport})
+		"Transport": s.Transport,
+	})
 }
 
 // RunPolicy : Executes the policy as a goroutine

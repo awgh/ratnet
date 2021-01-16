@@ -170,7 +170,6 @@ func test(fn func(*testing.T, NodeType, TransportType), t *testing.T) {
 
 func Test_server_ID_1(ot *testing.T) {
 	test(func(t *testing.T, nodeType NodeType, transportType TransportType) {
-
 		server1 := initNode(1, nodeType, transportType, false)
 		defer server1.Destroy(t)
 		var err error
@@ -202,7 +201,6 @@ func Test_server_ID_1(ot *testing.T) {
 
 func Test_server_CID_1(ot *testing.T) {
 	test(func(t *testing.T, nodeType NodeType, transportType TransportType) {
-
 		server1 := initNode(1, nodeType, transportType, false)
 		defer server1.Destroy(t)
 		// should not work on public interface
@@ -220,7 +218,6 @@ func Test_server_CID_1(ot *testing.T) {
 
 func Test_server_AddContact_1(ot *testing.T) {
 	test(func(t *testing.T, nodeType NodeType, transportType TransportType) {
-
 		server1 := initNode(1, nodeType, transportType, false)
 		defer server1.Destroy(t)
 		server2 := initNode(2, nodeType, transportType, false)
@@ -254,7 +251,6 @@ func Test_server_AddContact_1(ot *testing.T) {
 
 func Test_server_GetContact_1(ot *testing.T) {
 	test(func(t *testing.T, nodeType NodeType, transportType TransportType) {
-
 		server1 := initNode(1, nodeType, transportType, false)
 		defer server1.Destroy(t)
 		if errc := server1.Node.AddContact("destname1", pubkeyb64Ecc); errc != nil {
@@ -295,7 +291,6 @@ func Test_server_GetContact_1(ot *testing.T) {
 
 func Test_server_AddChannel_1(ot *testing.T) {
 	test(func(t *testing.T, nodeType NodeType, transportType TransportType) {
-
 		server1 := initNode(1, nodeType, transportType, false)
 		defer server1.Destroy(t)
 		// todo: add RSA test?
@@ -318,7 +313,6 @@ func Test_server_AddChannel_1(ot *testing.T) {
 
 func Test_server_GetChannel_1(ot *testing.T) {
 	test(func(t *testing.T, nodeType NodeType, transportType TransportType) {
-
 		server1 := initNode(1, nodeType, transportType, false)
 		defer server1.Destroy(t)
 		server1.Node.AddChannel("channel1", pubprivkeyb64Ecc)
@@ -359,7 +353,6 @@ func Test_server_GetChannel_1(ot *testing.T) {
 
 func Test_server_AddProfile_1(ot *testing.T) {
 	test(func(t *testing.T, nodeType NodeType, transportType TransportType) {
-
 		server1 := initNode(1, nodeType, transportType, false)
 		defer server1.Destroy(t)
 		t.Log("Trying AddProfile on Public interface")
@@ -378,7 +371,6 @@ func Test_server_AddProfile_1(ot *testing.T) {
 
 func Test_server_GetProfile_1(ot *testing.T) {
 	test(func(t *testing.T, nodeType NodeType, transportType TransportType) {
-
 		server1 := initNode(1, nodeType, transportType, false)
 		defer server1.Destroy(t)
 		server1.Node.AddProfile("profile1", false)
@@ -426,7 +418,6 @@ func Test_server_GetProfile_1(ot *testing.T) {
 
 func Test_server_AddPeer_1(ot *testing.T) {
 	test(func(t *testing.T, nodeType NodeType, transportType TransportType) {
-
 		server1 := initNode(1, nodeType, transportType, false)
 		defer server1.Destroy(t)
 		t.Log("Trying AddPeer on Public interface")
@@ -457,7 +448,6 @@ func Test_server_AddPeer_1(ot *testing.T) {
 
 func Test_server_GetPeer_1(ot *testing.T) {
 	test(func(t *testing.T, nodeType NodeType, transportType TransportType) {
-
 		server1 := initNode(1, nodeType, transportType, false)
 		defer server1.Destroy(t)
 		server1.Node.AddPeer("peer1", false, "https://1.2.3.4:443")
@@ -525,7 +515,6 @@ func Test_server_GetPeer_1(ot *testing.T) {
 
 func Test_server_Send_1(ot *testing.T) {
 	test(func(t *testing.T, nodeType NodeType, transportType TransportType) {
-
 		server1 := initNode(1, nodeType, transportType, false)
 		defer server1.Destroy(t)
 		server1.Node.AddContact("destname1", pubkeyb64Ecc)
@@ -544,7 +533,6 @@ func Test_server_Send_1(ot *testing.T) {
 
 func Test_server_SendChannel_1(ot *testing.T) {
 	test(func(t *testing.T, nodeType NodeType, transportType TransportType) {
-
 		server1 := initNode(1, nodeType, transportType, false)
 		defer server1.Destroy(t)
 		server1.Node.AddChannel("channel1", pubprivkeyb64Ecc)
@@ -563,7 +551,6 @@ func Test_server_SendChannel_1(ot *testing.T) {
 
 func Test_server_PickupDropoff_1(ot *testing.T) {
 	test(func(t *testing.T, nodeType NodeType, transportType TransportType) {
-
 		server1 := initNode(1, nodeType, transportType, false)
 		defer server1.Destroy(t)
 		server2 := initNode(2, nodeType, transportType, false)
@@ -602,7 +589,6 @@ func Test_server_PickupDropoff_1(ot *testing.T) {
 
 func Test_server_PickupDropoff_2(ot *testing.T) {
 	test(func(t *testing.T, nodeType NodeType, transportType TransportType) {
-
 		server1 := initNode(1, nodeType, transportType, false)
 		defer server1.Destroy(t)
 		server2 := initNode(2, nodeType, transportType, false)
@@ -644,7 +630,6 @@ var randmessage []byte
 
 func Test_p2p_Basic_1(ot *testing.T) {
 	test(func(t *testing.T, nodeType NodeType, transportType TransportType) {
-
 		p2p1 := initNode(1, nodeType, transportType, true)
 		defer p2p1.Destroy(t)
 		p2p2 := initNode(2, nodeType, transportType, true)
@@ -1079,4 +1064,4 @@ var pubprivkeyb64Ecc = "Tcksa18txiwMEocq7NXdeMwz6PPBD+nxCjb/WCtxq1+dln3M3IaOmg+Y
 
 var pubkeyb64Ecc = "Tcksa18txiwMEocq7NXdeMwz6PPBD+nxCjb/WCtxq18="
 
-//var privkeyb64Ecc = "nZZ9zNyGjpoPmH0yGwaZPoyG2WWYk/uAqHhc2iRhFpo="
+// var privkeyb64Ecc = "nZZ9zNyGjpoPmH0yGwaZPoyG2WWYk/uAqHhc2iRhFpo="

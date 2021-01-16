@@ -283,7 +283,7 @@ func (node *Node) sendBulk(channelName string, destkey bc.PubKey, msg [][]byte) 
 		rxsum = append(rxsum, []byte(channelName)...)
 	}
 
-	//todo: is this passing msg by reference or not???
+	// todo: is this passing msg by reference or not???
 	data := make([][]byte, len(msg))
 	for i := range msg {
 		var err error

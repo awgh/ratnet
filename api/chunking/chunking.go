@@ -24,12 +24,11 @@ func ChunkSize(node api.Node) uint32 {
 		events.Critical(node, "Transport has invalid low byte limit")
 	}
 
-	return chunksize - 132 //todo: this is the overhead for ECC, what about RSA?
+	return chunksize - 132 // todo: this is the overhead for ECC, what about RSA?
 }
 
 // SendChunked - utility function to break large messages into smaller ones for transports that can't handle arbitrarily large messages
 func SendChunked(node api.Node, chunkSize uint32, msg api.Msg) (err error) {
-
 	buf := msg.Content.Bytes()
 	buflen := uint32(len(buf))
 	chunkSizeMinusHeader := chunkSize - 8 // chunk header is two uint32's -> 8 bytes

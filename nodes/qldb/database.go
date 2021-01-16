@@ -143,7 +143,7 @@ func (node *Node) qlGetChannels() ([]api.Channel, error) {
 	if r == nil || err != nil {
 		return nil, err
 	}
-	//defer r.Close()
+	// defer r.Close()
 	var channels []api.Channel
 	for r.Next() {
 		var n, p string
@@ -181,8 +181,10 @@ func (node *Node) qlGetChannelPrivs() ([]api.ChannelPriv, error) {
 			return nil, err
 		}
 		channels = append(channels,
-			api.ChannelPriv{Name: n, Privkey: prv,
-				Pubkey: prv.GetPubKey().ToB64()})
+			api.ChannelPriv{
+				Name: n, Privkey: prv,
+				Pubkey: prv.GetPubKey().ToB64(),
+			})
 	}
 	return channels, nil
 }
@@ -375,7 +377,6 @@ func (node *Node) qlDeletePeer(name string) {
 }
 
 func (node *Node) qlOutboxEnqueue(channelName string, msg []byte, ts int64, checkExists bool) error {
-
 	doInsert := !checkExists
 
 	if checkExists {
@@ -410,11 +411,11 @@ func (node *Node) outboxBulkInsert(channelName string, timestamp int64, msgs [][
 	}
 	args := make([]interface{}, 1+(2*len(msgs)))
 	args[0] = channelName
-	//args[1] = timestamp
+	// args[1] = timestamp
 	idx := 2                                                    // starting 1-based index for 2nd arg
 	sql := "INSERT INTO outbox(channel, msg, timestamp) VALUES" //($1,$2, $3);
 	for i, v := range msgs {
-		//sql += "($1,$" + strconv.Itoa(i+3) + ", $2)"
+		// sql += "($1,$" + strconv.Itoa(i+3) + ", $2)"
 		sql += "($1,$" + strconv.Itoa(idx) + ", $" + strconv.Itoa(idx+1) + ")"
 		if i != len(msgs) {
 			sql += ", "
@@ -625,13 +626,12 @@ func (node *Node) FlushOutbox(maxAgeSeconds int64) {
 
 // BootstrapDB - Initialize or open a database file
 func (node *Node) BootstrapDB(database string) func() *sql.DB {
-
 	if node.db != nil {
 		return node.db
 	}
 
 	node.db = func() *sql.DB {
-		//todo: why does this trigger so much?
+		// todo: why does this trigger so much?
 		c, err := sql.Open("ql", database)
 		if err != nil {
 			events.Critical(node, errors.New("DB Error Opening: "+database+" => "+err.Error()))
@@ -646,7 +646,7 @@ func (node *Node) BootstrapDB(database string) func() *sql.DB {
 			cpubkey	string	NOT NULL
 		);		
 	`)
-	//CREATE UNIQUE INDEX IF NOT EXISTS contactid ON contacts (id());
+	// CREATE UNIQUE INDEX IF NOT EXISTS contactid ON contacts (id());
 
 	node.transactExec(`
 		CREATE TABLE IF NOT EXISTS channels ( 			

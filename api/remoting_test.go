@@ -6,7 +6,6 @@ import (
 )
 
 func Test_ArgsRoundTrip_1(t *testing.T) {
-
 	// Nil
 	argsBytes := ArgsToBytes(nil)
 	args, err := ArgsFromBytes(argsBytes)
@@ -21,7 +20,6 @@ func Test_ArgsRoundTrip_1(t *testing.T) {
 	}
 
 	t.Logf("%+v\n", args)
-
 }
 
 func Test_RoundTrip_1(t *testing.T) {

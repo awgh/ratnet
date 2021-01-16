@@ -8,8 +8,10 @@ import (
 	"github.com/awgh/ratnet/api/events"
 )
 
-var peerTable map[string]*api.PeerInfo
-var lock = sync.RWMutex{}
+var (
+	peerTable map[string]*api.PeerInfo
+	lock      = sync.RWMutex{}
+)
 
 func readPeerTable(key string) (*api.PeerInfo, bool) {
 	lock.RLock()
@@ -17,6 +19,7 @@ func readPeerTable(key string) (*api.PeerInfo, bool) {
 	v, ok := peerTable[key]
 	return v, ok
 }
+
 func writePeerTable(key string, val *api.PeerInfo) {
 	lock.Lock()
 	defer lock.Unlock()

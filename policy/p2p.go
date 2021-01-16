@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"math/rand"
+	"net"
 	"net/url"
 	"runtime"
 	"strings"
@@ -13,10 +15,6 @@ import (
 	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
 	"github.com/awgh/ratnet/api/events"
-
-	"net"
-
-	"math/rand"
 
 	dns "github.com/miekg/dns"
 )
@@ -89,7 +87,8 @@ func (s *P2P) MarshalJSON() (b []byte, e error) {
 		"AdminMode":         s.AdminMode,
 		"Transport":         s.Transport,
 		"ListenInterval":    s.ListenInterval,
-		"AdvertiseInterval": s.AdvertiseInterval})
+		"AdvertiseInterval": s.AdvertiseInterval,
+	})
 }
 
 func (s *P2P) initListenSocket() {
@@ -135,7 +134,6 @@ func (s *P2P) rerollNegotiationRank() {
 // RunPolicy : Executes the policy as a goroutine
 //
 func (s *P2P) RunPolicy() error {
-
 	s.initListenSocket()
 	if err := s.initDialSocket(); err != nil {
 		return err
@@ -167,7 +165,6 @@ func (s *P2P) Stop() {
 }
 
 func (s *P2P) mdnsListen() error {
-
 	peerlist := make(map[string]interface{})
 
 	for s.IsListening {
@@ -227,7 +224,7 @@ func (s *P2P) mdnsListen() error {
 				t := make(map[string]interface{})
 				fromMapFn := ratnet.Transports[u.Scheme]
 				trans := fromMapFn(s.Node, t)
-				//todo: cache transports?
+				// todo: cache transports?
 				peerlist[target] = trans
 				go func() {
 					for s.IsListening {
@@ -252,7 +249,6 @@ func (s *P2P) mdnsListen() error {
 }
 
 func (s *P2P) mdnsAdvertise() error {
-
 	events.Info(s.Node, "mdns Advertising...")
 	a := make([]byte, 8)
 	binary.LittleEndian.PutUint64(a, s.negotiationRank)

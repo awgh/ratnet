@@ -345,7 +345,7 @@ func (node *Node) dbOutboxEnqueue(channelName string, msg []byte, ts int64, chec
 func (node *Node) outboxBulkInsert(channelName string, timestamp int64, msgs [][]byte) error {
 	return node.db.Tx(func(tx db.Session) error {
 		col := tx.Collection("outbox")
-		//todo: convert this to BatchInserter?
+		// todo: convert this to BatchInserter?
 		for i, v := range msgs {
 			var outboxmsg api.OutboxMsg
 			outboxmsg.Channel = channelName
