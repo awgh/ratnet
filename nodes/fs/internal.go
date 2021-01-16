@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/signal"
 	"path/filepath"
 
 	"github.com/awgh/ratnet/api"
@@ -25,7 +24,6 @@ func (node *Node) GetChannelPrivKey(name string) (string, error) {
 
 // Forward - Add an already-encrypted message to the outbound message queue (forward it along)
 func (node *Node) Forward(msg api.Msg) error {
-
 	flags := uint8(0)
 	if msg.IsChan {
 		flags |= api.ChannelFlag
@@ -110,20 +108,6 @@ func (node *Node) Handle(msg api.Msg) (bool, error) {
 		events.Debug(node, "No message sent")
 	}
 	return tagOK, nil
-}
-
-func (node *Node) signalMonitor() {
-	sigChannel := make(chan os.Signal, 1)
-	signal.Notify(sigChannel, nil)
-	go func() {
-		defer node.Stop()
-		for {
-			switch <-sigChannel {
-			case os.Kill:
-				return
-			}
-		}
-	}()
 }
 
 // AddStream - adds a partial message header to internal storage

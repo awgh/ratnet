@@ -186,7 +186,6 @@ func (node *Node) SendChannel(channelName string, data []byte, pubkey ...bc.PubK
 
 // SendMsg : Transmits a message
 func (node *Node) SendMsg(msg api.Msg) error {
-
 	// determine if we need to chunk
 	chunkSize := chunking.ChunkSize(node)                               // finds the minimum transport byte limit
 	if msg.Content.Len() > 0 && uint32(msg.Content.Len()) > chunkSize { // we need to chunk
@@ -271,7 +270,6 @@ func (node *Node) SendChannelBulk(channelName string, data [][]byte, pubkey ...b
 }
 
 func (node *Node) sendBulk(channelName string, destkey bc.PubKey, msg [][]byte) error {
-
 	isChan := (channelName != "")
 	flags := uint8(0)
 	if isChan {
@@ -307,9 +305,6 @@ func (node *Node) Start() error {
 		return nil
 	}
 	node.setIsRunning(true)
-
-	// start the signal monitor
-	node.signalMonitor()
 
 	// start the policies
 	if node.policies != nil {
