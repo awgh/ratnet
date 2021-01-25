@@ -58,10 +58,10 @@ func (*Module) Name() string {
 }
 
 // ByteLimit - get limit on bytes per bundle for this transport
-func (h *Module) ByteLimit() int64 { return h.byteLimit }
+func (h *Module) ByteLimit() int64 { return atomic.LoadInt64(&h.byteLimit) }
 
 // SetByteLimit - set limit on bytes per bundle for this transport
-func (h *Module) SetByteLimit(limit int64) { h.byteLimit = limit }
+func (h *Module) SetByteLimit(limit int64) { atomic.StoreInt64(&h.byteLimit, limit) }
 
 // Listen : Server interface
 func (h *Module) Listen(listen string, adminMode bool) {

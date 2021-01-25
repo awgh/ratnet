@@ -22,6 +22,8 @@ func (node *Node) CID() (bc.PubKey, error) {
 
 // GetContact : Return a Contact by name
 func (node *Node) GetContact(name string) (*api.Contact, error) {
+	node.mutex.RLock()
+	defer node.mutex.RUnlock()
 	c, ok := node.contacts[name]
 	if !ok {
 		return nil, errors.New("Contact not found")
@@ -34,6 +36,9 @@ func (node *Node) GetContact(name string) (*api.Contact, error) {
 
 // GetContacts : Return a list of Contacts
 func (node *Node) GetContacts() ([]api.Contact, error) {
+	node.mutex.RLock()
+	defer node.mutex.RUnlock()
+
 	var contacts []api.Contact
 	for _, v := range node.contacts {
 		contacts = append(contacts, api.Contact{Name: v.Name, Pubkey: v.Pubkey})
@@ -43,6 +48,8 @@ func (node *Node) GetContacts() ([]api.Contact, error) {
 
 // AddContact : Add or Update a contact key to this node's database
 func (node *Node) AddContact(name string, key string) error {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
 	if !node.contentKey.ValidatePubKey(key) {
 		return errors.New("Invalid Public Key in AddContact")
 	}
@@ -55,6 +62,8 @@ func (node *Node) AddContact(name string, key string) error {
 
 // DeleteContact : Remove a contact from this node's database
 func (node *Node) DeleteContact(name string) error {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
 	if _, ok := node.contacts[name]; !ok {
 		return errors.New("Contact not found")
 	}
@@ -64,6 +73,8 @@ func (node *Node) DeleteContact(name string) error {
 
 // GetChannel : Return a channel by name
 func (node *Node) GetChannel(name string) (*api.Channel, error) {
+	node.mutex.RLock()
+	defer node.mutex.RUnlock()
 	channel, ok := node.channels[name]
 	if !ok {
 		return nil, errors.New("Channel not found")
@@ -76,6 +87,8 @@ func (node *Node) GetChannel(name string) (*api.Channel, error) {
 
 // GetChannels : Return list of channels known to this node
 func (node *Node) GetChannels() ([]api.Channel, error) {
+	node.mutex.RLock()
+	defer node.mutex.RUnlock()
 	var channels []api.Channel
 	for _, v := range node.channels {
 		channels = append(channels, api.Channel{
@@ -87,9 +100,8 @@ func (node *Node) GetChannels() ([]api.Channel, error) {
 
 // AddChannel : Add a channel to this node's database
 func (node *Node) AddChannel(name string, privkey string) error {
-	if _, ok := node.channels[name]; ok {
-		return errors.New("Channel already exists")
-	}
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
 	pk := node.contentKey.Clone()
 	if err := pk.FromB64(privkey); err != nil {
 		return errors.New("Invalid channel key")
@@ -104,6 +116,8 @@ func (node *Node) AddChannel(name string, privkey string) error {
 
 // DeleteChannel : Remove a channel from this node's database
 func (node *Node) DeleteChannel(name string) error {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
 	if _, ok := node.channels[name]; !ok {
 		return errors.New("Channel not found")
 	}
@@ -113,6 +127,8 @@ func (node *Node) DeleteChannel(name string) error {
 
 // GetProfile : Retrieve a profile by name
 func (node *Node) GetProfile(name string) (*api.Profile, error) {
+	node.mutex.RLock()
+	defer node.mutex.RUnlock()
 	p, ok := node.profiles[name]
 	if !ok {
 		return nil, errors.New("Profile not found")
@@ -120,12 +136,16 @@ func (node *Node) GetProfile(name string) (*api.Profile, error) {
 	pub := new(api.Profile)
 	pub.Name = name
 	pub.Enabled = p.Enabled
-	pub.Pubkey = p.Privkey.GetPubKey().ToB64()
+	kp := p.Privkey
+	pk := kp.GetPubKey()
+	pub.Pubkey = pk.ToB64()
 	return pub, nil
 }
 
 // GetProfiles : Retrieve the list of profiles for this node
 func (node *Node) GetProfiles() ([]api.Profile, error) {
+	node.mutex.RLock()
+	defer node.mutex.RUnlock()
 	var profiles []api.Profile
 	for name, profile := range node.profiles {
 		profiles = append(profiles, api.Profile{
@@ -139,6 +159,8 @@ func (node *Node) GetProfiles() ([]api.Profile, error) {
 
 // AddProfile : Add or Update a profile to this node's database
 func (node *Node) AddProfile(name string, enabled bool) error {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
 	// generate new profile keypair
 	profileKey := node.contentKey.Clone()
 	if _, ok := node.profiles[name]; !ok {
@@ -155,6 +177,8 @@ func (node *Node) AddProfile(name string, enabled bool) error {
 
 // DeleteProfile : Remove a profile from this node's database
 func (node *Node) DeleteProfile(name string) error {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
 	if _, ok := node.profiles[name]; !ok {
 		return errors.New("Profile not found")
 	}
@@ -164,6 +188,8 @@ func (node *Node) DeleteProfile(name string) error {
 
 // LoadProfile : Load a profile key from the database as the content key
 func (node *Node) LoadProfile(name string) (bc.PubKey, error) {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
 	if _, ok := node.channels[name]; !ok {
 		return nil, errors.New("Profile not found")
 	}
@@ -174,6 +200,8 @@ func (node *Node) LoadProfile(name string) (bc.PubKey, error) {
 
 // GetPeer : Retrieve a peer from this node's database
 func (node *Node) GetPeer(name string) (*api.Peer, error) {
+	node.mutex.RLock()
+	defer node.mutex.RUnlock()
 	peer, ok := node.peers[name]
 	if !ok {
 		return nil, errors.New("Peer not found")
@@ -188,6 +216,8 @@ func (node *Node) GetPeer(name string) (*api.Peer, error) {
 
 // GetPeers : Retrieve a list of peers in this node's database
 func (node *Node) GetPeers(group ...string) ([]api.Peer, error) {
+	node.mutex.RLock()
+	defer node.mutex.RUnlock()
 	// if we don't have a specified group, it's ""
 	groupName := ""
 	if len(group) > 0 {
@@ -195,8 +225,8 @@ func (node *Node) GetPeers(group ...string) ([]api.Peer, error) {
 	}
 	var peers []api.Peer
 	for _, v := range node.peers {
-		if groupName == v.Group {
-			peers = append(peers, api.Peer{Name: v.Name, Enabled: v.Enabled, URI: v.URI, Group: v.Group})
+		if v.Group == groupName {
+			peers = append(peers, api.Peer{Name: v.Name, Enabled: v.Enabled, URI: v.URI, Group: groupName})
 		}
 	}
 	return peers, nil
@@ -204,6 +234,8 @@ func (node *Node) GetPeers(group ...string) ([]api.Peer, error) {
 
 // AddPeer : Add or Update a peer configuration
 func (node *Node) AddPeer(name string, enabled bool, uri string, group ...string) error {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
 	// if we don't have a specified group, it's ""
 	groupName := ""
 	if len(group) > 0 {
@@ -220,6 +252,8 @@ func (node *Node) AddPeer(name string, enabled bool, uri string, group ...string
 
 // DeletePeer : Remove a peer from this node's database
 func (node *Node) DeletePeer(name string) error {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
 	if _, ok := node.peers[name]; !ok {
 		return errors.New("Peer not found")
 	}
@@ -233,14 +267,19 @@ func (node *Node) Send(contactName string, data []byte, pubkey ...bc.PubKey) err
 	if pubkey != nil && len(pubkey) > 0 && pubkey[0] != nil { // third argument is optional pubkey override
 		destkey = pubkey[0]
 	} else {
+		node.mutex.RLock()
 		if _, ok := node.contacts[contactName]; !ok {
+			node.mutex.RUnlock()
 			return errors.New("Contact not found")
 		}
 		destkey = node.contentKey.GetPubKey().Clone()
 		if err := destkey.FromB64(node.contacts[contactName].Pubkey); err != nil {
+			node.mutex.RUnlock()
 			return err
 		}
+		node.mutex.RUnlock()
 	}
+
 	return node.SendMsg(api.Msg{Name: contactName, Content: bytes.NewBuffer(data), IsChan: false, PubKey: destkey, Chunked: false})
 }
 
@@ -263,7 +302,9 @@ func (node *Node) SendChannel(channelName string, data []byte, pubkey ...bc.PubK
 	if pubkey != nil && len(pubkey) > 0 && pubkey[0] != nil { // third argument is optional PubKey override
 		destkey = pubkey[0]
 	} else {
+		node.mutex.RLock()
 		c, ok := node.channels[channelName]
+		node.mutex.RUnlock()
 		if !ok {
 			return errors.New("No public key for Channel")
 		}
@@ -356,6 +397,7 @@ func (node *Node) Start() error {
 			if !node.IsRunning() {
 				break
 			}
+
 			// read message off the input channel
 			message := <-node.In()
 			events.Debug(node, "Message accepted on input channel")

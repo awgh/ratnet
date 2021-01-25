@@ -44,10 +44,10 @@ func (m *Module) Name() string {
 }
 
 // ByteLimit - get limit on bytes per bundle for this transport
-func (m *Module) ByteLimit() int64 { return m.byteLimit }
+func (m *Module) ByteLimit() int64 { return atomic.LoadInt64(&m.byteLimit) }
 
 // SetByteLimit - set limit on bytes per bundle for this transport
-func (m *Module) SetByteLimit(limit int64) { m.byteLimit = limit }
+func (m *Module) SetByteLimit(limit int64) { atomic.StoreInt64(&m.byteLimit, limit) }
 
 // Listen : opens a UDP socket and listens
 func (m *Module) Listen(listen string, adminMode bool) {

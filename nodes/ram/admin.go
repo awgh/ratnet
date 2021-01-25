@@ -209,6 +209,7 @@ func (node *Node) GetPeer(name string) (*api.Peer, error) {
 	p.Name = name
 	p.Enabled = peer.Enabled
 	p.URI = peer.URI
+	p.Group = peer.Group
 	return p, nil
 }
 
@@ -306,6 +307,7 @@ func (node *Node) SendChannel(channelName string, data []byte, pubkey ...bc.PubK
 		}
 		destkey = c.Privkey.GetPubKey()
 	}
+
 	return node.SendMsg(api.Msg{Name: channelName, Content: bytes.NewBuffer(data), IsChan: true, PubKey: destkey, Chunked: false})
 }
 
