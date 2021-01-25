@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/awgh/ratnet/api"
@@ -28,13 +29,14 @@ type P2P struct {
 	ListenInterval    int
 	AdvertiseInterval int
 
-	IsListening   bool
-	IsAdvertising bool
-	AdminMode     bool
-	ListenURI     string
-	localAddress  string
-	Transport     api.Transport
-	Node          api.Node
+	isListening   uint32
+	isAdvertising uint32
+
+	AdminMode    bool
+	ListenURI    string
+	localAddress string
+	Transport    api.Transport
+	Node         api.Node
 
 	listenSocket *net.UDPConn
 	dialSocket   *net.UDPConn
@@ -114,11 +116,11 @@ func (s *P2P) RunPolicy() error {
 	}
 
 	s.Transport.Listen(s.ListenURI, s.AdminMode)
-	s.IsListening = true
+	s.setIsListening(true)
 
 	go s.mdnsListen()
 	go func() {
-		for s.IsListening {
+		for s.IsListening() {
 			if err := s.mdnsAdvertise(); err != nil {
 				events.Warning(s.Node, "mdnsAdvertise errored: "+err.Error())
 			}
@@ -132,7 +134,7 @@ func (s *P2P) RunPolicy() error {
 //
 func (s *P2P) Stop() {
 	s.Transport.Stop()
-	s.IsListening = false
+	s.setIsListening(false)
 
 	s.listenSocket.Close()
 	s.dialSocket.Close()
@@ -141,7 +143,7 @@ func (s *P2P) Stop() {
 func (s *P2P) mdnsListen() error {
 	peerlist := make(map[string]interface{})
 
-	for s.IsListening {
+	for s.IsListening() {
 		b := make([]byte, maxDatagramSize)
 		conn := s.listenSocket
 		if _, _, err := conn.ReadFromUDP(b); err != nil {
@@ -203,7 +205,7 @@ func (s *P2P) mdnsListen() error {
 				trans := s.Transport
 				peerlist[target] = trans
 				go func() {
-					for s.IsListening {
+					for s.IsListening() {
 						st := time.Now()
 						if happy, err := policy.PollServer(trans, s.Node, target[len(u.Scheme)+3:], pubsrv); !happy {
 							if err != nil {
@@ -260,4 +262,30 @@ func (s *P2P) mdnsAdvertise() error {
 //
 func (s *P2P) GetTransport() api.Transport {
 	return s.Transport
+}
+
+// IsListening - returns true if this policy is listening
+func (s *P2P) IsListening() bool {
+	return atomic.LoadUint32(&s.isListening) == 1
+}
+
+func (s *P2P) setIsListening(b bool) {
+	var listening uint32 = 0
+	if b {
+		listening = 1
+	}
+	atomic.StoreUint32(&s.isListening, listening)
+}
+
+// IsAdvertising - returns true if this policy is advertising
+func (s *P2P) IsAdvertising() bool {
+	return atomic.LoadUint32(&s.isAdvertising) == 1
+}
+
+func (s *P2P) setIsAdvertising(b bool) {
+	var advertising uint32 = 0
+	if b {
+		advertising = 1
+	}
+	atomic.StoreUint32(&s.isAdvertising, advertising)
 }
