@@ -2,6 +2,7 @@ package ram
 
 import (
 	"sync/atomic"
+	"sync"
 
 	"github.com/awgh/bencrypt/ecc"
 	"github.com/awgh/debouncer"
@@ -40,6 +41,7 @@ type Node struct {
 	chunks   map[uint32]map[uint32]*api.Chunk
 
 	debouncer *debouncer.Debouncer
+	mutex sync.RWMutex
 }
 
 // New : creates a new instance of API
@@ -99,11 +101,15 @@ func (node *Node) setIsRunning(b bool) {
 
 // GetPolicies : returns the array of Policy objects for this Node
 func (node *Node) GetPolicies() []api.Policy {
+	node.mutex.RLock()
+	defer node.mutex.RUnlock()
 	return node.policies
 }
 
 // SetPolicy : set the array of Policy objects for this Node
 func (node *Node) SetPolicy(policies ...api.Policy) {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
 	node.policies = policies
 }
 
