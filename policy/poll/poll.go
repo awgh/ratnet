@@ -16,7 +16,7 @@ import (
 type Poll struct {
 	// internal
 	wg        sync.WaitGroup
-	isRunning bool
+	isRunning uint32
 
 	// last poll times
 	lastPollLocal, lastPollRemote int64
@@ -76,7 +76,7 @@ func (p *Poll) SetJitter(newJitter int) {
 
 // RunPolicy : Poll
 func (p *Poll) RunPolicy() error {
-	if p.isRunning {
+	if p.IsRunning() {
 		return errors.New("Policy is already running")
 	}
 
@@ -86,10 +86,10 @@ func (p *Poll) RunPolicy() error {
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()
-		if p.isRunning {
+		if p.IsRunning() {
 			return
 		}
-		p.isRunning = true
+		p.setIsRunning(true)
 
 		pubsrv, err := p.node.ID()
 		if err != nil {
@@ -101,7 +101,7 @@ func (p *Poll) RunPolicy() error {
 		counter := 0
 		for {
 			// check if we should still be running
-			if !p.isRunning {
+			if p.IsRunning() {
 				break
 			}
 
@@ -164,7 +164,7 @@ func (p *Poll) RunPolicy() error {
 
 // Stop : Stops this instance of Poll from running
 func (p *Poll) Stop() {
-	p.isRunning = false
+	p.setIsRunning(false)
 	p.wg.Wait()
 	p.Transport.Stop()
 }
@@ -173,4 +173,17 @@ func (p *Poll) Stop() {
 //
 func (p *Poll) GetTransport() api.Transport {
 	return p.Transport
+}
+
+// IsRunning - returns true if this policy is running
+func (p *Poll) IsRunning() bool {
+	return atomic.LoadUint32(&p.isRunning) == 1
+}
+
+func (p *Poll) setIsRunning(b bool) {
+	var running uint32 = 0
+	if b {
+		running = 1
+	}
+	atomic.StoreUint32(&p.isRunning, running)
 }
