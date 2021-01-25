@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -43,6 +44,7 @@ type Module struct {
 	server    *http.Server
 	node      api.Node
 	isRunning uint32
+	mutex     sync.Mutex
 
 	Cert, Key []byte
 	EccMode   bool
@@ -82,11 +84,13 @@ func (h *Module) Listen(listen string, adminMode bool) {
 		h.handleResponse(w, r, h.node, adminMode)
 	})
 
+	h.mutex.Lock()
 	h.server = &http.Server{
 		Addr:      listen,
 		TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}},
 		Handler:   serveMux,
 	}
+	h.mutex.Unlock()
 
 	// start
 	go func() {
@@ -180,7 +184,9 @@ func (h *Module) RPC(host string, method api.Action, args ...interface{}) (inter
 
 // Stop : stops the HTTPS transport from running
 func (h *Module) Stop() {
+	h.mutex.Lock()
 	h.server.Close()
+	h.mutex.Unlock()
 	h.setIsRunning(false)
 }
 
