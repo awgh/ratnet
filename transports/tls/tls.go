@@ -3,6 +3,7 @@ package tls
 import (
 	"bufio"
 	"crypto/tls"
+	ctls "crypto/tls"
 	"errors"
 	"fmt"
 	"net"
@@ -12,12 +13,6 @@ import (
 	"github.com/awgh/ratnet/api"
 	"github.com/awgh/ratnet/api/events"
 )
-
-var cachedSessions map[string]*tls.Conn
-
-func init() {
-	cachedSessions = make(map[string]*tls.Conn)
-}
 
 // New : Makes a new instance of this transport module
 func New(certPem, keyPem []byte, node api.Node, eccMode bool) *Module {
@@ -30,15 +25,19 @@ func New(certPem, keyPem []byte, node api.Node, eccMode bool) *Module {
 
 	tls.byteLimit = 8000 * 1024 // 125000 stable, 150000 was unstable
 
+	tls.cachedSessions = make(map[string]*ctls.Conn)
+
 	return tls
 }
 
 // Module : TLS Implementation of a Transport module
 type Module struct {
-	node      api.Node
-	isRunning uint32
-	wg        sync.WaitGroup
-	listeners []net.Listener
+	node           api.Node
+	isRunning      uint32
+	wg             sync.WaitGroup
+	listeners      []net.Listener
+	mutex          sync.Mutex
+	cachedSessions map[string]*tls.Conn
 
 	Cert, Key []byte
 	EccMode   bool
@@ -74,6 +73,8 @@ func (h *Module) Listen(listen string, adminMode bool) {
 		return
 	}
 
+	h.mutex.Lock()
+
 	// setup Listener
 	listener, err := net.Listen("tcp", listen)
 	if err != nil {
@@ -89,6 +90,9 @@ func (h *Module) Listen(listen string, adminMode bool) {
 
 	// add Listener to the Listener pool
 	h.listeners = append(h.listeners, listener)
+
+	h.mutex.Unlock()
+
 	h.setIsRunning(true)
 
 	h.wg.Add(1)
@@ -153,7 +157,7 @@ func (h *Module) handleConnection(conn net.Conn, node api.Node, adminMode bool) 
 func (h *Module) RPC(host string, method api.Action, args ...interface{}) (interface{}, error) {
 	events.Info(h.node, fmt.Sprintf("\n***\n***RPC %d on %s called with: %+v\n***\n", method, host, args))
 
-	conn, ok := cachedSessions[host]
+	conn, ok := h.getCachedSession(host)
 	if !ok {
 		var err error
 		conf := &tls.Config{InsecureSkipVerify: true}
@@ -162,7 +166,7 @@ func (h *Module) RPC(host string, method api.Action, args ...interface{}) (inter
 			events.Error(h.node, err.Error())
 			return nil, err
 		}
-		cachedSessions[host] = conn
+		h.setCachedSession(host, conn)
 	}
 	reader := bufio.NewReader(conn)
 	writer := bufio.NewWriter(conn)
@@ -175,8 +179,7 @@ func (h *Module) RPC(host string, method api.Action, args ...interface{}) (inter
 	err := api.WriteBuffer(writer, rbytes)
 	if err != nil {
 		events.Warning(h.node, "tls RPC remote write failed: "+err.Error())
-		delete(cachedSessions, host) // something's wrong, make a new session next attempt
-		_ = conn.Close()
+		h.deleteCachedSession(host) // something's wrong, make a new session next attempt
 		return nil, err
 	}
 	writer.Flush()
@@ -184,14 +187,12 @@ func (h *Module) RPC(host string, method api.Action, args ...interface{}) (inter
 	buf, err := api.ReadBuffer(reader)
 	if err != nil {
 		events.Warning(h.node, "tls RPC remote read failed: "+err.Error())
-		delete(cachedSessions, host) // something's wrong, make a new session next attempt
-		_ = conn.Close()
+		h.deleteCachedSession(host) // something's wrong, make a new session next attempt
 		return nil, err
 	}
 	rr, err := api.RemoteResponseFromBytes(buf)
 	if err != nil {
-		delete(cachedSessions, host) // something's wrong, make a new session next attempt
-		_ = conn.Close()
+		h.deleteCachedSession(host) // something's wrong, make a new session next attempt
 		events.Warning(h.node, "tls RPC decode failed: "+err.Error())
 		return nil, err
 	}
@@ -208,14 +209,47 @@ func (h *Module) RPC(host string, method api.Action, args ...interface{}) (inter
 // Stop : stops the TLS transport from running
 func (h *Module) Stop() {
 	h.setIsRunning(false)
-	for k, v := range cachedSessions {
-		delete(cachedSessions, k)
-		_ = v.Close()
-	}
+
+	h.mutex.Lock()
 	for _, listener := range h.listeners {
 		listener.Close()
 	}
+	h.mutex.Unlock()
 	h.wg.Wait()
+
+	h.clearCachedSessions()
+}
+
+func (h *Module) getCachedSession(host string) (*ctls.Conn, bool) {
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+	v, ok := h.cachedSessions[host]
+	return v, ok
+}
+
+func (h *Module) setCachedSession(host string, conn *ctls.Conn) {
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+	h.cachedSessions[host] = conn
+}
+
+func (h *Module) deleteCachedSession(host string) {
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+	v, ok := h.cachedSessions[host]
+	if ok {
+		_ = v.Close()
+	}
+	delete(h.cachedSessions, host)
+}
+
+func (h *Module) clearCachedSessions() {
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+	for k, v := range h.cachedSessions {
+		delete(h.cachedSessions, k)
+		_ = v.Close()
+	}
 }
 
 // IsRunning - returns true if this node is running
