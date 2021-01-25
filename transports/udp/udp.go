@@ -16,12 +16,6 @@ import (
 	"github.com/awgh/ratnet/api/events"
 )
 
-var cachedSessions map[string]*kcp.UDPSession
-
-func init() {
-	cachedSessions = make(map[string]*kcp.UDPSession)
-}
-
 // New : Makes a new instance of this transport module
 func New(node api.Node) *Module {
 	instance := new(Module)
@@ -29,15 +23,19 @@ func New(node api.Node) *Module {
 
 	instance.byteLimit = 8000 * 1024 // 125000
 
+	instance.cachedSessions = make(map[string]*kcp.UDPSession)
+
 	return instance
 }
 
 // Module : UDP Implementation of a Transport module
 type Module struct {
-	node      api.Node
-	isRunning uint32
-	wg        sync.WaitGroup
-	byteLimit int64
+	node           api.Node
+	isRunning      uint32
+	wg             sync.WaitGroup
+	byteLimit      int64
+	mutex          sync.Mutex
+	cachedSessions map[string]*kcp.UDPSession
 }
 
 // Name : Returns name of module
@@ -134,7 +132,7 @@ func (m *Module) Listen(listen string, adminMode bool) {
 func (m *Module) RPC(host string, method api.Action, args ...interface{}) (interface{}, error) {
 	events.Info(m.node, fmt.Sprintf("\n***\n***RPC %d on %s called with: %+v\n***\n", method, host, args))
 
-	conn, ok := cachedSessions[host]
+	conn, ok := m.getCachedSession(host)
 	if !ok {
 		// open client socket
 		var err error
@@ -148,7 +146,7 @@ func (m *Module) RPC(host string, method api.Action, args ...interface{}) (inter
 		conn.SetNoDelay(1, 20, 2, 1)
 		conn.SetACKNoDelay(true)
 
-		cachedSessions[host] = conn
+		m.setCachedSession(host, conn)
 	}
 	conn.SetReadDeadline(time.Now().Add(35 * time.Second))
 	conn.SetWriteDeadline(time.Now().Add(35 * time.Second))
@@ -164,8 +162,7 @@ func (m *Module) RPC(host string, method api.Action, args ...interface{}) (inter
 	err := api.WriteBuffer(writer, rbytes)
 	if err != nil {
 		events.Warning(m.node, "udp RPC remote write failed: "+err.Error())
-		delete(cachedSessions, host) // something's wrong, make a new session next attempt
-		_ = conn.Close()
+		m.deleteCachedSession(host) // something's wrong, make a new session next attempt
 		return nil, err
 	}
 	writer.Flush()
@@ -173,14 +170,12 @@ func (m *Module) RPC(host string, method api.Action, args ...interface{}) (inter
 	buf, err := api.ReadBuffer(reader)
 	if err != nil {
 		events.Warning(m.node, "udp RPC remote read failed: "+err.Error())
-		delete(cachedSessions, host) // something's wrong, make a new session next attempt
-		_ = conn.Close()
+		m.deleteCachedSession(host) // something's wrong, make a new session next attempt
 		return nil, err
 	}
 	rr, err := api.RemoteResponseFromBytes(buf)
 	if err != nil {
-		delete(cachedSessions, host) // something's wrong, make a new session next attempt
-		_ = conn.Close()
+		m.deleteCachedSession(host) // something's wrong, make a new session next attempt
 		if err == io.EOF {
 			return nil, nil
 		}
@@ -200,12 +195,41 @@ func (m *Module) RPC(host string, method api.Action, args ...interface{}) (inter
 // Stop : Stops module
 func (m *Module) Stop() {
 	m.setIsRunning(false)
+	m.wg.Wait()
 
-	for k, v := range cachedSessions {
-		delete(cachedSessions, k)
+	m.clearCachedSessions()
+}
+
+func (m *Module) getCachedSession(host string) (*kcp.UDPSession, bool) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	v, ok := m.cachedSessions[host]
+	return v, ok
+}
+
+func (m *Module) setCachedSession(host string, conn *kcp.UDPSession) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	m.cachedSessions[host] = conn
+}
+
+func (m *Module) deleteCachedSession(host string) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	v, ok := m.cachedSessions[host]
+	if ok {
 		_ = v.Close()
 	}
-	m.wg.Wait()
+	delete(m.cachedSessions, host)
+}
+
+func (m *Module) clearCachedSessions() {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	for k, v := range m.cachedSessions {
+		delete(m.cachedSessions, k)
+		_ = v.Close()
+	}
 }
 
 // IsRunning - returns true if this node is running
