@@ -101,7 +101,7 @@ func (p *Poll) RunPolicy() error {
 		counter := 0
 		for {
 			// check if we should still be running
-			if p.IsRunning() {
+			if !p.IsRunning() {
 				break
 			}
 
