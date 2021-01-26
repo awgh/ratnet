@@ -1,8 +1,8 @@
 package ram
 
 import (
-	"sync/atomic"
 	"sync"
+	"sync/atomic"
 
 	"github.com/awgh/bencrypt/ecc"
 	"github.com/awgh/debouncer"
@@ -40,8 +40,9 @@ type Node struct {
 	streams  map[uint32]*api.StreamHeader
 	chunks   map[uint32]map[uint32]*api.Chunk
 
-	debouncer *debouncer.Debouncer
-	mutex sync.RWMutex
+	debouncer     *debouncer.Debouncer
+	mutex         sync.RWMutex
+	trigggerMutex sync.Mutex
 }
 
 // New : creates a new instance of API
@@ -77,7 +78,7 @@ func New(contentKey, routingKey bc.KeyPair) *Node {
 	// setup chans
 	node.in = make(chan api.Msg)
 	node.out = make(chan api.Msg, OutBufferSize)
-	node.events = make(chan api.Event)
+	node.events = make(chan api.Event, OutBufferSize)
 
 	// setup default router
 	node.router = router.NewDefaultRouter()

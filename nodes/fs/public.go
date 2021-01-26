@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/ratnet/api"
@@ -62,24 +63,33 @@ func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, maxBytes int64, channel
 			events.Error(node, "Pickup failure accessing a path:", path, err)
 			return err
 		}
-		fileTime := info.ModTime().UnixNano()
-		if !info.IsDir() && fileTime > lastTime {
+
+		if !info.IsDir() {
+
+			fileName := filepath.Base(path)
+			fileTime, err := strconv.ParseInt(fileName, 16, 64)
+			if err != nil {
+				return err
+			}
+
 			b, err := ioutil.ReadFile(path) // filepath.Join(node.basePath, path))
 			if err != nil {
 				events.Error(node, "prevent panic by handling failure reading a file:", path, err)
 				return err
 			}
 
-			if fileTime == retval.Time {
-				events.Warning(node, "Identical filetimes, attempting to exceed recommended protocol buffer size")
-			} else if bytesRead+int64(len(b)) >= maxBytes { // no room for next msg
-				events.Warning(node, "Result too big to be fetched on this transport! Flush and rechunk")
+			proposedSize := int64(len(b)) + bytesRead
+
+			if maxBytes > 0 && proposedSize > maxBytes { // we're over the set byte limit for this transport
+				if bytesRead == 0 { // first message too big, this is definitely a code problem
+					events.Critical(node, "Result too big to be fetched on this transport! Flush and rechunk")
+				}
 				return io.EOF
 			}
 
-			msgs = append(msgs, b)
-			bytesRead += int64(len(b))
 			if fileTime > retval.Time {
+				msgs = append(msgs, b)
+				bytesRead += int64(len(b))
 				retval.Time = fileTime
 			}
 		}

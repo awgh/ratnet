@@ -405,7 +405,12 @@ func (node *Node) Start() error {
 		}
 	}()
 
+	node.trigggerMutex.Lock()
+	defer node.trigggerMutex.Unlock()
 	node.debouncer = debouncer.New(10*time.Millisecond, func() {
+		node.trigggerMutex.Lock()
+		defer node.trigggerMutex.Unlock()
+
 		// check if we should stop running
 		if !node.IsRunning() {
 			return

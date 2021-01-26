@@ -68,6 +68,9 @@ func (node *Node) Handle(msg api.Msg) (bool, error) {
 		if err != nil {
 			return false, err
 		}
+		node.trigggerMutex.Lock()
+		defer node.trigggerMutex.Unlock()
+		node.debouncer.Trigger()
 		return true, err
 	}
 

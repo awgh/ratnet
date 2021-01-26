@@ -85,6 +85,8 @@ func (node *Node) Handle(msg api.Msg) (bool, error) {
 		if err != nil {
 			return false, err
 		}
+		node.trigggerMutex.Lock()
+		defer node.trigggerMutex.Unlock()
 		node.debouncer.Trigger()
 		return true, err
 	}
@@ -100,6 +102,8 @@ func (node *Node) Handle(msg api.Msg) (bool, error) {
 
 // AddStream - adds a partial message header to internal storage
 func (node *Node) AddStream(streamID uint32, totalChunks uint32, channelName string) error {
+	node.trigggerMutex.Lock()
+	defer node.trigggerMutex.Unlock()
 	stream := new(api.StreamHeader)
 	stream.StreamID = streamID
 	stream.NumChunks = totalChunks
@@ -111,6 +115,8 @@ func (node *Node) AddStream(streamID uint32, totalChunks uint32, channelName str
 
 // AddChunk - adds a chunk of a partial message to internal storage
 func (node *Node) AddChunk(streamID uint32, chunkNum uint32, data []byte) error {
+	node.trigggerMutex.Lock()
+	defer node.trigggerMutex.Unlock()
 	chunk := new(api.Chunk)
 	chunk.StreamID = streamID
 	chunk.ChunkNum = chunkNum

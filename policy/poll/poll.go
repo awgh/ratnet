@@ -23,6 +23,7 @@ type Poll struct {
 
 	Transport api.Transport
 	node      api.Node
+	pt        *policy.PeerTable
 
 	interval int32
 	jitter   int32
@@ -50,6 +51,7 @@ func New(transport api.Transport, node api.Node, interval, jitter int, group ...
 	p.RetryForever = true
 	p.RetryAttempts = 3
 	p.curGroupIndex = 0
+	p.pt = policy.NewPeerTable()
 
 	return p
 }
@@ -132,7 +134,7 @@ func (p *Poll) RunPolicy() error {
 				if element.Enabled && fails[element.URI] < p.RetryAttempts {
 					tries++
 
-					_, err := policy.PollServer(p.Transport, p.node, element.URI, pubsrv)
+					_, err := p.pt.PollServer(p.Transport, p.node, element.URI, pubsrv)
 					if err != nil {
 						events.Warning(p.node, "pollServer error: ", err.Error())
 						fails[element.URI]++

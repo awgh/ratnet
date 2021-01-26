@@ -544,19 +544,21 @@ func (node *Node) qlGetMessages(lastTime, maxBytes int64, channelNames ...string
 		var msg []byte
 		var ts int64
 		r.Scan(&msg, &ts)
-		if bytesRead+int64(len(msg)) >= maxBytes { // no room for next msg
+		if bytesRead+int64(len(msg)) > maxBytes { // no room for next msg
 			events.Debug(node, "skipping messages after # results:", n)
 			if n == 0 {
 				return nil, lastTimeReturned, errors.New("Result too big to be fetched on this transport! Flush and rechunk")
 			}
-		}
-		if ts > lastTimeReturned {
-			lastTimeReturned = ts
+			break
 		} else {
-			events.Warning(node, "Timestamps not increasing - prev/cur:", lastTimeReturned, ts)
+			if ts > lastTimeReturned {
+				lastTimeReturned = ts
+			} else {
+				events.Warning(node, "Timestamps not increasing - prev/cur:", lastTimeReturned, ts)
+			}
+			msgs = append(msgs, msg)
+			bytesRead += int64(len(msg))
 		}
-		msgs = append(msgs, msg)
-		bytesRead += int64(len(msg))
 	}
 
 	return msgs, lastTimeReturned, nil
@@ -564,6 +566,8 @@ func (node *Node) qlGetMessages(lastTime, maxBytes int64, channelNames ...string
 
 // AddStream - implemented from Node API
 func (node *Node) AddStream(streamID uint32, totalChunks uint32, channelName string) error {
+	node.trigggerMutex.Lock()
+	defer node.trigggerMutex.Unlock()
 	c := node.db()
 	defer closeDB(c)
 	sqlq := "SELECT streamid FROM streams WHERE streamid==$1;"
@@ -581,11 +585,14 @@ func (node *Node) AddStream(streamID uint32, totalChunks uint32, channelName str
 	} else {
 		return err
 	}
+	node.debouncer.Trigger()
 	return nil
 }
 
 // AddChunk - implemented from Node API
 func (node *Node) AddChunk(streamID uint32, chunkNum uint32, data []byte) error {
+	node.trigggerMutex.Lock()
+	defer node.trigggerMutex.Unlock()
 	c := node.db()
 	defer closeDB(c)
 	sqlq := "SELECT chunknum FROM chunks WHERE streamid==$1 AND chunknum==$2;"
@@ -603,6 +610,7 @@ func (node *Node) AddChunk(streamID uint32, chunkNum uint32, data []byte) error 
 	} else {
 		return err
 	}
+	node.debouncer.Trigger()
 	return nil
 }
 

@@ -657,14 +657,13 @@ func Test_p2p_Basic_1(ot *testing.T) {
 	}, ot)
 }
 
-/*
 func Test_p2p_Chunking_1(ot *testing.T) {
 	test(func(t *testing.T, nodeType NodeType, transportType TransportType) {
-
 		p2p1 := initNode(1, nodeType, transportType, true)
 		defer p2p1.Destroy(t)
 		p2p2 := initNode(2, nodeType, transportType, true)
 		defer p2p2.Destroy(t)
+
 		for p2p1.Node == nil || p2p2.Node == nil {
 			time.Sleep(1 * time.Second)
 		}
@@ -687,7 +686,7 @@ func Test_p2p_Chunking_1(ot *testing.T) {
 		if err != nil {
 			t.Fatal(err.Error())
 		}
-		//override byte limit to trigger chunking
+		// override byte limit to trigger chunking
 		oldByteLimit := p2p1.Public.ByteLimit()
 		p2p1.Public.SetByteLimit(4096)
 		if err := p2p1.Node.SendChannel("test1", randmessage); err != nil {
@@ -704,7 +703,6 @@ func Test_p2p_Chunking_1(ot *testing.T) {
 		}
 	}, ot)
 }
-*/
 
 // Test Messages
 

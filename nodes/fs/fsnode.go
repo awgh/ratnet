@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/awgh/bencrypt/bc"
+	"github.com/awgh/debouncer"
 	"github.com/awgh/ratnet/api"
 	"github.com/awgh/ratnet/api/events"
 	"github.com/awgh/ratnet/nodes"
@@ -47,11 +48,11 @@ type Node struct {
 	streams  map[uint32]*api.StreamHeader
 	chunks   map[uint32]map[uint32]*api.Chunk
 
-	// outbox   []*outboxMsg
-	basePath    string
-	outboxIndex uint32
+	basePath string
 
-	mutex sync.RWMutex
+	mutex         sync.RWMutex
+	trigggerMutex sync.Mutex
+	debouncer     *debouncer.Debouncer
 }
 
 // New : creates a new instance of API
@@ -75,7 +76,7 @@ func New(contentKey, routingKey bc.KeyPair, basePath string) *Node {
 	// setup chans
 	node.in = make(chan api.Msg)
 	node.out = make(chan api.Msg, OutBufferSize)
-	node.events = make(chan api.Event)
+	node.events = make(chan api.Event, OutBufferSize)
 
 	// setup default router
 	node.router = router.NewDefaultRouter()
@@ -86,8 +87,12 @@ func New(contentKey, routingKey bc.KeyPair, basePath string) *Node {
 	return node
 }
 
-func hex(n uint32) string {
+func hex32(n uint32) string {
 	return fmt.Sprintf("%08x", n)
+}
+
+func hex64(n int64) string {
+	return fmt.Sprintf("%016x", n)
 }
 
 // IsRunning - returns true if this node is running

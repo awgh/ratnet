@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -37,9 +38,12 @@ type P2P struct {
 	localAddress string
 	Transport    api.Transport
 	Node         api.Node
+	pt           *policy.PeerTable
 
 	listenSocket *net.UDPConn
 	dialSocket   *net.UDPConn
+
+	wg sync.WaitGroup
 }
 
 var (
@@ -62,6 +66,7 @@ func New(transport api.Transport, listenURI string, node api.Node, adminMode boo
 	s.Node = node
 	s.ListenInterval = listenInterval
 	s.AdvertiseInterval = advertiseInterval
+	s.pt = policy.NewPeerTable()
 
 	s.rerollNegotiationRank()
 	return s
@@ -117,12 +122,17 @@ func (s *P2P) RunPolicy() error {
 
 	s.Transport.Listen(s.ListenURI, s.AdminMode)
 	s.setIsListening(true)
+	s.setIsAdvertising(true)
 
 	go s.mdnsListen()
 	go func() {
+		s.wg.Add(1)
+		defer s.wg.Done()
 		for s.IsListening() {
-			if err := s.mdnsAdvertise(); err != nil {
-				events.Warning(s.Node, "mdnsAdvertise errored: "+err.Error())
+			if s.IsAdvertising() {
+				if err := s.mdnsAdvertise(); err != nil {
+					events.Warning(s.Node, "mdnsAdvertise errored: "+err.Error())
+				}
 			}
 			time.Sleep(time.Duration(s.AdvertiseInterval) * time.Millisecond) // update interval
 		}
@@ -135,14 +145,20 @@ func (s *P2P) RunPolicy() error {
 func (s *P2P) Stop() {
 	s.Transport.Stop()
 	s.setIsListening(false)
+	s.setIsAdvertising(false)
 
 	s.listenSocket.Close()
 	s.dialSocket.Close()
+
+	s.wg.Wait()
 }
 
 func (s *P2P) mdnsListen() error {
 	peerlist := make(map[string]interface{})
 
+	s.wg.Add(1)
+	// defer conn.Close()
+	defer s.wg.Done()
 	for s.IsListening() {
 		b := make([]byte, maxDatagramSize)
 		conn := s.listenSocket
@@ -179,6 +195,7 @@ func (s *P2P) mdnsListen() error {
 		}
 		_, exists := peerlist[target]
 		if !exists && (target != "" && targetNegRank > 0 && s.localAddress != target) {
+			//s.setIsAdvertising(false)
 			/*
 				Negotiation:
 					- The lowest rank does a push/pull
@@ -207,16 +224,16 @@ func (s *P2P) mdnsListen() error {
 				go func() {
 					for s.IsListening() {
 						st := time.Now()
-						if happy, err := policy.PollServer(trans, s.Node, target[len(u.Scheme)+3:], pubsrv); !happy {
+						if happy, err := s.pt.PollServer(trans, s.Node, target[len(u.Scheme)+3:], pubsrv); !happy {
 							if err != nil {
 								events.Warning(s.Node, err.Error())
 							}
 						}
 						st2 := time.Now()
-						events.Debug(s.Node, "p2p PollServer took: %s\n", st2.Sub(st).String())
+						events.Debug(s.Node, "p2p PollServer took: ", st2.Sub(st).String())
 						runtime.GC()
 						st3 := time.Now()
-						events.Debug(s.Node, "p2p GC took: %s\n", st3.Sub(st2).String())
+						events.Debug(s.Node, "p2p GC took: ", st3.Sub(st2).String())
 						time.Sleep(time.Duration(s.ListenInterval) * time.Millisecond) // update interval
 					}
 				}()

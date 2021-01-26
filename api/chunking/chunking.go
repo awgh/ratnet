@@ -3,6 +3,7 @@ package chunking
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"io/ioutil"
 
 	"github.com/awgh/bencrypt/bc"
@@ -84,7 +85,7 @@ func HandleChunked(node api.Node, msg api.Msg) error {
 		binary.Read(tmpb, binary.LittleEndian, &streamID)
 		binary.Read(tmpb, binary.LittleEndian, &chunkNum)
 
-		events.Debug(node, "adding chunk: %x  chunkNum: %x (%d)\n", streamID, chunkNum, chunkNum)
+		events.Debug(node, fmt.Sprintf("adding chunk: %x  chunkNum: %x (%d)", streamID, chunkNum, chunkNum))
 		return node.AddChunk(streamID, chunkNum, data[8:])
 	}
 	// save totalChunks by streamID
@@ -96,6 +97,6 @@ func HandleChunked(node api.Node, msg api.Msg) error {
 	if msg.IsChan {
 		channel = msg.Name
 	}
-	events.Debug(node, "adding stream: %x  totalChunks: %x (%d)\n", streamID, totalChunks, totalChunks)
+	events.Debug(node, fmt.Sprintf("adding stream: %x  totalChunks: %x (%d)", streamID, totalChunks, totalChunks))
 	return node.AddStream(streamID, totalChunks, channel)
 }

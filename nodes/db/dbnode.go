@@ -10,6 +10,7 @@ import (
 
 	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/bencrypt/ecc"
+	"github.com/awgh/debouncer"
 	"github.com/awgh/ratnet/api"
 	"github.com/awgh/ratnet/nodes"
 	"github.com/awgh/ratnet/router"
@@ -30,7 +31,9 @@ type Node struct {
 
 	db db.Session
 
-	mutex *sync.Mutex
+	mutex         *sync.Mutex
+	trigggerMutex sync.Mutex
+	debouncer     *debouncer.Debouncer
 
 	isRunning uint32
 
@@ -68,7 +71,7 @@ func New(contentKey, routingKey bc.KeyPair) *Node {
 	// setup chans
 	node.in = make(chan api.Msg)
 	node.out = make(chan api.Msg, OutBufferSize)
-	node.events = make(chan api.Event)
+	node.events = make(chan api.Event, OutBufferSize)
 
 	// setup default router
 	node.router = router.NewDefaultRouter()

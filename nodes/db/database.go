@@ -402,19 +402,21 @@ func (node *Node) dbGetMessages(lastTime, maxBytes int64, channelNames ...string
 		var msg []byte
 		var ts int64
 		res.Scan(&msg, &ts)
-		if bytesRead+int64(len(msg)) >= maxBytes { // no room for next msg
+		if bytesRead+int64(len(msg)) > maxBytes { // no room for next msg
 			events.Debug(node, "skipping messages after %d results\n", n)
 			if n == 0 {
 				return nil, lastTimeReturned, errors.New("Result too big to be fetched on this transport! Flush and rechunk")
 			}
-		}
-		if ts > lastTimeReturned {
-			lastTimeReturned = ts
+			break
 		} else {
-			events.Error(node, "Timestamps not increasing - prev: %d  cur: %d\n", lastTimeReturned, ts)
+			if ts > lastTimeReturned {
+				lastTimeReturned = ts
+			} else {
+				events.Error(node, "Timestamps not increasing - prev: %d  cur: %d\n", lastTimeReturned, ts)
+			}
+			msgs = append(msgs, msg)
+			bytesRead += int64(len(msg))
 		}
-		msgs = append(msgs, msg)
-		bytesRead += int64(len(msg))
 	}
 	return msgs, lastTimeReturned, nil
 }
@@ -430,6 +432,8 @@ func (node *Node) dbClearStream(streamID uint32) error {
 
 // AddStream - implemented from Node API
 func (node *Node) AddStream(streamID uint32, totalChunks uint32, channelName string) error {
+	node.trigggerMutex.Lock()
+	defer node.trigggerMutex.Unlock()
 	col := node.db.Collection("streams")
 	res := col.Find(db.Cond{"streamid": streamID})
 	count, err := res.Count()
@@ -453,11 +457,14 @@ func (node *Node) AddStream(streamID uint32, totalChunks uint32, channelName str
 	stream.StreamID = streamID
 	stream.NumChunks = totalChunks
 	stream.ChannelName = channelName
+	node.debouncer.Trigger()
 	return res.Update(stream)
 }
 
 // AddChunk - implemented from Node API
 func (node *Node) AddChunk(streamID uint32, chunkNum uint32, data []byte) error {
+	node.trigggerMutex.Lock()
+	defer node.trigggerMutex.Unlock()
 	col := node.db.Collection("chunks")
 	res := col.Find(db.Cond{"streamid": streamID}).And(db.Cond{"chunknum": chunkNum})
 	count, err := res.Count()
@@ -481,6 +488,7 @@ func (node *Node) AddChunk(streamID uint32, chunkNum uint32, data []byte) error 
 	chunk.StreamID = streamID
 	chunk.ChunkNum = chunkNum
 	chunk.Data = data
+	node.debouncer.Trigger()
 	return res.Update(chunk)
 }
 

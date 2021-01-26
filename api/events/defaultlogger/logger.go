@@ -9,7 +9,6 @@ import (
 func StartDefaultLogger(node api.Node, logLevel api.LogLevel) {
 	go func() {
 		for event := range node.Events() {
-			//	event := <-node.Events()
 			if event.Severity >= logLevel && event.Type == api.Log {
 				switch event.Severity {
 				case api.Info:

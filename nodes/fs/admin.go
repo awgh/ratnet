@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/awgh/bencrypt/bc"
+	"github.com/awgh/debouncer"
 	"github.com/awgh/ratnet/api"
 	"github.com/awgh/ratnet/api/chunking"
 	"github.com/awgh/ratnet/api/events"
@@ -286,11 +287,9 @@ func (node *Node) Send(contactName string, data []byte, pubkey ...bc.PubKey) err
 // SendChannelBulk : Transmit messages to a channel
 func (node *Node) SendChannelBulk(channelName string, data [][]byte, pubkey ...bc.PubKey) error {
 	for i := range data {
-		time.Sleep(10 * time.Millisecond)
 		if err := node.SendChannel(channelName, data[i], pubkey...); err != nil {
 			return err
 		}
-		time.Sleep(10 * time.Millisecond)
 	}
 	return nil
 }
@@ -356,11 +355,12 @@ func (node *Node) SendMsg(msg api.Msg) error {
 	}
 	data = append(rxsum, data...)
 
-	f, err := os.Create(filepath.Join(path, hex(node.outboxIndex)))
+	now := time.Now().UnixNano()
+	f, err := os.Create(filepath.Join(path, hex64(now)))
 	if err != nil {
 		return err
 	}
-	node.outboxIndex++
+
 	defer f.Close()
 	w := bufio.NewWriter(f)
 	w.Write(data)
@@ -379,8 +379,6 @@ func (node *Node) Start() error {
 	node.contentKey.GenerateKey()
 	node.routingKey.GenerateKey()
 
-	node.setIsRunning(true)
-
 	// start the policies
 	if node.policies != nil {
 		for i := 0; i < len(node.policies); i++ {
@@ -389,6 +387,8 @@ func (node *Node) Start() error {
 			}
 		}
 	}
+
+	node.setIsRunning(true)
 
 	// input loop
 	go func() {
@@ -407,49 +407,54 @@ func (node *Node) Start() error {
 		}
 	}()
 
-	// dechunking loop
-	go func() {
-		for {
-			time.Sleep(10 * time.Millisecond)
-			// check if we should stop running
-			if !node.IsRunning() {
-				break
-			}
-			// for each stream, count chunks for that header
-			for _, stream := range node.streams {
-				if stream != nil {
-					count := len(node.chunks[stream.StreamID])
-					// if chunks == total chunks, re-assemble Msg and call Handle
-					if uint32(count) == uint32(stream.NumChunks) {
-						buf := bytes.NewBuffer([]byte{})
-						for i := uint32(0); i < stream.NumChunks; i++ {
-							chunk, ok := node.chunks[stream.StreamID][i]
-							if !ok {
-								events.Critical(node, "Chunk count miscalculated - code broken")
-							}
-							buf.Write(chunk.Data)
-						}
+	node.trigggerMutex.Lock()
+	defer node.trigggerMutex.Unlock()
+	node.debouncer = debouncer.New(10*time.Millisecond, func() {
+		node.trigggerMutex.Lock()
+		defer node.trigggerMutex.Unlock()
 
-						var msg api.Msg
-						if len(stream.ChannelName) > 0 {
-							msg.IsChan = true
-							msg.Name = stream.ChannelName
+		// check if we should stop running
+		if !node.IsRunning() {
+			return
+		}
+		// for each stream, count chunks for that header
+		for _, stream := range node.streams {
+			count := 0
+			if stream != nil {
+				v, ok := node.chunks[stream.StreamID]
+				if ok && v != nil {
+					count = len(v)
+				}
+				// if chunks == total chunks, re-assemble Msg and call Handle
+				if uint32(count) == uint32(stream.NumChunks) {
+					buf := bytes.NewBuffer([]byte{})
+					for i := uint32(0); i < stream.NumChunks; i++ {
+						chunk, ok := node.chunks[stream.StreamID][i]
+						if !ok {
+							events.Critical(node, "Chunk count miscalculated - code broken")
 						}
-						msg.Content = buf
+						buf.Write(chunk.Data)
+					}
 
-						select {
-						case node.Out() <- msg:
-							events.Debug(node, "Sent message "+fmt.Sprint(msg.Content.Bytes()))
-							node.streams[stream.StreamID] = nil
-							node.chunks[stream.StreamID] = make(map[uint32]*api.Chunk)
-						default:
-							events.Debug(node, "No message sent")
-						}
+					var msg api.Msg
+					if len(stream.ChannelName) > 0 {
+						msg.IsChan = true
+						msg.Name = stream.ChannelName
+					}
+					msg.Content = buf
+
+					select {
+					case node.Out() <- msg:
+						events.Debug(node, "Sent message "+fmt.Sprint(msg.Content.Bytes()))
+						node.streams[stream.StreamID] = nil
+						node.chunks[stream.StreamID] = make(map[uint32]*api.Chunk)
+					default:
+						events.Debug(node, "No message sent")
 					}
 				}
 			}
 		}
-	}()
+	})
 
 	return nil
 }

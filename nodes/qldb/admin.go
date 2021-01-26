@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/awgh/bencrypt/bc"
+	"github.com/awgh/debouncer"
 	"github.com/awgh/ratnet/api"
 	"github.com/awgh/ratnet/api/chunking"
 	"github.com/awgh/ratnet/api/events"
@@ -334,53 +335,53 @@ func (node *Node) Start() error {
 		}
 	}()
 
-	// dechunking loop
-	go func() {
-		for {
-			time.Sleep(10 * time.Millisecond)
-			// check if we should stop running
-			if !node.IsRunning() {
-				break
-			}
-			// get all streams
-			streams, err := node.qlGetStreams()
+	node.trigggerMutex.Lock()
+	defer node.trigggerMutex.Unlock()
+	node.debouncer = debouncer.New(10*time.Millisecond, func() {
+		node.trigggerMutex.Lock()
+		defer node.trigggerMutex.Unlock()
+		// check if we should stop running
+		if !node.IsRunning() {
+			return
+		}
+		// get all streams
+		streams, err := node.qlGetStreams()
+		if err != nil {
+			events.Critical(node, err.Error())
+		}
+		// for each stream, count chunks for that header
+		for _, stream := range streams {
+			count, err := node.qlGetChunkCount(stream.StreamID)
 			if err != nil {
 				events.Critical(node, err.Error())
 			}
-			// for each stream, count chunks for that header
-			for _, stream := range streams {
-				count, err := node.qlGetChunkCount(stream.StreamID)
+			// if chunks == total chunks, re-assemble Msg and call Handle
+			if count == uint64(stream.NumChunks) {
+				chunks, err := node.qlGetChunks(stream.StreamID)
 				if err != nil {
 					events.Critical(node, err.Error())
 				}
-				// if chunks == total chunks, re-assemble Msg and call Handle
-				if count == uint64(stream.NumChunks) {
-					chunks, err := node.qlGetChunks(stream.StreamID)
-					if err != nil {
-						events.Critical(node, err.Error())
-					}
-					buf := bytes.NewBuffer([]byte{})
-					for _, chunk := range chunks {
-						buf.Write(chunk.Data)
-					}
-					var msg api.Msg
-					if len(stream.ChannelName) > 0 {
-						msg.IsChan = true
-						msg.Name = stream.ChannelName
-					}
-					msg.Content = buf
+				buf := bytes.NewBuffer([]byte{})
+				for _, chunk := range chunks {
+					buf.Write(chunk.Data)
+				}
+				var msg api.Msg
+				if len(stream.ChannelName) > 0 {
+					msg.IsChan = true
+					msg.Name = stream.ChannelName
+				}
+				msg.Content = buf
 
-					select {
-					case node.Out() <- msg:
-						events.Debug(node, "Sent message "+fmt.Sprint(msg.Content.Bytes()))
-						node.qlClearStream(stream.StreamID)
-					default:
-						events.Debug(node, "No message sent")
-					}
+				select {
+				case node.Out() <- msg:
+					events.Debug(node, "Sent message "+fmt.Sprint(msg.Content.Bytes()))
+					node.qlClearStream(stream.StreamID)
+				default:
+					events.Debug(node, "No message sent")
 				}
 			}
 		}
-	}()
+	})
 
 	return nil
 }
@@ -391,7 +392,4 @@ func (node *Node) Stop() {
 		policy.Stop()
 	}
 	node.setIsRunning(false)
-	close(node.in)
-	close(node.out)
-	close(node.events)
 }

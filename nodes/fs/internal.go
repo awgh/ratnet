@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/awgh/ratnet/api"
 	"github.com/awgh/ratnet/api/chunking"
@@ -55,12 +56,11 @@ func (node *Node) Forward(msg api.Msg) error {
 			}
 		}
 	*/
-
-	f, err := os.Create(filepath.Join(path, hex(node.outboxIndex)))
+	now := time.Now().UnixNano()
+	f, err := os.Create(filepath.Join(path, hex64(now)))
 	if err != nil {
 		return err
 	}
-	node.outboxIndex++
 	defer f.Close()
 	w := bufio.NewWriter(f)
 	w.Write(message)
@@ -70,10 +70,11 @@ func (node *Node) Forward(msg api.Msg) error {
 }
 
 // Handle - Decrypt and handle an encrypted message
+// 			returns TagOK, which is true if the message is intended for a key we have
 func (node *Node) Handle(msg api.Msg) (bool, error) {
 	var clear []byte
 	var err error
-	var tagOK bool
+	tagOK := false
 	var clearMsg api.Msg // msg to out channel
 
 	if msg.IsChan {
@@ -91,6 +92,7 @@ func (node *Node) Handle(msg api.Msg) (bool, error) {
 	if !tagOK || err != nil {
 		return tagOK, err
 	}
+
 	clearMsg.Content = bytes.NewBuffer(clear)
 
 	if msg.Chunked {
@@ -98,6 +100,9 @@ func (node *Node) Handle(msg api.Msg) (bool, error) {
 		if err != nil {
 			return false, err
 		}
+		node.trigggerMutex.Lock()
+		defer node.trigggerMutex.Unlock()
+		node.debouncer.Trigger()
 		return true, err
 	}
 
@@ -112,16 +117,21 @@ func (node *Node) Handle(msg api.Msg) (bool, error) {
 
 // AddStream - adds a partial message header to internal storage
 func (node *Node) AddStream(streamID uint32, totalChunks uint32, channelName string) error {
+	node.trigggerMutex.Lock()
+	defer node.trigggerMutex.Unlock()
 	stream := new(api.StreamHeader)
 	stream.StreamID = streamID
 	stream.NumChunks = totalChunks
 	stream.ChannelName = channelName
 	node.streams[streamID] = stream
+	node.debouncer.Trigger()
 	return nil
 }
 
 // AddChunk - adds a chunk of a partial message to internal storage
 func (node *Node) AddChunk(streamID uint32, chunkNum uint32, data []byte) error {
+	node.trigggerMutex.Lock()
+	defer node.trigggerMutex.Unlock()
 	chunk := new(api.Chunk)
 	chunk.StreamID = streamID
 	chunk.ChunkNum = chunkNum
@@ -130,5 +140,6 @@ func (node *Node) AddChunk(streamID uint32, chunkNum uint32, data []byte) error 
 		node.chunks[streamID] = make(map[uint32]*api.Chunk)
 	}
 	node.chunks[streamID][chunkNum] = chunk
+	node.debouncer.Trigger()
 	return nil
 }
