@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"os"
-	"os/signal"
 	"time"
 
 	"github.com/awgh/ratnet/api"
@@ -20,7 +18,6 @@ func (node *Node) GetChannelPrivKey(name string) (string, error) {
 
 // Forward - Add an already-encrypted message to the outbound message queue (forward it along)
 func (node *Node) Forward(msg api.Msg) error {
-
 	flags := uint8(0)
 	if msg.IsChan {
 		flags |= api.ChannelFlag
@@ -56,6 +53,13 @@ func (node *Node) Handle(msg api.Msg) (bool, error) {
 		}
 		clearMsg = api.Msg{Name: msg.Name, IsChan: true, Chunked: msg.Chunked, StreamHeader: msg.StreamHeader}
 		tagOK, clear, err = v.DecryptMessage(msg.Content.Bytes())
+	} else if len(msg.Name) > 0 {
+		clearMsg = api.Msg{Name: msg.Name, IsChan: false, Chunked: msg.Chunked, StreamHeader: msg.StreamHeader}
+		key, err := node.privProfile(msg.Name)
+		if err != nil {
+			return false, err
+		}
+		tagOK, clear, err = key.DecryptMessage(msg.Content.Bytes())
 	} else {
 		clearMsg = api.Msg{Name: "[content]", IsChan: false, Chunked: msg.Chunked, StreamHeader: msg.StreamHeader}
 		tagOK, clear, err = node.contentKey.DecryptMessage(msg.Content.Bytes())
@@ -71,6 +75,9 @@ func (node *Node) Handle(msg api.Msg) (bool, error) {
 		if err != nil {
 			return false, err
 		}
+		node.trigggerMutex.Lock()
+		defer node.trigggerMutex.Unlock()
+		node.debouncer.Trigger()
 		return true, err
 	}
 
@@ -89,18 +96,4 @@ func (node *Node) refreshChannels() { // todo: this could be selective or someho
 	for _, element := range channels {
 		node.channelKeys[element.Name] = element.Privkey
 	}
-}
-
-func (node *Node) signalMonitor() {
-	sigChannel := make(chan os.Signal, 1)
-	signal.Notify(sigChannel, nil)
-	go func() {
-		defer node.Stop()
-		for {
-			switch <-sigChannel {
-			case os.Kill:
-				return
-			}
-		}
-	}()
 }

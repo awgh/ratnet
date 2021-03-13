@@ -6,7 +6,7 @@ jobs:
   build:
     docker:
       # specify the version
-      - image: circleci/golang:1.10
+      - image: circleci/golang:1.15
 
       # Specify service dependencies here if necessary
       # CircleCI maintains a library of pre-built images
@@ -32,8 +32,8 @@ jobs:
       - run: mkdir ratnet/tmp
 
       #- run: go test -v ./...
-      - run: go test -v github.com/awgh/ratnet/nodes/qldb
-      - run: go test -v github.com/awgh/ratnet/nodes/ram
-      - run: go test -v github.com/awgh/ratnet/nodes/fs
-      - run: go test -v github.com/awgh/ratnet/ratnet
+      - run: go test -v -timeout 0 github.com/awgh/ratnet/nodes/qldb
+      - run: go test -v -timeout 0 github.com/awgh/ratnet/nodes/ram
+      - run: go test -v -timeout 0 github.com/awgh/ratnet/nodes/fs
+      - run: go test -v -timeout 0 github.com/awgh/ratnet/ratnet
 

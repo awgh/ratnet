@@ -6,8 +6,9 @@ import "github.com/awgh/bencrypt/bc"
 type Policy interface {
 	RunPolicy() error
 	Stop()
-	MarshalJSON() (b []byte, e error)
 	GetTransport() Transport
+
+	JSON
 }
 
 // PeerInfo - last contact info for peers

@@ -1,13 +1,12 @@
 package fs
 
 import (
-	"bytes"
-	"encoding/gob"
 	"errors"
 	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/ratnet/api"
@@ -31,21 +30,16 @@ func (node *Node) Dropoff(bundle api.Bundle) error {
 	} else if !tagOK {
 		return errors.New("Luggage Tag Check Failed in FSNode Dropoff")
 	}
-
-	var msgs [][]byte
-
-	//Use default gob decoder
-	reader := bytes.NewReader(data)
-	dec := gob.NewDecoder(reader)
-	if err := dec.Decode(&msgs); err != nil {
-		events.Error(node, "dropoff gob decode failed, len:", len(data), err.Error())
+	msgs, err := api.BytesBytesFromBytes(&data)
+	if err != nil {
+		events.Warning(node, "dropoff decode failed, len %d\n", len(data))
 		return err
 	}
-	for i := 0; i < len(msgs); i++ {
-		if len(msgs[i]) < 16 { // aes.BlockSize == 16
-			continue //todo: remove padding before here?
+	for i := 0; i < len(*msgs); i++ {
+		if len((*msgs)[i]) < 16 { // aes.BlockSize == 16
+			continue // todo: remove padding before here?
 		}
-		err = node.router.Route(node, msgs[i])
+		err = node.router.Route(node, (*msgs)[i])
 		if err != nil {
 			events.Error(node, "error in dropoff: "+err.Error())
 			continue // we don't want to return routing errors back out the remote public interface
@@ -69,24 +63,33 @@ func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, maxBytes int64, channel
 			events.Error(node, "Pickup failure accessing a path:", path, err)
 			return err
 		}
-		fileTime := info.ModTime().UnixNano()
-		if !info.IsDir() && fileTime > lastTime {
-			b, err := ioutil.ReadFile(path) //filepath.Join(node.basePath, path))
+
+		if !info.IsDir() {
+
+			fileName := filepath.Base(path)
+			fileTime, err := strconv.ParseInt(fileName, 16, 64)
+			if err != nil {
+				return err
+			}
+
+			b, err := ioutil.ReadFile(path) // filepath.Join(node.basePath, path))
 			if err != nil {
 				events.Error(node, "prevent panic by handling failure reading a file:", path, err)
 				return err
 			}
 
-			if fileTime == retval.Time {
-				events.Warning(node, "Identical filetimes, attempting to exceed recommended protocol buffer size")
-			} else if bytesRead+int64(len(b)) >= maxBytes { // no room for next msg
-				events.Warning(node, "Result too big to be fetched on this transport! Flush and rechunk")
+			proposedSize := int64(len(b)) + bytesRead
+
+			if maxBytes > 0 && proposedSize > maxBytes { // we're over the set byte limit for this transport
+				if bytesRead == 0 { // first message too big, this is definitely a code problem
+					events.Critical(node, "Result too big to be fetched on this transport! Flush and rechunk")
+				}
 				return io.EOF
 			}
 
-			msgs = append(msgs, b)
-			bytesRead += int64(len(b))
 			if fileTime > retval.Time {
+				msgs = append(msgs, b)
+				bytesRead += int64(len(b))
 				retval.Time = fileTime
 			}
 		}
@@ -98,14 +101,8 @@ func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, maxBytes int64, channel
 
 	// transmit
 	if len(msgs) > 0 {
-
-		//use default gob encoder
-		var buf bytes.Buffer
-		enc := gob.NewEncoder(&buf)
-		if err := enc.Encode(msgs); err != nil {
-			return retval, err
-		}
-		cipher, err := node.routingKey.EncryptMessage(buf.Bytes(), rpub)
+		buf := api.BytesBytesToBytes(&msgs)
+		cipher, err := node.routingKey.EncryptMessage(*buf, rpub)
 		if err != nil {
 			return retval, err
 		}

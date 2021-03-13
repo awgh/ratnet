@@ -1,61 +1,57 @@
-package policy
+package poll
 
 import (
 	"crypto/rand"
-	"encoding/json"
 	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
 	"github.com/awgh/ratnet/api/events"
+	"github.com/awgh/ratnet/policy"
 )
 
 // Poll : defines a Polling Connection Policy, which will periodically connect to each remote Peer
 type Poll struct {
 	// internal
 	wg        sync.WaitGroup
-	isRunning bool
+	isRunning uint32
 
 	// last poll times
 	lastPollLocal, lastPollRemote int64
 
 	Transport api.Transport
 	node      api.Node
+	pt        *policy.PeerTable
 
 	interval int32
 	jitter   int32
 
-	Group string
+	Groups        []string
+	curGroupIndex int
+
+	RetryForever  bool
+	RetryAttempts int
 }
 
-func init() {
-	ratnet.Policies["poll"] = NewPollFromMap // register this module by name (for deserialization support)
-}
-
-// NewPollFromMap : Makes a new instance of this transport module from a map of arguments (for deserialization support)
-func NewPollFromMap(transport api.Transport, node api.Node,
-	t map[string]interface{}) api.Policy {
-	interval := int(t["Interval"].(float64))
-	jitter := int(t["Jitter"].(float64))
-	group := string(t["Group"].(string))
-	return NewPoll(transport, node, interval, jitter, group)
-}
-
-// NewPoll : Returns a new instance of a Poll Connection Policy
-func NewPoll(transport api.Transport, node api.Node, interval, jitter int, group ...string) *Poll {
+// New : Returns a new instance of a Poll Connection Policy
+func New(transport api.Transport, node api.Node, interval, jitter int, group ...string) *Poll {
 	p := new(Poll)
-	// if we don't have a specified group, it's ""
-	p.Group = ""
 	if len(group) > 0 {
-		p.Group = group[0]
+		p.Groups = group
+	} else {
+		p.Groups = []string{""} // if we don't have a specified group, it's ""
 	}
 	p.Transport = transport
 	p.node = node
 	p.interval = int32(interval)
 	p.jitter = int32(jitter)
+
+	p.RetryForever = true
+	p.RetryAttempts = 3
+	p.curGroupIndex = 0
+	p.pt = policy.NewPeerTable()
 
 	return p
 }
@@ -80,19 +76,9 @@ func (p *Poll) SetJitter(newJitter int) {
 	atomic.StoreInt32(&p.jitter, int32(newJitter))
 }
 
-// MarshalJSON : Create a serialied representation of the config of this policy
-func (p *Poll) MarshalJSON() (b []byte, e error) {
-	return json.Marshal(map[string]interface{}{
-		"Policy":    "poll",
-		"Transport": p.Transport,
-		"Interval":  p.GetInterval(),
-		"Jitter":    p.GetJitter(),
-		"Group":     p.Group})
-}
-
 // RunPolicy : Poll
 func (p *Poll) RunPolicy() error {
-	if p.isRunning {
+	if p.IsRunning() {
 		return errors.New("Policy is already running")
 	}
 
@@ -102,21 +88,22 @@ func (p *Poll) RunPolicy() error {
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()
-		if p.isRunning {
+		if p.IsRunning() {
 			return
 		}
-		p.isRunning = true
+		p.setIsRunning(true)
 
 		pubsrv, err := p.node.ID()
 		if err != nil {
 			events.Critical(p.node, "Couldn't get routing key in Poll.RunPolicy:\n"+err.Error())
 		}
 
+		fails := make(map[string]int)
 		b := make([]byte, 1)
 		counter := 0
 		for {
 			// check if we should still be running
-			if !p.isRunning {
+			if !p.IsRunning() {
 				break
 			}
 
@@ -134,20 +121,39 @@ func (p *Poll) RunPolicy() error {
 			}
 
 			// Get Server List for this Poll's assigned Group
-			peers, err := p.node.GetPeers(p.Group)
+			peers, err := p.node.GetPeers(p.Groups[p.curGroupIndex])
 			if err != nil {
 				events.Warning(p.node, "Poll.RunPolicy error in loop: ", err)
 				continue
 			}
+			tries := 0
 			for _, element := range peers {
-				if element.Enabled {
-					_, err := PollServer(p.Transport, p.node, element.URI, pubsrv)
+				if _, ok := fails[element.URI]; !ok {
+					fails[element.URI] = 0
+				}
+				if element.Enabled && fails[element.URI] < p.RetryAttempts {
+					tries++
+
+					_, err := p.pt.PollServer(p.Transport, p.node, element.URI, pubsrv)
 					if err != nil {
 						events.Warning(p.node, "pollServer error: ", err.Error())
+						fails[element.URI]++
+					} else {
+						fails[element.URI] = 0
 					}
 				}
 			}
-
+			if tries == 0 {
+				if p.curGroupIndex < len(p.Groups)-1 {
+					fails = make(map[string]int)
+					p.curGroupIndex++
+				} else if p.RetryForever {
+					fails = make(map[string]int)
+					p.curGroupIndex = 0
+				} else {
+					events.Warning(p.node, "pollServer error: All Peers have been disabled or hit retry limits")
+				}
+			}
 			if counter%500 == 0 {
 				p.node.FlushOutbox(300) // seconds to cache
 			}
@@ -160,7 +166,7 @@ func (p *Poll) RunPolicy() error {
 
 // Stop : Stops this instance of Poll from running
 func (p *Poll) Stop() {
-	p.isRunning = false
+	p.setIsRunning(false)
 	p.wg.Wait()
 	p.Transport.Stop()
 }
@@ -169,4 +175,17 @@ func (p *Poll) Stop() {
 //
 func (p *Poll) GetTransport() api.Transport {
 	return p.Transport
+}
+
+// IsRunning - returns true if this policy is running
+func (p *Poll) IsRunning() bool {
+	return atomic.LoadUint32(&p.isRunning) == 1
+}
+
+func (p *Poll) setIsRunning(b bool) {
+	var running uint32 = 0
+	if b {
+		running = 1
+	}
+	atomic.StoreUint32(&p.isRunning, running)
 }

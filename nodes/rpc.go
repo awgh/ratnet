@@ -2,6 +2,7 @@ package nodes
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 
 	"github.com/awgh/bencrypt/bc"
@@ -10,9 +11,8 @@ import (
 
 // PublicRPC : Entrypoint for RPC functions that are exposed to the public/Internet
 func PublicRPC(transport api.Transport, node api.Node, call api.RemoteCall) (interface{}, error) {
-
 	switch call.Action {
-	case "ID":
+	case api.ID:
 		var i bc.PubKey
 		i, err := node.ID()
 		if err != nil {
@@ -22,7 +22,7 @@ func PublicRPC(transport api.Transport, node api.Node, call api.RemoteCall) (int
 		}
 		return i, nil
 
-	case "Pickup":
+	case api.Pickup:
 		if len(call.Args) < 2 {
 			return nil, errors.New("Invalid argument count")
 		}
@@ -48,7 +48,7 @@ func PublicRPC(transport api.Transport, node api.Node, call api.RemoteCall) (int
 		}
 		return b, err
 
-	case "Dropoff":
+	case api.Dropoff:
 		if len(call.Args) < 1 {
 			return nil, errors.New("Invalid argument count")
 		}
@@ -59,7 +59,7 @@ func PublicRPC(transport api.Transport, node api.Node, call api.RemoteCall) (int
 		return nil, node.Dropoff(bundle)
 
 	default:
-		return nil, errors.New("No such method: " + call.Action)
+		return nil, fmt.Errorf("No such method: %d", call.Action)
 	}
 }
 
@@ -67,14 +67,14 @@ func PublicRPC(transport api.Transport, node api.Node, call api.RemoteCall) (int
 func AdminRPC(transport api.Transport, node api.Node, call api.RemoteCall) (interface{}, error) {
 	switch call.Action {
 
-	case "CID":
+	case api.CID:
 		b, err := node.CID()
 		if err != nil {
 			return nil, err
 		}
 		return b, nil
 
-	case "GetContact":
+	case api.GetContact:
 		if len(call.Args) < 1 {
 			return nil, errors.New("Invalid argument count")
 		}
@@ -89,14 +89,14 @@ func AdminRPC(transport api.Transport, node api.Node, call api.RemoteCall) (inte
 		}
 		return nil, nil
 
-	case "GetContacts":
+	case api.GetContacts:
 		if peers, err := node.GetContacts(); err != nil {
 			return nil, err
 		} else {
 			return peers, nil
 		}
 
-	case "AddContact":
+	case api.AddContact:
 		if len(call.Args) < 2 {
 			return nil, errors.New("Invalid argument count")
 		}
@@ -110,7 +110,7 @@ func AdminRPC(transport api.Transport, node api.Node, call api.RemoteCall) (inte
 		}
 		return nil, node.AddContact(contactName, contactB64Key)
 
-	case "DeleteContact":
+	case api.DeleteContact:
 		if len(call.Args) < 1 {
 			return nil, errors.New("Invalid argument count")
 		}
@@ -120,7 +120,7 @@ func AdminRPC(transport api.Transport, node api.Node, call api.RemoteCall) (inte
 		}
 		return nil, node.DeleteContact(contactName)
 
-	case "GetChannel":
+	case api.GetChannel:
 		if len(call.Args) < 1 {
 			return nil, errors.New("Invalid argument count")
 		}
@@ -135,14 +135,14 @@ func AdminRPC(transport api.Transport, node api.Node, call api.RemoteCall) (inte
 		}
 		return nil, nil
 
-	case "GetChannels":
+	case api.GetChannels:
 		if chans, err := node.GetChannels(); err != nil {
 			return nil, err
 		} else {
 			return chans, nil
 		}
 
-	case "AddChannel":
+	case api.AddChannel:
 		if len(call.Args) < 2 {
 			return nil, errors.New("Invalid argument count")
 		}
@@ -156,7 +156,7 @@ func AdminRPC(transport api.Transport, node api.Node, call api.RemoteCall) (inte
 		}
 		return nil, node.AddChannel(channelName, channelB64Key)
 
-	case "DeleteChannel":
+	case api.DeleteChannel:
 		if len(call.Args) < 1 {
 			return nil, errors.New("Invalid argument count")
 		}
@@ -166,7 +166,7 @@ func AdminRPC(transport api.Transport, node api.Node, call api.RemoteCall) (inte
 		}
 		return nil, node.DeleteChannel(channelName)
 
-	case "GetProfile":
+	case api.GetProfile:
 		if len(call.Args) < 1 {
 			return nil, errors.New("Invalid argument count")
 		}
@@ -181,14 +181,14 @@ func AdminRPC(transport api.Transport, node api.Node, call api.RemoteCall) (inte
 		}
 		return nil, nil
 
-	case "GetProfiles":
+	case api.GetProfiles:
 		if profiles, err := node.GetProfiles(); err != nil {
 			return nil, err
 		} else {
 			return profiles, nil
 		}
 
-	case "AddProfile":
+	case api.AddProfile:
 		if len(call.Args) < 2 {
 			return nil, errors.New("Invalid argument count")
 		}
@@ -196,7 +196,7 @@ func AdminRPC(transport api.Transport, node api.Node, call api.RemoteCall) (inte
 		if !ok {
 			return nil, errors.New("Invalid argument")
 		}
-		profileEnabled, ok := call.Args[1].(string) //todo: convert this to bool?
+		profileEnabled, ok := call.Args[1].(string) // todo: convert this to bool?
 		if !ok {
 			return nil, errors.New("Invalid argument")
 		}
@@ -206,7 +206,7 @@ func AdminRPC(transport api.Transport, node api.Node, call api.RemoteCall) (inte
 		}
 		return nil, node.AddProfile(profileName, enabled)
 
-	case "DeleteProfile":
+	case api.DeleteProfile:
 		if len(call.Args) < 1 {
 			return nil, errors.New("Invalid argument count")
 		}
@@ -216,7 +216,7 @@ func AdminRPC(transport api.Transport, node api.Node, call api.RemoteCall) (inte
 		}
 		return nil, node.DeleteProfile(profileName)
 
-	case "LoadProfile":
+	case api.LoadProfile:
 		if len(call.Args) < 1 {
 			return nil, errors.New("Invalid argument count")
 		}
@@ -231,7 +231,7 @@ func AdminRPC(transport api.Transport, node api.Node, call api.RemoteCall) (inte
 		}
 		return nil, nil
 
-	case "GetPeer":
+	case api.GetPeer:
 		if len(call.Args) < 1 {
 			return nil, errors.New("Invalid argument count")
 		}
@@ -246,8 +246,8 @@ func AdminRPC(transport api.Transport, node api.Node, call api.RemoteCall) (inte
 		}
 		return nil, nil
 
-	case "GetPeers":
-		var group = ""
+	case api.GetPeers:
+		group := ""
 		if len(call.Args) > 1 {
 			return nil, errors.New("Invalid argument count")
 		}
@@ -264,7 +264,7 @@ func AdminRPC(transport api.Transport, node api.Node, call api.RemoteCall) (inte
 			return peers, nil
 		}
 
-	case "AddPeer":
+	case api.AddPeer:
 		if len(call.Args) < 3 {
 			return nil, errors.New("Invalid argument count")
 		}
@@ -284,7 +284,7 @@ func AdminRPC(transport api.Transport, node api.Node, call api.RemoteCall) (inte
 		if err != nil {
 			return nil, errors.New("Invalid bool format")
 		}
-		if len(call.Args) > 3 {
+		if len(call.Args) > 3 && call.Args[3] != nil {
 			group, ok := call.Args[3].(string)
 			if !ok {
 				return nil, errors.New("Invalid argument")
@@ -293,7 +293,7 @@ func AdminRPC(transport api.Transport, node api.Node, call api.RemoteCall) (inte
 		}
 		return nil, node.AddPeer(peerName, enabled, peerURI)
 
-	case "DeletePeer":
+	case api.DeletePeer:
 		if len(call.Args) < 1 {
 			return nil, errors.New("Invalid argument count")
 		}
@@ -303,7 +303,7 @@ func AdminRPC(transport api.Transport, node api.Node, call api.RemoteCall) (inte
 		}
 		return nil, node.DeletePeer(peerName)
 
-	case "Send":
+	case api.Send:
 		if len(call.Args) < 2 {
 			return nil, errors.New("Invalid argument count")
 		}
@@ -324,7 +324,7 @@ func AdminRPC(transport api.Transport, node api.Node, call api.RemoteCall) (inte
 		}
 		return nil, node.Send(destName, msg)
 
-	case "SendChannel":
+	case api.SendChannel:
 		if len(call.Args) < 2 {
 			return nil, errors.New("Invalid argument count")
 		}

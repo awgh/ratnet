@@ -9,8 +9,7 @@ type Router interface {
 	// GetPatches : Returns an array with the mappings of incoming channels to destination channels
 	GetPatches() []Patch
 
-	// MarshalJSON : Serialize this type to JSON
-	MarshalJSON() (b []byte, e error)
+	JSON
 }
 
 // Patch : defines a mapping from an incoming channel to one or more destination channels.

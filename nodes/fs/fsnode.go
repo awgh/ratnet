@@ -4,14 +4,20 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/awgh/bencrypt/bc"
+	"github.com/awgh/debouncer"
 	"github.com/awgh/ratnet/api"
 	"github.com/awgh/ratnet/api/events"
 	"github.com/awgh/ratnet/nodes"
 	"github.com/awgh/ratnet/router"
 )
+
+// OutBufferSize - size of the buffer in messages for the Out() channel
+var OutBufferSize = 128
 
 type outboxMsg struct {
 	channel   string
@@ -26,8 +32,7 @@ type Node struct {
 
 	policies  []api.Policy
 	router    api.Router
-	isRunning bool
-	debugMode bool
+	isRunning uint32
 
 	// external data members
 	in     chan api.Msg
@@ -43,9 +48,11 @@ type Node struct {
 	streams  map[uint32]*api.StreamHeader
 	chunks   map[uint32]map[uint32]*api.Chunk
 
-	//outbox   []*outboxMsg
-	basePath    string
-	outboxIndex uint32
+	basePath string
+
+	mutex         sync.RWMutex
+	trigggerMutex sync.Mutex
+	debouncer     *debouncer.Debouncer
 }
 
 // New : creates a new instance of API
@@ -68,8 +75,8 @@ func New(contentKey, routingKey bc.KeyPair, basePath string) *Node {
 
 	// setup chans
 	node.in = make(chan api.Msg)
-	node.out = make(chan api.Msg)
-	node.events = make(chan api.Event)
+	node.out = make(chan api.Msg, OutBufferSize)
+	node.events = make(chan api.Event, OutBufferSize)
 
 	// setup default router
 	node.router = router.NewDefaultRouter()
@@ -80,17 +87,38 @@ func New(contentKey, routingKey bc.KeyPair, basePath string) *Node {
 	return node
 }
 
-func hex(n uint32) string {
+func hex32(n uint32) string {
 	return fmt.Sprintf("%08x", n)
+}
+
+func hex64(n int64) string {
+	return fmt.Sprintf("%016x", n)
+}
+
+// IsRunning - returns true if this node is running
+func (node *Node) IsRunning() bool {
+	return atomic.LoadUint32(&node.isRunning) == 1
+}
+
+func (node *Node) setIsRunning(b bool) {
+	var running uint32 = 0
+	if b {
+		running = 1
+	}
+	atomic.StoreUint32(&node.isRunning, running)
 }
 
 // GetPolicies : returns the array of Policy objects for this Node
 func (node *Node) GetPolicies() []api.Policy {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
 	return node.policies
 }
 
 // SetPolicy : set the array of Policy objects for this Node
 func (node *Node) SetPolicy(policies ...api.Policy) {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
 	node.policies = policies
 }
 
@@ -151,16 +179,4 @@ func (node *Node) AdminRPC(transport api.Transport, call api.RemoteCall) (interf
 // PublicRPC :
 func (node *Node) PublicRPC(transport api.Transport, call api.RemoteCall) (interface{}, error) {
 	return nodes.PublicRPC(transport, node, call)
-}
-
-// Debug
-
-// GetDebug : Returns the debug mode status of this node
-func (node *Node) GetDebug() bool {
-	return node.debugMode
-}
-
-// SetDebug : Sets the debug mode status of this node
-func (node *Node) SetDebug(mode bool) {
-	node.debugMode = mode
 }

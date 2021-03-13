@@ -1,8 +1,6 @@
 package qldb
 
 import (
-	"bytes"
-	"encoding/gob"
 	"errors"
 
 	"github.com/awgh/bencrypt/bc"
@@ -27,20 +25,16 @@ func (node *Node) Dropoff(bundle api.Bundle) error {
 	} else if !tagOK {
 		return errors.New("Luggage Tag Check Failed in QLNode Dropoff")
 	}
-	var msgs [][]byte
-
-	//Use default gob decoder
-	reader := bytes.NewReader(data)
-	dec := gob.NewDecoder(reader)
-	if erra := dec.Decode(&msgs); erra != nil {
-		events.Warning(node, "dropoff gob decode failed, len %d\n", len(data))
-		return erra
+	msgs, err := api.BytesBytesFromBytes(&data)
+	if err != nil {
+		events.Warning(node, "dropoff decode failed, len %d\n", len(data))
+		return err
 	}
-	for i := 0; i < len(msgs); i++ {
-		if len(msgs[i]) < 16 { // aes.BlockSize == 16
-			continue //todo: remove padding before here?
+	for i := 0; i < len(*msgs); i++ {
+		if len((*msgs)[i]) < 16 { // aes.BlockSize == 16
+			continue // todo: remove padding before here?
 		}
-		err = node.router.Route(node, msgs[i])
+		err = node.router.Route(node, (*msgs)[i])
 		if err != nil {
 			events.Warning(node, "error in dropoff: "+err.Error())
 			continue // we don't want to return routing errors back out the remote public interface
@@ -64,15 +58,10 @@ func (node *Node) Pickup(rpub bc.PubKey, lastTime int64, maxBytes int64, channel
 
 	retval.Time = lastTimeReturned
 	if len(msgs) > 0 {
-		//use default gob encoder
-		var buf bytes.Buffer
-		enc := gob.NewEncoder(&buf)
-		if err := enc.Encode(msgs); err != nil {
-			return retval, err
-		}
-		cipher, err := node.routingKey.EncryptMessage(buf.Bytes(), rpub)
+		buf := api.BytesBytesToBytes(&msgs)
+		cipher, err := node.routingKey.EncryptMessage(*buf, rpub)
 		if err != nil {
-			events.Warning(node, "pickup gob encode failed, len:", len(cipher))
+			events.Warning(node, "pickup encode failed, len:", len(cipher))
 			return retval, err
 		}
 		retval.Data = cipher

@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"sync"
 	"testing"
 	"time"
 
@@ -9,7 +10,8 @@ import (
 	"github.com/awgh/ratnet/api"
 	"github.com/awgh/ratnet/api/events/defaultlogger"
 	"github.com/awgh/ratnet/nodes/ram"
-	"github.com/awgh/ratnet/policy"
+	"github.com/awgh/ratnet/policy/poll"
+	"github.com/awgh/ratnet/policy/server"
 	"github.com/awgh/ratnet/transports/udp"
 )
 
@@ -17,11 +19,11 @@ const URI = "127.0.0.1:20005"
 
 func Test_fast_sending(t *testing.T) {
 	receivingNode := ram.New(new(ecc.KeyPair), new(ecc.KeyPair))
-	receivingNode.SetPolicy(policy.NewServer(udp.New(receivingNode), URI, false))
+	receivingNode.SetPolicy(server.New(udp.New(receivingNode), URI, false))
 	defaultlogger.StartDefaultLogger(receivingNode, api.Info)
 
 	sendingNode := ram.New(new(ecc.KeyPair), new(ecc.KeyPair))
-	sendingNode.SetPolicy(policy.NewPoll(udp.New(sendingNode), sendingNode, 100, 0))
+	sendingNode.SetPolicy(poll.New(udp.New(sendingNode), sendingNode, 100, 0))
 	sendingNode.AddPeer("rc", true, URI)
 	key, _ := receivingNode.CID()
 	sendingNode.AddContact("rc", key.ToB64())
@@ -34,17 +36,17 @@ func Test_fast_sending(t *testing.T) {
 	if err = sendingNode.Start(); err != nil {
 		t.Fatalf("sending node failed to start: %v", err)
 	}
+	var mutex sync.Mutex
 
-	var (
-		msgCounter int
-	)
+	var msgCounter int
 	go func() {
 		for {
 			msg := <-receivingNode.Out()
 			log.Printf("received message: %s", msg.Content.String())
+			mutex.Lock()
 			msgCounter++
+			mutex.Unlock()
 		}
-
 	}()
 
 	for i := 0; i < 3; i++ {
@@ -55,9 +57,11 @@ func Test_fast_sending(t *testing.T) {
 	}
 
 	time.Sleep(3 * time.Second)
-	//sendingNode.Stop()
-	//receivingNode.Stop()
+	// sendingNode.Stop()
+	// receivingNode.Stop()
 
+	mutex.Lock()
+	defer mutex.Unlock()
 	if msgCounter != 3 {
 		t.Fatalf("expected receiving 3 messages, got %d", msgCounter)
 	}

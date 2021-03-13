@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/awgh/bencrypt/bc"
+	"github.com/awgh/debouncer"
 	"github.com/awgh/ratnet/api"
 	"github.com/awgh/ratnet/api/chunking"
 	"github.com/awgh/ratnet/api/events"
@@ -186,7 +187,6 @@ func (node *Node) SendChannel(channelName string, data []byte, pubkey ...bc.PubK
 
 // SendMsg : Transmits a message
 func (node *Node) SendMsg(msg api.Msg) error {
-
 	// determine if we need to chunk
 	chunkSize := chunking.ChunkSize(node)                               // finds the minimum transport byte limit
 	if msg.Content.Len() > 0 && uint32(msg.Content.Len()) > chunkSize { // we need to chunk
@@ -271,7 +271,6 @@ func (node *Node) SendChannelBulk(channelName string, data [][]byte, pubkey ...b
 }
 
 func (node *Node) sendBulk(channelName string, destkey bc.PubKey, msg [][]byte) error {
-
 	isChan := (channelName != "")
 	flags := uint8(0)
 	if isChan {
@@ -285,7 +284,7 @@ func (node *Node) sendBulk(channelName string, destkey bc.PubKey, msg [][]byte) 
 		rxsum = append(rxsum, []byte(channelName)...)
 	}
 
-	//todo: is this passing msg by reference or not???
+	// todo: is this passing msg by reference or not???
 	data := make([][]byte, len(msg))
 	for i := range msg {
 		var err error
@@ -303,13 +302,10 @@ func (node *Node) sendBulk(channelName string, destkey bc.PubKey, msg [][]byte) 
 // Start : starts the Connection Policy threads
 func (node *Node) Start() error {
 	// do not start again if the node is already running
-	if node.isRunning {
+	if node.IsRunning() {
 		return nil
 	}
-	node.isRunning = true
-
-	// start the signal monitor
-	node.signalMonitor()
+	node.setIsRunning(true)
 
 	// start the policies
 	if node.policies != nil {
@@ -324,7 +320,7 @@ func (node *Node) Start() error {
 	go func() {
 		for {
 			// check if we should stop running
-			if !node.isRunning {
+			if !node.IsRunning() {
 				break
 			}
 
@@ -339,65 +335,61 @@ func (node *Node) Start() error {
 		}
 	}()
 
-	// dechunking loop
-	go func() {
-		for {
-			time.Sleep(10 * time.Millisecond)
-			// check if we should stop running
-			if !node.isRunning {
-				break
-			}
-			// get all streams
-			streams, err := node.qlGetStreams()
+	node.trigggerMutex.Lock()
+	defer node.trigggerMutex.Unlock()
+	node.debouncer = debouncer.New(10*time.Millisecond, func() {
+		node.trigggerMutex.Lock()
+		defer node.trigggerMutex.Unlock()
+		// check if we should stop running
+		if !node.IsRunning() {
+			return
+		}
+		// get all streams
+		streams, err := node.qlGetStreams()
+		if err != nil {
+			events.Critical(node, err.Error())
+		}
+		// for each stream, count chunks for that header
+		for _, stream := range streams {
+			count, err := node.qlGetChunkCount(stream.StreamID)
 			if err != nil {
 				events.Critical(node, err.Error())
 			}
-			// for each stream, count chunks for that header
-			for _, stream := range streams {
-				count, err := node.qlGetChunkCount(stream.StreamID)
+			// if chunks == total chunks, re-assemble Msg and call Handle
+			if count == uint64(stream.NumChunks) {
+				chunks, err := node.qlGetChunks(stream.StreamID)
 				if err != nil {
 					events.Critical(node, err.Error())
 				}
-				// if chunks == total chunks, re-assemble Msg and call Handle
-				if count == uint64(stream.NumChunks) {
-					chunks, err := node.qlGetChunks(stream.StreamID)
-					if err != nil {
-						events.Critical(node, err.Error())
-					}
-					buf := bytes.NewBuffer([]byte{})
-					for _, chunk := range chunks {
-						buf.Write(chunk.Data)
-					}
-					var msg api.Msg
-					if len(stream.ChannelName) > 0 {
-						msg.IsChan = true
-						msg.Name = stream.ChannelName
-					}
-					msg.Content = buf
+				buf := bytes.NewBuffer([]byte{})
+				for _, chunk := range chunks {
+					buf.Write(chunk.Data)
+				}
+				var msg api.Msg
+				if len(stream.ChannelName) > 0 {
+					msg.IsChan = true
+					msg.Name = stream.ChannelName
+				}
+				msg.Content = buf
 
-					select {
-					case node.Out() <- msg:
-						events.Debug(node, "Sent message "+fmt.Sprint(msg.Content.Bytes()))
-						node.qlClearStream(stream.StreamID)
-					default:
-						events.Debug(node, "No message sent")
-					}
+				select {
+				case node.Out() <- msg:
+					events.Debug(node, "Sent message "+fmt.Sprint(msg.Content.Bytes()))
+					node.qlClearStream(stream.StreamID)
+				default:
+					events.Debug(node, "No message sent")
 				}
 			}
 		}
-	}()
+	})
 
 	return nil
 }
 
 // Stop : sets the isRunning flag to false, indicating that all go routines should end
 func (node *Node) Stop() {
-	node.isRunning = false
 	for _, policy := range node.policies {
 		policy.Stop()
 	}
-
-	close(node.in)
-	close(node.out)
-	close(node.events)
+	node.setIsRunning(false)
 }

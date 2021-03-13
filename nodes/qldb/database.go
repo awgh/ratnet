@@ -143,7 +143,7 @@ func (node *Node) qlGetChannels() ([]api.Channel, error) {
 	if r == nil || err != nil {
 		return nil, err
 	}
-	//defer r.Close()
+	// defer r.Close()
 	var channels []api.Channel
 	for r.Next() {
 		var n, p string
@@ -160,7 +160,7 @@ func (node *Node) qlGetChannels() ([]api.Channel, error) {
 	return channels, nil
 }
 
-func (node *Node) qlGetChannelPrivs() ([]api.ChannelPriv, error) {
+func (node *Node) qlGetChannelsPriv() ([]api.ChannelPriv, error) {
 	c := node.db()
 	defer closeDB(c)
 	sqlq := "SELECT name,privkey FROM channels;"
@@ -181,8 +181,10 @@ func (node *Node) qlGetChannelPrivs() ([]api.ChannelPriv, error) {
 			return nil, err
 		}
 		channels = append(channels,
-			api.ChannelPriv{Name: n, Privkey: prv,
-				Pubkey: prv.GetPubKey().ToB64()})
+			api.ChannelPriv{
+				Name: n, Privkey: prv,
+				Pubkey: prv.GetPubKey().ToB64(),
+			})
 	}
 	return channels, nil
 }
@@ -265,6 +267,33 @@ func (node *Node) qlGetProfiles() ([]api.Profile, error) {
 	return profiles, nil
 }
 
+func (node *Node) qlGetProfilesPriv() ([]api.ProfilePrivB64, error) {
+	c := node.db()
+	defer closeDB(c)
+	sqlq := "SELECT name,enabled,privkey FROM profiles;"
+	events.Info(node, sqlq)
+	r, err := c.Query(sqlq)
+	if r == nil || err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	var profiles []api.ProfilePrivB64
+	for r.Next() {
+		var p api.ProfilePrivB64
+		var prv string
+		if err := r.Scan(&p.Name, &p.Enabled, &prv); err != nil {
+			return nil, err
+		}
+		pk := node.contentKey.Clone()
+		if err := pk.FromB64(prv); err != nil {
+			return nil, err
+		}
+		p.Privkey = pk.ToB64()
+		profiles = append(profiles, p)
+	}
+	return profiles, nil
+}
+
 func (node *Node) qlAddProfile(name string, enabled bool) error {
 	c := node.db()
 	defer closeDB(c)
@@ -285,6 +314,32 @@ func (node *Node) qlAddProfile(name string, enabled bool) error {
 		// update profile
 		node.transactExec("UPDATE profiles SET enabled=$1 WHERE name==$2;",
 			enabled, name)
+	} else {
+		return err
+	}
+	return nil
+}
+
+func (node *Node) qlAddProfilePriv(name string, enabled bool, b64key string) error {
+	c := node.db()
+	defer closeDB(c)
+	sqlq := "SELECT * FROM profiles WHERE name==$1;"
+	events.Info(node, sqlq, name)
+	r := c.QueryRow(sqlq, name)
+	var n, key, al string
+	if err := r.Scan(&n, &key, &al); err == sql.ErrNoRows {
+		// generate new profile keypair
+		profileKey := node.contentKey.Clone()
+		profileKey.GenerateKey()
+
+		// insert new profile
+		node.transactExec("INSERT INTO profiles VALUES( $1, $2, $3 )",
+			name, b64key, enabled)
+
+	} else if err == nil {
+		// update profile
+		node.transactExec("UPDATE profiles SET enabled=$1,privkey=$2 WHERE name==$3;",
+			enabled, b64key, name)
 	} else {
 		return err
 	}
@@ -375,7 +430,6 @@ func (node *Node) qlDeletePeer(name string) {
 }
 
 func (node *Node) qlOutboxEnqueue(channelName string, msg []byte, ts int64, checkExists bool) error {
-
 	doInsert := !checkExists
 
 	if checkExists {
@@ -410,11 +464,11 @@ func (node *Node) outboxBulkInsert(channelName string, timestamp int64, msgs [][
 	}
 	args := make([]interface{}, 1+(2*len(msgs)))
 	args[0] = channelName
-	//args[1] = timestamp
+	// args[1] = timestamp
 	idx := 2                                                    // starting 1-based index for 2nd arg
 	sql := "INSERT INTO outbox(channel, msg, timestamp) VALUES" //($1,$2, $3);
 	for i, v := range msgs {
-		//sql += "($1,$" + strconv.Itoa(i+3) + ", $2)"
+		// sql += "($1,$" + strconv.Itoa(i+3) + ", $2)"
 		sql += "($1,$" + strconv.Itoa(idx) + ", $" + strconv.Itoa(idx+1) + ")"
 		if i != len(msgs) {
 			sql += ", "
@@ -490,19 +544,21 @@ func (node *Node) qlGetMessages(lastTime, maxBytes int64, channelNames ...string
 		var msg []byte
 		var ts int64
 		r.Scan(&msg, &ts)
-		if bytesRead+int64(len(msg)) >= maxBytes { // no room for next msg
+		if bytesRead+int64(len(msg)) > maxBytes { // no room for next msg
 			events.Debug(node, "skipping messages after # results:", n)
 			if n == 0 {
 				return nil, lastTimeReturned, errors.New("Result too big to be fetched on this transport! Flush and rechunk")
 			}
-		}
-		if ts > lastTimeReturned {
-			lastTimeReturned = ts
+			break
 		} else {
-			events.Warning(node, "Timestamps not increasing - prev/cur:", lastTimeReturned, ts)
+			if ts > lastTimeReturned {
+				lastTimeReturned = ts
+			} else {
+				events.Warning(node, "Timestamps not increasing - prev/cur:", lastTimeReturned, ts)
+			}
+			msgs = append(msgs, msg)
+			bytesRead += int64(len(msg))
 		}
-		msgs = append(msgs, msg)
-		bytesRead += int64(len(msg))
 	}
 
 	return msgs, lastTimeReturned, nil
@@ -510,6 +566,8 @@ func (node *Node) qlGetMessages(lastTime, maxBytes int64, channelNames ...string
 
 // AddStream - implemented from Node API
 func (node *Node) AddStream(streamID uint32, totalChunks uint32, channelName string) error {
+	node.trigggerMutex.Lock()
+	defer node.trigggerMutex.Unlock()
 	c := node.db()
 	defer closeDB(c)
 	sqlq := "SELECT streamid FROM streams WHERE streamid==$1;"
@@ -527,11 +585,14 @@ func (node *Node) AddStream(streamID uint32, totalChunks uint32, channelName str
 	} else {
 		return err
 	}
+	node.debouncer.Trigger()
 	return nil
 }
 
 // AddChunk - implemented from Node API
 func (node *Node) AddChunk(streamID uint32, chunkNum uint32, data []byte) error {
+	node.trigggerMutex.Lock()
+	defer node.trigggerMutex.Unlock()
 	c := node.db()
 	defer closeDB(c)
 	sqlq := "SELECT chunknum FROM chunks WHERE streamid==$1 AND chunknum==$2;"
@@ -549,6 +610,7 @@ func (node *Node) AddChunk(streamID uint32, chunkNum uint32, data []byte) error 
 	} else {
 		return err
 	}
+	node.debouncer.Trigger()
 	return nil
 }
 
@@ -625,13 +687,12 @@ func (node *Node) FlushOutbox(maxAgeSeconds int64) {
 
 // BootstrapDB - Initialize or open a database file
 func (node *Node) BootstrapDB(database string) func() *sql.DB {
-
 	if node.db != nil {
 		return node.db
 	}
 
 	node.db = func() *sql.DB {
-		//todo: why does this trigger so much?
+		// todo: why does this trigger so much?
 		c, err := sql.Open("ql", database)
 		if err != nil {
 			events.Critical(node, errors.New("DB Error Opening: "+database+" => "+err.Error()))
@@ -646,7 +707,7 @@ func (node *Node) BootstrapDB(database string) func() *sql.DB {
 			cpubkey	string	NOT NULL
 		);		
 	`)
-	//CREATE UNIQUE INDEX IF NOT EXISTS contactid ON contacts (id());
+	// CREATE UNIQUE INDEX IF NOT EXISTS contactid ON contacts (id());
 
 	node.transactExec(`
 		CREATE TABLE IF NOT EXISTS channels ( 			

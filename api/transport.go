@@ -4,12 +4,13 @@ package api
 type Transport interface {
 	Listen(listen string, adminMode bool)
 	Name() string
-	RPC(host string, method string, args ...interface{}) (interface{}, error)
+	RPC(host string, method Action, args ...interface{}) (interface{}, error)
 	Stop()
-	MarshalJSON() (b []byte, e error)
 
 	ByteLimit() int64 // limit on bytes per bundle for this transport
 	SetByteLimit(limit int64)
+
+	JSON
 }
 
 // StreamHeader manifest for a chunked transfer (database version)

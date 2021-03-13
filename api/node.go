@@ -17,6 +17,7 @@ type Node interface {
 	GetChannelPrivKey(name string) (string, error)
 	Handle(msg Msg) (bool, error)
 	Forward(msg Msg) error
+	IsRunning() bool
 
 	// Chunking
 	// AddStream - inform node of receipt of a stream header
@@ -113,9 +114,7 @@ type Node interface {
 	// Events : Returns the Err channel of this node
 	Events() chan Event
 
-	// Debug
-	GetDebug() bool
-	SetDebug(mode bool)
+	ImportExport
 }
 
 // Contact : object that describes a contact (named public key)
@@ -137,8 +136,8 @@ type ChannelPriv struct {
 	Privkey bc.KeyPair
 }
 
-// ChannelPrivDB : object that describes a channel, database version (including private key)
-type ChannelPrivDB struct {
+// ChannelPrivB64 : object that describes a channel, database version (including private key)
+type ChannelPrivB64 struct {
 	Name    string `db:"name"`
 	Privkey string `db:"privkey"`
 }
@@ -157,8 +156,8 @@ type ProfilePriv struct {
 	Privkey bc.KeyPair
 }
 
-// ProfilePrivDB : object that describes a profile, database version (including private key)
-type ProfilePrivDB struct {
+// ProfilePrivB64 : object that describes a profile, database version (including private key)
+type ProfilePrivB64 struct {
 	Name    string `db:"name"`
 	Enabled bool   `db:"enabled"`
 	Privkey string `db:"privkey"`

@@ -7,16 +7,16 @@ import (
 	"os"
 	"strings"
 
+	"github.com/awgh/ratnet/policy/poll"
+	"github.com/awgh/ratnet/policy/server"
 	"github.com/awgh/ratnet/transports/udp"
 
 	"github.com/AlexsJones/cli/cli"
 	"github.com/AlexsJones/cli/command"
 	"github.com/awgh/ratnet/nodes/ram"
-	"github.com/awgh/ratnet/policy"
 )
 
 func main() {
-
 	checkIfErr := func(err error) bool {
 		if err != nil {
 			fmt.Println(err)
@@ -328,7 +328,7 @@ func main() {
 		Name: "SetClientTransport",
 		Help: "Enable a polling policy, UDP transport within this node",
 		Func: func(args []string) {
-			node.SetPolicy(policy.NewPoll(udp.New(node), node, 500))
+			node.SetPolicy(poll.New(udp.New(node), node, 500, 0))
 		},
 	})
 
@@ -338,7 +338,7 @@ func main() {
 		Help: "Enable a server policy, UDP transport within this node (uri string)",
 		Func: func(args []string) {
 			if checkIfArgsAreOK(1, 1, args) {
-				node.SetPolicy(policy.NewServer(udp.New(node), args[0], false))
+				node.SetPolicy(server.New(udp.New(node), args[0], false))
 			}
 		},
 	})

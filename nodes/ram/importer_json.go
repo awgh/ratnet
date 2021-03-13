@@ -1,4 +1,6 @@
-package db
+// +build !no_json
+
+package ram
 
 import (
 	"encoding/json"
@@ -9,57 +11,14 @@ import (
 	"github.com/awgh/ratnet/api"
 )
 
-// ProfilePrivB64 - Private Key for a Profile in base64
-type ProfilePrivB64 struct {
-	Name    string
-	Privkey string //base64 encoded
-	Enabled bool
-}
-
-// ChannelPrivB64 - Private Key for a Channel in base64
-type ChannelPrivB64 struct {
-	Name    string
-	Privkey string //base64 encoded
-}
-
-// ExportedNode - Node Config structure for export
-type ExportedNode struct {
-	ContentKey  string
-	ContentType string
-	RoutingKey  string
-	RoutingType string
-	Policies    []api.Policy
-
-	Profiles []api.ProfilePrivDB
-	Channels []ChannelPrivB64
-	Peers    []api.Peer
-	Contacts []api.Contact
-	Router   api.Router
-}
-
-// ImportedNode - Node Config structure for import
-type ImportedNode struct {
-	ContentKey  string
-	ContentType string
-	RoutingKey  string
-	RoutingType string
-	Policies    []map[string]interface{}
-
-	Profiles []ProfilePrivB64
-	Channels []ChannelPrivB64
-	Peers    []api.Peer
-	Contacts []api.Contact
-	Router   map[string]interface{}
-}
-
 // Import : Load a node configuration from a JSON config
 func (node *Node) Import(jsonConfig []byte) error {
 	restartNode := false
-	if node.isRunning {
+	if node.IsRunning() {
 		node.Stop()
 		restartNode = true
 	}
-	var nj ImportedNode
+	var nj api.ImportedNode
 	if err := json.Unmarshal(jsonConfig, &nj); err != nil {
 		return err
 	}
@@ -94,8 +53,9 @@ func (node *Node) Import(jsonConfig []byte) error {
 			return err
 		}
 	}
+	node.peers = make(map[string]*api.Peer)
 	for i := 0; i < len(nj.Peers); i++ {
-		if err := node.AddPeer(nj.Peers[i].Name, nj.Peers[i].Enabled, nj.Peers[i].URI); err != nil {
+		if err := node.AddPeer(nj.Peers[i].Name, nj.Peers[i].Enabled, nj.Peers[i].URI, nj.Peers[i].Group); err != nil {
 			return err
 		}
 	}
@@ -108,13 +68,14 @@ func (node *Node) Import(jsonConfig []byte) error {
 		cp.Enabled = nj.Profiles[i].Enabled
 		cp.Name = nj.Profiles[i].Name
 
-		node.dbAddProfilePriv(cp.Name, cp.Enabled, cp.Privkey.ToB64())
+		node.profiles[cp.Name] = cp
 	}
 
 	if len(nj.Router) < 0 {
 		node.SetRouter(ratnet.NewRouterFromMap(nj.Router))
 	}
 
+	node.policies = make([]api.Policy, 0)
 	for _, p := range nj.Policies {
 		// extract the inner Transport first
 		t := p["Transport"].(map[string]interface{})
@@ -130,56 +91,40 @@ func (node *Node) Import(jsonConfig []byte) error {
 
 // Export : Save a node configuration to a JSON config
 func (node *Node) Export() ([]byte, error) {
-	var nj ExportedNode
+	var nj api.ExportedNode
 	nj.ContentKey = node.contentKey.ToB64()
 	nj.ContentType = node.contentKey.GetName()
 	nj.RoutingKey = node.routingKey.ToB64()
 	nj.RoutingType = node.routingKey.GetName()
-	channels, err := node.dbGetChannelsPriv()
-	if err != nil {
-		return nil, err
-	}
-	contacts, err := node.dbGetContacts()
-	if err != nil {
-		return nil, err
-	}
-	profiles, err := node.dbGetProfilesPriv()
-	if err != nil {
-		return nil, err
-	}
-	peers, err := node.dbGetPeers("")
-	if err != nil {
-		return nil, err
-	}
-
-	nj.Channels = make([]ChannelPrivB64, len(channels))
+	nj.Channels = make([]api.ChannelPrivB64, len(node.channels))
 	i := 0
-	for _, v := range channels {
+	for _, v := range node.channels {
 		nj.Channels[i].Name = v.Name
 		nj.Channels[i].Privkey = v.Privkey.ToB64()
 		i++
 	}
-	nj.Contacts = make([]api.Contact, len(contacts))
+	nj.Contacts = make([]api.Contact, len(node.contacts))
 	i = 0
-	for _, v := range contacts {
+	for _, v := range node.contacts {
 		nj.Contacts[i].Name = v.Name
 		nj.Contacts[i].Pubkey = v.Pubkey
 		i++
 	}
-	nj.Profiles = make([]api.ProfilePrivDB, len(profiles))
+	nj.Profiles = make([]api.ProfilePrivB64, len(node.profiles))
 	i = 0
-	for _, v := range profiles {
+	for _, v := range node.profiles {
 		nj.Profiles[i].Name = v.Name
 		nj.Profiles[i].Enabled = v.Enabled
-		nj.Profiles[i].Privkey = v.Privkey
+		nj.Profiles[i].Privkey = v.Privkey.ToB64()
 		i++
 	}
-	nj.Peers = make([]api.Peer, len(peers))
+	nj.Peers = make([]api.Peer, len(node.peers))
 	i = 0
-	for _, v := range peers {
+	for _, v := range node.peers {
 		nj.Peers[i].Name = v.Name
 		nj.Peers[i].Enabled = v.Enabled
 		nj.Peers[i].URI = v.URI
+		nj.Peers[i].Group = v.Group
 		i++
 	}
 	nj.Router = node.router

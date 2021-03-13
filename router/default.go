@@ -2,14 +2,12 @@ package router
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"hash/crc32"
 	"math"
 	"sort"
 	"sync"
 
-	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
 )
 
@@ -101,15 +99,6 @@ type DefaultRouter struct {
 	ForwardUnknownProfiles bool
 }
 
-func init() {
-	ratnet.Routers["default"] = NewRouterFromMap // register this module by name (for deserialization support)
-}
-
-// NewRouterFromMap : Makes a new instance of this module from a map of arguments (for deserialization support)
-func NewRouterFromMap(r map[string]interface{}) api.Router {
-	return NewDefaultRouter()
-}
-
 // NewDefaultRouter - returns a new instance of DefaultRouter
 func NewDefaultRouter() *DefaultRouter {
 	r := new(DefaultRouter)
@@ -138,7 +127,7 @@ func (r *DefaultRouter) GetPatches() []api.Patch {
 }
 
 func (r *DefaultRouter) forward(node api.Node, msg api.Msg) error {
-	for _, p := range r.Patches { //todo: this could be constant-time
+	for _, p := range r.Patches { // todo: this could be constant-time
 		if msg.Name == p.From { // we don't check for IsChan here, we allow forwarding from "" chan to channels
 			for i := 0; i < len(p.To); i++ {
 				msg.Name = p.To[i]
@@ -162,7 +151,6 @@ func (r *DefaultRouter) forward(node api.Node, msg api.Msg) error {
 
 // Route - Router that does default behavior
 func (r *DefaultRouter) Route(node api.Node, message []byte) error {
-
 	//  Stuff Everything will need just about every time...
 	//
 	var msg api.Msg
@@ -211,21 +199,15 @@ func (r *DefaultRouter) Route(node api.Node, message []byte) error {
 		}
 	} else { // private message (zero length channel)
 		// content key case (to be removed, deprecated)
-		consumed := false
+		consumedContent := false
 		if r.CheckContent {
-			consumed, err = node.Handle(msg)
+			consumedContent, err = node.Handle(msg)
 			if err != nil {
 				return err
 			}
 		}
-		if (!consumed && r.ForwardUnknownContent) || (consumed && r.ForwardConsumedContent) {
-			if err := r.forward(node, msg); err != nil {
-				return err
-			}
-		}
-
 		// profile keys case
-		consumed = false
+		consumedProfile := false
 		if r.CheckProfiles {
 			profiles, err := node.GetProfiles()
 			if err != nil {
@@ -235,39 +217,24 @@ func (r *DefaultRouter) Route(node api.Node, message []byte) error {
 				if !profile.Enabled {
 					continue
 				}
-				pubkey := cid.Clone()
-				pubkey.FromB64(profile.Pubkey)
-				consumed, err = node.Handle(msg)
+				msg.Name = profile.Name
+				consumedProfile, err = node.Handle(msg)
 				if err != nil {
 					return err
 				}
-				if consumed {
+				if consumedProfile {
 					break
 				}
 			}
 		}
-		if (!consumed && r.ForwardUnknownProfiles) || (consumed && r.ForwardConsumedProfiles) {
+		fwdUnknowns := r.ForwardUnknownContent || r.ForwardUnknownProfiles // todo: these are redundant fields
+		if (!consumedContent && !consumedProfile && fwdUnknowns) ||
+			(consumedContent && r.ForwardConsumedContent) ||
+			(consumedProfile && r.ForwardConsumedProfiles) {
 			if err := r.forward(node, msg); err != nil {
 				return err
 			}
 		}
 	}
 	return nil
-}
-
-// MarshalJSON : Create a serialized JSON blob out of the config of this router
-func (r *DefaultRouter) MarshalJSON() (b []byte, e error) {
-
-	return json.Marshal(map[string]interface{}{
-		"Router":                  "default",
-		"CheckContent":            r.CheckContent,
-		"ForwardConsumedContent":  r.ForwardConsumedContent,
-		"ForwardUnknownContent":   r.ForwardUnknownContent,
-		"CheckProfiles":           r.CheckProfiles,
-		"ForwardConsumedProfiles": r.ForwardConsumedProfiles,
-		"ForwardUnknownProfiles":  r.ForwardUnknownProfiles,
-		"CheckChannels":           r.CheckChannels,
-		"ForwardConsumedChannels": r.ForwardConsumedChannels,
-		"ForwardUnknownChannels":  r.ForwardUnknownChannels,
-		"Patches":                 r.Patches})
 }

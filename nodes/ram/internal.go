@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"os"
-	"os/signal"
 	"time"
 
 	"github.com/awgh/ratnet/api"
@@ -24,7 +22,6 @@ func (node *Node) GetChannelPrivKey(name string) (string, error) {
 
 // Forward - Add an already-encrypted message to the outbound message queue (forward it along)
 func (node *Node) Forward(msg api.Msg) error {
-
 	flags := uint8(0)
 	if msg.IsChan {
 		flags |= api.ChannelFlag
@@ -88,6 +85,9 @@ func (node *Node) Handle(msg api.Msg) (bool, error) {
 		if err != nil {
 			return false, err
 		}
+		node.trigggerMutex.Lock()
+		defer node.trigggerMutex.Unlock()
+		node.debouncer.Trigger()
 		return true, err
 	}
 
@@ -100,32 +100,23 @@ func (node *Node) Handle(msg api.Msg) (bool, error) {
 	return tagOK, nil
 }
 
-func (node *Node) signalMonitor() {
-	sigChannel := make(chan os.Signal, 1)
-	signal.Notify(sigChannel, nil)
-	go func() {
-		defer node.Stop()
-		for {
-			switch <-sigChannel {
-			case os.Kill:
-				return
-			}
-		}
-	}()
-}
-
 // AddStream - adds a partial message header to internal storage
 func (node *Node) AddStream(streamID uint32, totalChunks uint32, channelName string) error {
+	node.trigggerMutex.Lock()
+	defer node.trigggerMutex.Unlock()
 	stream := new(api.StreamHeader)
 	stream.StreamID = streamID
 	stream.NumChunks = totalChunks
 	stream.ChannelName = channelName
 	node.streams[streamID] = stream
+	node.debouncer.Trigger()
 	return nil
 }
 
 // AddChunk - adds a chunk of a partial message to internal storage
 func (node *Node) AddChunk(streamID uint32, chunkNum uint32, data []byte) error {
+	node.trigggerMutex.Lock()
+	defer node.trigggerMutex.Unlock()
 	chunk := new(api.Chunk)
 	chunk.StreamID = streamID
 	chunk.ChunkNum = chunkNum
@@ -134,5 +125,6 @@ func (node *Node) AddChunk(streamID uint32, chunkNum uint32, data []byte) error 
 		node.chunks[streamID] = make(map[uint32]*api.Chunk)
 	}
 	node.chunks[streamID][chunkNum] = chunk
+	node.debouncer.Trigger()
 	return nil
 }

@@ -1,14 +1,16 @@
 package qldb
 
 // To install ql:
-//force github.com/cznic/zappy to purego mode
-//go get -tags purego github.com/cznic/ql  (or ql+cgo seems to work on arm now, too)
+// force github.com/cznic/zappy to purego mode
+// go get -tags purego github.com/cznic/ql  (or ql+cgo seems to work on arm now, too)
 
 import (
 	"database/sql"
 	"sync"
+	"sync/atomic"
 
 	"github.com/awgh/bencrypt/bc"
+	"github.com/awgh/debouncer"
 	"github.com/awgh/ratnet/api"
 	"github.com/awgh/ratnet/nodes"
 	"github.com/awgh/ratnet/router"
@@ -16,20 +18,23 @@ import (
 	_ "modernc.org/ql/driver" // load the QL database driver
 )
 
+// OutBufferSize - channel size for the node.Out() channel
+var OutBufferSize = 128
+
 // Node : defines an instance of the API with a ql-DB backed Node
 type Node struct {
 	contentKey  bc.KeyPair
 	routingKey  bc.KeyPair
 	channelKeys map[string]bc.KeyPair
 
-	policies []api.Policy
-	router   api.Router
-	db       func() *sql.DB
-	mutex    *sync.Mutex
+	policies      []api.Policy
+	router        api.Router
+	db            func() *sql.DB
+	mutex         *sync.Mutex
+	trigggerMutex sync.Mutex
+	debouncer     *debouncer.Debouncer
 
-	isRunning bool
-
-	debugMode bool
+	isRunning uint32
 
 	// external data members
 	in     chan api.Msg
@@ -52,13 +57,26 @@ func New(contentKey, routingKey bc.KeyPair) *Node {
 
 	// setup chans
 	node.in = make(chan api.Msg)
-	node.out = make(chan api.Msg)
-	node.events = make(chan api.Event)
+	node.out = make(chan api.Msg, OutBufferSize)
+	node.events = make(chan api.Event, OutBufferSize)
 
 	// setup default router
 	node.router = router.NewDefaultRouter()
 
 	return node
+}
+
+// IsRunning - returns true if this node is running
+func (node *Node) IsRunning() bool {
+	return atomic.LoadUint32(&node.isRunning) == 1
+}
+
+func (node *Node) setIsRunning(b bool) {
+	var running uint32 = 0
+	if b {
+		running = 1
+	}
+	atomic.StoreUint32(&node.isRunning, running)
 }
 
 // GetPolicies : returns the array of Policy objects for this Node
@@ -108,16 +126,4 @@ func (node *Node) AdminRPC(transport api.Transport, call api.RemoteCall) (interf
 // PublicRPC :
 func (node *Node) PublicRPC(transport api.Transport, call api.RemoteCall) (interface{}, error) {
 	return nodes.PublicRPC(transport, node, call)
-}
-
-// Debug
-
-// GetDebug : Returns the debug mode status of this node
-func (node *Node) GetDebug() bool {
-	return node.debugMode
-}
-
-// SetDebug : Sets the debug mode status of this node
-func (node *Node) SetDebug(mode bool) {
-	node.debugMode = mode
 }

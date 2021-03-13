@@ -8,6 +8,7 @@ import (
 
 	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/bencrypt/ecc"
+	"github.com/awgh/debouncer"
 	"github.com/awgh/ratnet/api"
 	"github.com/awgh/ratnet/api/chunking"
 	"github.com/awgh/ratnet/api/events"
@@ -20,6 +21,8 @@ func (node *Node) CID() (bc.PubKey, error) {
 
 // GetContact : Return a Contact by name
 func (node *Node) GetContact(name string) (*api.Contact, error) {
+	node.mutex.RLock()
+	defer node.mutex.RUnlock()
 	c, ok := node.contacts[name]
 	if !ok {
 		return nil, errors.New("Contact not found")
@@ -32,6 +35,9 @@ func (node *Node) GetContact(name string) (*api.Contact, error) {
 
 // GetContacts : Return a list of Contacts
 func (node *Node) GetContacts() ([]api.Contact, error) {
+	node.mutex.RLock()
+	defer node.mutex.RUnlock()
+
 	var contacts []api.Contact
 	for _, v := range node.contacts {
 		contacts = append(contacts, api.Contact{Name: v.Name, Pubkey: v.Pubkey})
@@ -41,6 +47,8 @@ func (node *Node) GetContacts() ([]api.Contact, error) {
 
 // AddContact : Add or Update a contact key to this node's database
 func (node *Node) AddContact(name string, key string) error {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
 	if !node.contentKey.ValidatePubKey(key) {
 		return errors.New("Invalid Public Key in AddContact")
 	}
@@ -53,6 +61,8 @@ func (node *Node) AddContact(name string, key string) error {
 
 // DeleteContact : Remove a contact from this node's database
 func (node *Node) DeleteContact(name string) error {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
 	if _, ok := node.contacts[name]; !ok {
 		return errors.New("Contact not found")
 	}
@@ -62,6 +72,8 @@ func (node *Node) DeleteContact(name string) error {
 
 // GetChannel : Return a channel by name
 func (node *Node) GetChannel(name string) (*api.Channel, error) {
+	node.mutex.RLock()
+	defer node.mutex.RUnlock()
 	channel, ok := node.channels[name]
 	if !ok {
 		return nil, errors.New("Channel not found")
@@ -74,16 +86,21 @@ func (node *Node) GetChannel(name string) (*api.Channel, error) {
 
 // GetChannels : Return list of channels known to this node
 func (node *Node) GetChannels() ([]api.Channel, error) {
+	node.mutex.RLock()
+	defer node.mutex.RUnlock()
 	var channels []api.Channel
 	for _, v := range node.channels {
 		channels = append(channels, api.Channel{
-			Name: v.Name, Pubkey: v.Pubkey})
+			Name: v.Name, Pubkey: v.Pubkey,
+		})
 	}
 	return channels, nil
 }
 
 // AddChannel : Add a channel to this node's database
 func (node *Node) AddChannel(name string, privkey string) error {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
 	pk := node.contentKey.Clone()
 	if err := pk.FromB64(privkey); err != nil {
 		return errors.New("Invalid channel key")
@@ -98,6 +115,8 @@ func (node *Node) AddChannel(name string, privkey string) error {
 
 // DeleteChannel : Remove a channel from this node's database
 func (node *Node) DeleteChannel(name string) error {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
 	if _, ok := node.channels[name]; !ok {
 		return errors.New("Channel not found")
 	}
@@ -107,6 +126,8 @@ func (node *Node) DeleteChannel(name string) error {
 
 // GetProfile : Retrieve a profile by name
 func (node *Node) GetProfile(name string) (*api.Profile, error) {
+	node.mutex.RLock()
+	defer node.mutex.RUnlock()
 	p, ok := node.profiles[name]
 	if !ok {
 		return nil, errors.New("Profile not found")
@@ -122,18 +143,23 @@ func (node *Node) GetProfile(name string) (*api.Profile, error) {
 
 // GetProfiles : Retrieve the list of profiles for this node
 func (node *Node) GetProfiles() ([]api.Profile, error) {
+	node.mutex.RLock()
+	defer node.mutex.RUnlock()
 	var profiles []api.Profile
 	for name, profile := range node.profiles {
 		profiles = append(profiles, api.Profile{
 			Name:    name,
 			Enabled: profile.Enabled,
-			Pubkey:  profile.Privkey.GetPubKey().ToB64()})
+			Pubkey:  profile.Privkey.GetPubKey().ToB64(),
+		})
 	}
 	return profiles, nil
 }
 
 // AddProfile : Add or Update a profile to this node's database
 func (node *Node) AddProfile(name string, enabled bool) error {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
 	// generate new profile keypair
 	profileKey := node.contentKey.Clone()
 	if _, ok := node.profiles[name]; !ok {
@@ -150,6 +176,8 @@ func (node *Node) AddProfile(name string, enabled bool) error {
 
 // DeleteProfile : Remove a profile from this node's database
 func (node *Node) DeleteProfile(name string) error {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
 	if _, ok := node.profiles[name]; !ok {
 		return errors.New("Profile not found")
 	}
@@ -159,6 +187,8 @@ func (node *Node) DeleteProfile(name string) error {
 
 // LoadProfile : Load a profile key from the database as the content key
 func (node *Node) LoadProfile(name string) (bc.PubKey, error) {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
 	if _, ok := node.channels[name]; !ok {
 		return nil, errors.New("Profile not found")
 	}
@@ -169,6 +199,8 @@ func (node *Node) LoadProfile(name string) (bc.PubKey, error) {
 
 // GetPeer : Retrieve a peer from this node's database
 func (node *Node) GetPeer(name string) (*api.Peer, error) {
+	node.mutex.RLock()
+	defer node.mutex.RUnlock()
 	peer, ok := node.peers[name]
 	if !ok {
 		return nil, errors.New("Peer not found")
@@ -177,11 +209,14 @@ func (node *Node) GetPeer(name string) (*api.Peer, error) {
 	p.Name = name
 	p.Enabled = peer.Enabled
 	p.URI = peer.URI
+	p.Group = peer.Group
 	return p, nil
 }
 
 // GetPeers : Retrieve a list of peers in this node's database
 func (node *Node) GetPeers(group ...string) ([]api.Peer, error) {
+	node.mutex.RLock()
+	defer node.mutex.RUnlock()
 	// if we don't have a specified group, it's ""
 	groupName := ""
 	if len(group) > 0 {
@@ -198,6 +233,8 @@ func (node *Node) GetPeers(group ...string) ([]api.Peer, error) {
 
 // AddPeer : Add or Update a peer configuration
 func (node *Node) AddPeer(name string, enabled bool, uri string, group ...string) error {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
 	// if we don't have a specified group, it's ""
 	groupName := ""
 	if len(group) > 0 {
@@ -214,6 +251,8 @@ func (node *Node) AddPeer(name string, enabled bool, uri string, group ...string
 
 // DeletePeer : Remove a peer from this node's database
 func (node *Node) DeletePeer(name string) error {
+	node.mutex.Lock()
+	defer node.mutex.Unlock()
 	if _, ok := node.peers[name]; !ok {
 		return errors.New("Peer not found")
 	}
@@ -227,14 +266,19 @@ func (node *Node) Send(contactName string, data []byte, pubkey ...bc.PubKey) err
 	if pubkey != nil && len(pubkey) > 0 && pubkey[0] != nil { // third argument is optional pubkey override
 		destkey = pubkey[0]
 	} else {
+		node.mutex.RLock()
 		if _, ok := node.contacts[contactName]; !ok {
+			node.mutex.RUnlock()
 			return errors.New("Contact not found")
 		}
 		destkey = node.contentKey.GetPubKey().Clone()
 		if err := destkey.FromB64(node.contacts[contactName].Pubkey); err != nil {
+			node.mutex.RUnlock()
 			return err
 		}
+		node.mutex.RUnlock()
 	}
+
 	return node.SendMsg(api.Msg{Name: contactName, Content: bytes.NewBuffer(data), IsChan: false, PubKey: destkey, Chunked: false})
 }
 
@@ -255,18 +299,20 @@ func (node *Node) SendChannel(channelName string, data []byte, pubkey ...bc.PubK
 	if pubkey != nil && len(pubkey) > 0 && pubkey[0] != nil { // third argument is optional PubKey override
 		destkey = pubkey[0]
 	} else {
+		node.mutex.RLock()
 		c, ok := node.channels[channelName]
+		node.mutex.RUnlock()
 		if !ok {
 			return errors.New("No public key for Channel")
 		}
 		destkey = c.Privkey.GetPubKey()
 	}
+
 	return node.SendMsg(api.Msg{Name: channelName, Content: bytes.NewBuffer(data), IsChan: true, PubKey: destkey, Chunked: false})
 }
 
 // SendMsg : Transmits a message
 func (node *Node) SendMsg(msg api.Msg) error {
-
 	// determine if we need to chunk
 	chunkSize := chunking.ChunkSize(node)                               // finds the minimum transport byte limit
 	if msg.Content.Len() > 0 && uint32(msg.Content.Len()) > chunkSize { // we need to chunk
@@ -308,14 +354,16 @@ func (node *Node) SendMsg(msg api.Msg) error {
 	}
 	m.timeStamp = ts
 	m.msg = data
+	node.mutex.Lock()
 	node.outbox.Append(m)
+	node.mutex.Unlock()
 	return nil
 }
 
 // Start : starts the Connection Policy threads
 func (node *Node) Start() error {
 	// do not start again if the node is already running
-	if node.isRunning {
+	if node.IsRunning() {
 		return nil
 	}
 
@@ -329,9 +377,6 @@ func (node *Node) Start() error {
 		node.routingKey.GenerateKey()
 	}
 
-	// start the signal monitor
-	node.signalMonitor()
-
 	// start the policies
 	if node.policies != nil {
 		for i := 0; i < len(node.policies); i++ {
@@ -341,13 +386,13 @@ func (node *Node) Start() error {
 		}
 	}
 
-	node.isRunning = true
+	node.setIsRunning(true)
 
 	// input loop
 	go func() {
 		for {
 			// check if we should stop running
-			if !node.isRunning {
+			if !node.IsRunning() {
 				break
 			}
 
@@ -360,53 +405,54 @@ func (node *Node) Start() error {
 		}
 	}()
 
-	// dechunking loop
-	go func() {
-		for {
-			time.Sleep(10 * time.Millisecond)
-			// check if we should stop running
-			if !node.isRunning {
-				break
-			}
-			// for each stream, count chunks for that header
-			for _, stream := range node.streams {
-				count := 0
-				if stream != nil {
-					v, ok := node.chunks[stream.StreamID]
-					if ok && v != nil {
-						count = len(v)
+	node.trigggerMutex.Lock()
+	defer node.trigggerMutex.Unlock()
+	node.debouncer = debouncer.New(10*time.Millisecond, func() {
+		node.trigggerMutex.Lock()
+		defer node.trigggerMutex.Unlock()
+
+		// check if we should stop running
+		if !node.IsRunning() {
+			return
+		}
+		// for each stream, count chunks for that header
+		for _, stream := range node.streams {
+			count := 0
+			if stream != nil {
+				v, ok := node.chunks[stream.StreamID]
+				if ok && v != nil {
+					count = len(v)
+				}
+				// if chunks == total chunks, re-assemble Msg and call Handle
+				if uint32(count) == uint32(stream.NumChunks) {
+					buf := bytes.NewBuffer([]byte{})
+					for i := uint32(0); i < stream.NumChunks; i++ {
+						chunk, ok := node.chunks[stream.StreamID][i]
+						if !ok {
+							events.Critical(node, "Chunk count miscalculated - code broken")
+						}
+						buf.Write(chunk.Data)
 					}
-					// if chunks == total chunks, re-assemble Msg and call Handle
-					if uint32(count) == uint32(stream.NumChunks) {
-						buf := bytes.NewBuffer([]byte{})
-						for i := uint32(0); i < stream.NumChunks; i++ {
-							chunk, ok := node.chunks[stream.StreamID][i]
-							if !ok {
-								events.Critical(node, "Chunk count miscalculated - code broken")
-							}
-							buf.Write(chunk.Data)
-						}
 
-						var msg api.Msg
-						if len(stream.ChannelName) > 0 {
-							msg.IsChan = true
-							msg.Name = stream.ChannelName
-						}
-						msg.Content = buf
+					var msg api.Msg
+					if len(stream.ChannelName) > 0 {
+						msg.IsChan = true
+						msg.Name = stream.ChannelName
+					}
+					msg.Content = buf
 
-						select {
-						case node.Out() <- msg:
-							events.Debug(node, "Sent message "+fmt.Sprint(msg.Content.Bytes()))
-							node.streams[stream.StreamID] = nil
-							node.chunks[stream.StreamID] = make(map[uint32]*api.Chunk)
-						default:
-							events.Debug(node, "No message sent")
-						}
+					select {
+					case node.Out() <- msg:
+						events.Debug(node, "Sent message "+fmt.Sprint(msg.Content.Bytes()))
+						node.streams[stream.StreamID] = nil
+						node.chunks[stream.StreamID] = make(map[uint32]*api.Chunk)
+					default:
+						events.Debug(node, "No message sent")
 					}
 				}
 			}
 		}
-	}()
+	})
 
 	return nil
 }
@@ -416,5 +462,5 @@ func (node *Node) Stop() {
 	for _, policy := range node.policies {
 		policy.Stop()
 	}
-	node.isRunning = false
+	node.setIsRunning(false)
 }

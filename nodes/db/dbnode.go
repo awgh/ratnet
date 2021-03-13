@@ -1,18 +1,24 @@
 package db
 
 // To install upper db:
-// go get -v -u upper.io/db.v3
+// go get -v -u github.com/upper/db
 // FOR POSTGRES DRIVER: go get -v -u github.com/lib/pq
 
 import (
 	"sync"
+	"sync/atomic"
 
 	"github.com/awgh/bencrypt/bc"
+	"github.com/awgh/bencrypt/ecc"
+	"github.com/awgh/debouncer"
 	"github.com/awgh/ratnet/api"
 	"github.com/awgh/ratnet/nodes"
 	"github.com/awgh/ratnet/router"
-	"upper.io/db.v3/lib/sqlbuilder"
+	"github.com/upper/db/v4"
 )
+
+// OutBufferSize - Out() output go channel buffer size
+var OutBufferSize = 128
 
 // Node : defines an instance of the API with a ql-DB backed Node
 type Node struct {
@@ -23,13 +29,13 @@ type Node struct {
 	policies []api.Policy
 	router   api.Router
 
-	db sqlbuilder.Database
+	db db.Session
 
-	mutex *sync.Mutex
+	mutex         *sync.Mutex
+	trigggerMutex sync.Mutex
+	debouncer     *debouncer.Debouncer
 
-	isRunning bool
-
-	debugMode bool
+	isRunning uint32
 
 	// external data members
 	in     chan api.Msg
@@ -47,18 +53,43 @@ func New(contentKey, routingKey bc.KeyPair) *Node {
 	node.channelKeys = make(map[string]bc.KeyPair)
 
 	// set crypto modes
+	if contentKey == nil {
+		contentKey = new(ecc.KeyPair)
+	}
+	if contentKey.GetPubKey() == contentKey.GetPubKey().Nil() {
+		contentKey.GenerateKey()
+	}
+	if routingKey == nil {
+		routingKey = new(ecc.KeyPair)
+	}
+	if routingKey.GetPubKey() == routingKey.GetPubKey().Nil() {
+		routingKey.GenerateKey()
+	}
 	node.contentKey = contentKey
 	node.routingKey = routingKey
 
 	// setup chans
 	node.in = make(chan api.Msg)
-	node.out = make(chan api.Msg)
-	node.events = make(chan api.Event)
+	node.out = make(chan api.Msg, OutBufferSize)
+	node.events = make(chan api.Event, OutBufferSize)
 
 	// setup default router
 	node.router = router.NewDefaultRouter()
 
 	return node
+}
+
+// IsRunning - returns true if this node is running
+func (node *Node) IsRunning() bool {
+	return atomic.LoadUint32(&node.isRunning) == 1
+}
+
+func (node *Node) setIsRunning(b bool) {
+	var running uint32 = 0
+	if b {
+		running = 1
+	}
+	atomic.StoreUint32(&node.isRunning, running)
 }
 
 // GetPolicies : returns the array of Policy objects for this Node
@@ -108,16 +139,4 @@ func (node *Node) AdminRPC(transport api.Transport, call api.RemoteCall) (interf
 // PublicRPC :
 func (node *Node) PublicRPC(transport api.Transport, call api.RemoteCall) (interface{}, error) {
 	return nodes.PublicRPC(transport, node, call)
-}
-
-// Debug
-
-// GetDebug : Returns the debug mode status of this node
-func (node *Node) GetDebug() bool {
-	return node.debugMode
-}
-
-// SetDebug : Sets the debug mode status of this node
-func (node *Node) SetDebug(mode bool) {
-	node.debugMode = mode
 }

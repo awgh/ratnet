@@ -1,22 +1,21 @@
-package policy
+package p2p
 
 import (
 	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
+	"math/rand"
+	"net"
 	"net/url"
 	"runtime"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
-	"github.com/awgh/ratnet"
 	"github.com/awgh/ratnet/api"
 	"github.com/awgh/ratnet/api/events"
-
-	"net"
-
-	"math/rand"
+	"github.com/awgh/ratnet/policy"
 
 	dns "github.com/miekg/dns"
 )
@@ -31,16 +30,20 @@ type P2P struct {
 	ListenInterval    int
 	AdvertiseInterval int
 
-	IsListening   bool
-	IsAdvertising bool
-	AdminMode     bool
-	ListenURI     string
-	localAddress  string
-	Transport     api.Transport
-	Node          api.Node
+	isListening   uint32
+	isAdvertising uint32
+
+	AdminMode    bool
+	ListenURI    string
+	localAddress string
+	Transport    api.Transport
+	Node         api.Node
+	pt           *policy.PeerTable
 
 	listenSocket *net.UDPConn
 	dialSocket   *net.UDPConn
+
+	wg sync.WaitGroup
 }
 
 var (
@@ -52,22 +55,9 @@ var (
 	}
 )
 
-func init() {
-	ratnet.Policies["p2p"] = NewP2PFromMap // register this module by name (for deserialization support)
-}
-
-// NewP2PFromMap : Makes a new instance of this transport module from a map of arguments (for deserialization support)
-func NewP2PFromMap(transport api.Transport, node api.Node, p map[string]interface{}) api.Policy {
-	listenURI := p["ListenURI"].(string)
-	adminMode := p["AdminMode"].(bool)
-	listenInterval := p["ListenInterval"].(int)
-	advertiseInterval := p["AdvertiseInterval"].(int)
-	return NewP2P(transport, listenURI, node, adminMode, listenInterval, advertiseInterval)
-}
-
-// NewP2P : Returns a new instance of a P2P Connection Policy
+// New : Returns a new instance of a P2P Connection Policy
 //
-func NewP2P(transport api.Transport, listenURI string, node api.Node, adminMode bool,
+func New(transport api.Transport, listenURI string, node api.Node, adminMode bool,
 	listenInterval int, advertiseInterval int) *P2P {
 	s := new(P2P)
 	s.Transport = transport
@@ -76,20 +66,10 @@ func NewP2P(transport api.Transport, listenURI string, node api.Node, adminMode 
 	s.Node = node
 	s.ListenInterval = listenInterval
 	s.AdvertiseInterval = advertiseInterval
+	s.pt = policy.NewPeerTable()
 
 	s.rerollNegotiationRank()
 	return s
-}
-
-// MarshalJSON : Create a serialied representation of the config of this policy
-func (s *P2P) MarshalJSON() (b []byte, e error) {
-	return json.Marshal(map[string]interface{}{
-		"Policy":            "p2p",
-		"ListenURI":         s.ListenURI,
-		"AdminMode":         s.AdminMode,
-		"Transport":         s.Transport,
-		"ListenInterval":    s.ListenInterval,
-		"AdvertiseInterval": s.AdvertiseInterval})
 }
 
 func (s *P2P) initListenSocket() {
@@ -135,20 +115,24 @@ func (s *P2P) rerollNegotiationRank() {
 // RunPolicy : Executes the policy as a goroutine
 //
 func (s *P2P) RunPolicy() error {
-
 	s.initListenSocket()
 	if err := s.initDialSocket(); err != nil {
 		return err
 	}
 
 	s.Transport.Listen(s.ListenURI, s.AdminMode)
-	s.IsListening = true
+	s.setIsListening(true)
+	s.setIsAdvertising(true)
 
 	go s.mdnsListen()
 	go func() {
-		for s.IsListening {
-			if err := s.mdnsAdvertise(); err != nil {
-				events.Warning(s.Node, "mdnsAdvertise errored: "+err.Error())
+		s.wg.Add(1)
+		defer s.wg.Done()
+		for s.IsListening() {
+			if s.IsAdvertising() {
+				if err := s.mdnsAdvertise(); err != nil {
+					events.Warning(s.Node, "mdnsAdvertise errored: "+err.Error())
+				}
 			}
 			time.Sleep(time.Duration(s.AdvertiseInterval) * time.Millisecond) // update interval
 		}
@@ -160,17 +144,22 @@ func (s *P2P) RunPolicy() error {
 //
 func (s *P2P) Stop() {
 	s.Transport.Stop()
-	s.IsListening = false
+	s.setIsListening(false)
+	s.setIsAdvertising(false)
 
 	s.listenSocket.Close()
 	s.dialSocket.Close()
+
+	s.wg.Wait()
 }
 
 func (s *P2P) mdnsListen() error {
-
 	peerlist := make(map[string]interface{})
 
-	for s.IsListening {
+	s.wg.Add(1)
+	// defer conn.Close()
+	defer s.wg.Done()
+	for s.IsListening() {
 		b := make([]byte, maxDatagramSize)
 		conn := s.listenSocket
 		if _, _, err := conn.ReadFromUDP(b); err != nil {
@@ -206,6 +195,7 @@ func (s *P2P) mdnsListen() error {
 		}
 		_, exists := peerlist[target]
 		if !exists && (target != "" && targetNegRank > 0 && s.localAddress != target) {
+			//s.setIsAdvertising(false)
 			/*
 				Negotiation:
 					- The lowest rank does a push/pull
@@ -224,24 +214,26 @@ func (s *P2P) mdnsListen() error {
 					return err
 				}
 
-				t := make(map[string]interface{})
-				fromMapFn := ratnet.Transports[u.Scheme]
-				trans := fromMapFn(s.Node, t)
-				//todo: cache transports?
+				// todo: no_json breaks this, have to use the transport from the constructor for the moment
+				// t := make(map[string]interface{})
+				// fromMapFn := ratnet.Transports[u.Scheme]
+				// trans := fromMapFn(s.Node, t)
+
+				trans := s.Transport
 				peerlist[target] = trans
 				go func() {
-					for s.IsListening {
+					for s.IsListening() {
 						st := time.Now()
-						if happy, err := PollServer(trans, s.Node, target[len(u.Scheme)+3:], pubsrv); !happy {
+						if happy, err := s.pt.PollServer(trans, s.Node, target[len(u.Scheme)+3:], pubsrv); !happy {
 							if err != nil {
 								events.Warning(s.Node, err.Error())
 							}
 						}
 						st2 := time.Now()
-						events.Debug(s.Node, "p2p PollServer took: %s\n", st2.Sub(st).String())
+						events.Debug(s.Node, "p2p PollServer took: ", st2.Sub(st).String())
 						runtime.GC()
 						st3 := time.Now()
-						events.Debug(s.Node, "p2p GC took: %s\n", st3.Sub(st2).String())
+						events.Debug(s.Node, "p2p GC took: ", st3.Sub(st2).String())
 						time.Sleep(time.Duration(s.ListenInterval) * time.Millisecond) // update interval
 					}
 				}()
@@ -252,7 +244,6 @@ func (s *P2P) mdnsListen() error {
 }
 
 func (s *P2P) mdnsAdvertise() error {
-
 	events.Info(s.Node, "mdns Advertising...")
 	a := make([]byte, 8)
 	binary.LittleEndian.PutUint64(a, s.negotiationRank)
@@ -288,4 +279,30 @@ func (s *P2P) mdnsAdvertise() error {
 //
 func (s *P2P) GetTransport() api.Transport {
 	return s.Transport
+}
+
+// IsListening - returns true if this policy is listening
+func (s *P2P) IsListening() bool {
+	return atomic.LoadUint32(&s.isListening) == 1
+}
+
+func (s *P2P) setIsListening(b bool) {
+	var listening uint32 = 0
+	if b {
+		listening = 1
+	}
+	atomic.StoreUint32(&s.isListening, listening)
+}
+
+// IsAdvertising - returns true if this policy is advertising
+func (s *P2P) IsAdvertising() bool {
+	return atomic.LoadUint32(&s.isAdvertising) == 1
+}
+
+func (s *P2P) setIsAdvertising(b bool) {
+	var advertising uint32 = 0
+	if b {
+		advertising = 1
+	}
+	atomic.StoreUint32(&s.isAdvertising, advertising)
 }

@@ -3,6 +3,7 @@ package chunking
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"io/ioutil"
 
 	"github.com/awgh/bencrypt/bc"
@@ -24,12 +25,11 @@ func ChunkSize(node api.Node) uint32 {
 		events.Critical(node, "Transport has invalid low byte limit")
 	}
 
-	return chunksize - 132 //todo: this is the overhead for ECC, what about RSA?
+	return chunksize - 132 // todo: this is the overhead for ECC, what about RSA?
 }
 
 // SendChunked - utility function to break large messages into smaller ones for transports that can't handle arbitrarily large messages
 func SendChunked(node api.Node, chunkSize uint32, msg api.Msg) (err error) {
-
 	buf := msg.Content.Bytes()
 	buflen := uint32(len(buf))
 	chunkSizeMinusHeader := chunkSize - 8 // chunk header is two uint32's -> 8 bytes
@@ -85,7 +85,7 @@ func HandleChunked(node api.Node, msg api.Msg) error {
 		binary.Read(tmpb, binary.LittleEndian, &streamID)
 		binary.Read(tmpb, binary.LittleEndian, &chunkNum)
 
-		events.Debug(node, "adding chunk: %x  chunkNum: %x (%d)\n", streamID, chunkNum, chunkNum)
+		events.Debug(node, fmt.Sprintf("adding chunk: %x  chunkNum: %x (%d)", streamID, chunkNum, chunkNum))
 		return node.AddChunk(streamID, chunkNum, data[8:])
 	}
 	// save totalChunks by streamID
@@ -97,6 +97,6 @@ func HandleChunked(node api.Node, msg api.Msg) error {
 	if msg.IsChan {
 		channel = msg.Name
 	}
-	events.Debug(node, "adding stream: %x  totalChunks: %x (%d)\n", streamID, totalChunks, totalChunks)
+	events.Debug(node, fmt.Sprintf("adding stream: %x  totalChunks: %x (%d)", streamID, totalChunks, totalChunks))
 	return node.AddStream(streamID, totalChunks, channel)
 }
