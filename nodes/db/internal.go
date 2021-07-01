@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/awgh/bencrypt/bc"
 	"github.com/awgh/ratnet/api"
 	"github.com/awgh/ratnet/api/chunking"
 	"github.com/awgh/ratnet/api/events"
@@ -55,7 +56,8 @@ func (node *Node) Handle(msg api.Msg) (bool, error) {
 		tagOK, clear, err = v.DecryptMessage(msg.Content.Bytes())
 	} else if len(msg.Name) > 0 {
 		clearMsg = api.Msg{Name: msg.Name, IsChan: false, Chunked: msg.Chunked, StreamHeader: msg.StreamHeader}
-		key, err := node.privProfile(msg.Name)
+		var key bc.KeyPair
+		key, err = node.privProfile(msg.Name)
 		if err != nil {
 			return false, err
 		}
