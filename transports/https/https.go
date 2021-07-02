@@ -63,45 +63,55 @@ func (h *Module) ByteLimit() int64 { return atomic.LoadInt64(&h.byteLimit) }
 // SetByteLimit - set limit on bytes per bundle for this transport
 func (h *Module) SetByteLimit(limit int64) { atomic.StoreInt64(&h.byteLimit, limit) }
 
+// OverrideServer - override the http.Server object with one supplied by the caller
+func (h *Module) OverrideServer(server *http.Server) {
+	h.server = server
+}
+
 // Listen : Server interface
 func (h *Module) Listen(listen string, adminMode bool) {
-	// make sure we are not already running
-	if h.IsRunning() {
-		events.Warning(h.node, "This listener is already running.")
-		return
-	}
+	if len(listen) > 0 {
 
-	// init ssl components
-	cert, err := tls.X509KeyPair(h.Cert, h.Key)
-	if err != nil {
-		events.Error(h.node, err.Error())
-		return
-	}
-
-	// build http handler
-	serveMux := http.NewServeMux()
-	serveMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		h.handleResponse(w, r, h.node, adminMode)
-	})
-
-	h.mutex.Lock()
-	h.server = &http.Server{
-		Addr:      listen,
-		TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}},
-		Handler:   serveMux,
-	}
-	h.mutex.Unlock()
-
-	// start
-	go func() {
-		if err := h.server.ListenAndServeTLS("", ""); err != nil {
-			events.Error(h.node, err.Error())
+		// make sure we are not already running
+		if h.IsRunning() {
+			events.Warning(h.node, "This listener is already running.")
+			return
 		}
-	}()
+
+		// init ssl components
+		cert, err := tls.X509KeyPair(h.Cert, h.Key)
+		if err != nil {
+			events.Error(h.node, err.Error())
+			return
+		}
+
+		// build http handler
+		serveMux := http.NewServeMux()
+		serveMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			h.HandleResponse(w, r, h.node, adminMode)
+		})
+
+		h.mutex.Lock()
+		h.server = &http.Server{
+			Addr:      listen,
+			TLSConfig: &tls.Config{Certificates: []tls.Certificate{cert}},
+			Handler:   serveMux,
+		}
+		h.mutex.Unlock()
+
+		// start
+		go func() {
+			if err := h.server.ListenAndServeTLS("", ""); err != nil {
+				events.Error(h.node, err.Error())
+			}
+		}()
+
+	}
+
 	h.setIsRunning(true)
 }
 
-func (h *Module) handleResponse(w http.ResponseWriter, r *http.Request, node api.Node, adminMode bool) {
+func (h *Module) HandleResponse(w http.ResponseWriter, r *http.Request, node api.Node, adminMode bool) {
 	buf, err := api.ReadBuffer(r.Body)
 	if err != nil {
 		events.Warning(h.node, err.Error())
