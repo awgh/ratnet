@@ -125,8 +125,8 @@ func (s *P2P) RunPolicy() error {
 	s.setIsAdvertising(true)
 
 	go s.mdnsListen()
+	s.wg.Add(1)
 	go func() {
-		s.wg.Add(1)
 		defer s.wg.Done()
 		for s.IsListening() {
 			if s.IsAdvertising() {
